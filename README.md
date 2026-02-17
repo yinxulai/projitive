@@ -1,5 +1,7 @@
 # Projitive
 
+**Current Spec Version: projitive-spec v1.0.0**
+
 Projitive is an abstract governance model and toolset for Agent-driven project execution, not a domain-specific task system.
 
 It defines three capability layers:
@@ -49,6 +51,15 @@ Key design specs include:
 
 - English is the default document language
 - Chinese versions use `_CN` suffix
+
+## Versioning
+
+- Spec version: `projitive-spec v1.0.0`
+- Alignment rule: implementation major versions (including MCP) must match the spec major version (`v1.x` with `v1.x`)
+- Release policy:
+	- Breaking spec upgrade (e.g. `v1` → `v2`) requires MCP major upgrade first (e.g. `2.0.0`)
+	- Backward-compatible feature additions use minor upgrades (e.g. `1.1.0`)
+	- Bug-fix only changes use patch upgrades (e.g. `1.0.1`)
 
 ## Quick Start
 

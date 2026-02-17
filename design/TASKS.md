@@ -20,8 +20,8 @@ Defines the executable task pool and status transitions, answering “what shoul
 - Recommended minimum fields: `id`, `title`, `status`, `owner`, `updatedAt`, `links`
 - Recommended optional fields: `roadmapRefs`, `hooks`
 - Optional field: `hooks` for task-level hook selection (e.g., assign/complete prompt overrides)
-- Keep task item format stable, including field ordering, for Agent/tool parsing
-- If structured blocks are used, wrap JSON with fixed markers for machine readability
+- Keep task item format stable for Agent/tool parsing
+- Canonical format is markdown-native task sections inside fixed markers
 - Every task MUST have a unique task ID
 - Recommended task ID format: `TASK-0001`, `TASK-0002`, ...
 - Task item should include related roadmap IDs when applicable (for example `ROADMAP-0001`)
@@ -36,26 +36,19 @@ Recommended field constraints:
 - `roadmapRefs`: optional string array, each item must match `ROADMAP-\d{4}`
 - `hooks`: optional object, keys like `onAssigned`, `onCompleted`, values are relative paths under `hooks/`
 
-Recommended structured example:
+Recommended markdown-native example:
 
 ~~~md
 <!-- PROJITIVE:TASKS:START -->
-```json
-[
-  {
-    "id": "TASK-0001",
-    "title": "Define task state machine",
-    "status": "TODO",
-    "owner": "team-platform",
-    "updatedAt": "2026-02-17T00:00:00.000Z",
-    "links": ["./designs/task-state-machine-design.md"],
-    "roadmapRefs": ["ROADMAP-0001"],
-    "hooks": {
-      "onAssigned": "./hooks/on_task_assigned.md",
-      "onCompleted": "./hooks/on_task_completed.md"
-    }
-  }
-]
-```
+## TASK-0001 | TODO | Define task state machine
+- owner: team-platform
+- summary: align transition and evidence rules
+- updatedAt: 2026-02-17T00:00:00.000Z
+- roadmapRefs: ROADMAP-0001
+- links:
+  - ./designs/task-state-machine-design.md
+- hooks:
+  - onAssigned: ./hooks/on_task_assigned.md
+  - onCompleted: ./hooks/on_task_completed.md
 <!-- PROJITIVE:TASKS:END -->
 ~~~

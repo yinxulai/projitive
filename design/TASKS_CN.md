@@ -20,8 +20,8 @@
 - 最小字段建议：`id`、`title`、`status`、`owner`、`updatedAt`、`links`
 - 可选字段：`roadmapRefs`、`hooks`
 - 可选字段：`hooks`，用于任务级 HOOK 选择（如发放/完成提示覆盖）
-- 任务条目格式要求统一，字段顺序保持稳定，便于 Agent 与工具解析
-- 若采用结构化块，建议使用固定标记包裹 JSON，确保机器可读
+- 任务条目格式要求统一，便于 Agent 与工具解析
+- 标准格式为 marker 内的 Markdown 原生任务分段
 - 每个任务必须有唯一任务 ID
 - 推荐任务 ID 格式：`TASK-0001`、`TASK-0002` ...
 - 任务应在适用时包含关联 roadmap ID（如 `ROADMAP-0001`）
@@ -37,26 +37,19 @@
 - `roadmapRefs`：可选字符串数组，元素必须匹配 `ROADMAP-\d{4}`
 - `hooks`：可选对象，键如 `onAssigned`、`onCompleted`，值为 `hooks/` 下相对路径
 
-推荐结构化示例：
+推荐 Markdown 原生示例：
 
 ~~~md
 <!-- PROJITIVE:TASKS:START -->
-```json
-[
-	{
-		"id": "TASK-0001",
-		"title": "定义任务状态机",
-		"status": "TODO",
-		"owner": "team-platform",
-		"updatedAt": "2026-02-17T00:00:00.000Z",
-		"links": ["./designs/task-state-machine-design.md"],
-		"roadmapRefs": ["ROADMAP-0001"],
-		"hooks": {
-			"onAssigned": "./hooks/on_task_assigned.md",
-			"onCompleted": "./hooks/on_task_completed.md"
-		}
-	}
-]
-```
+## TASK-0001 | TODO | 定义任务状态机
+- owner: team-platform
+- summary: 对齐状态流转与证据规则
+- updatedAt: 2026-02-17T00:00:00.000Z
+- roadmapRefs: ROADMAP-0001
+- links:
+  - ./designs/task-state-machine-design.md
+- hooks:
+  - onAssigned: ./hooks/on_task_assigned.md
+  - onCompleted: ./hooks/on_task_completed.md
 <!-- PROJITIVE:TASKS:END -->
 ~~~
