@@ -32,3 +32,10 @@ version: 1
 name: expense-governance
 owner: team-platform
 ```
+
+## 4、内建治理检查建议（模块内）
+
+- 每个治理根目录只应存在一个 `.projitive` 标记
+- 若存在嵌套重复标记，应告警为歧义风险
+- 向上查找最近标记的行为应保持确定性
+- 缺失标记时必须显式报错（禁止静默 fallback）

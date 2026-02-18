@@ -55,3 +55,13 @@
   - onCompleted: ./hooks/on_task_completed.md
 <!-- PROJITIVE:TASKS:END -->
 ~~~
+
+## 4、内建治理检查建议（模块内）
+
+- 任务真源只解析 marker 区块（`PROJITIVE:TASKS:START/END`）
+- 若 marker 外出现 `TASK-xxxx`，应告警（疑似双真源）
+- `IN_PROGRESS` 建议强制非空 `owner`
+- `DONE` 建议至少包含 1 条 `links` 证据
+- `BLOCKED` 建议在 `summary` 写清阻塞原因与解锁条件
+- `updatedAt` 建议校验为 ISO8601 UTC
+- `roadmapRefs` 在适用时应绑定有效 `ROADMAP-xxxx`

@@ -41,6 +41,39 @@ function candidateFilesFromArtifacts(artifacts: Awaited<ReturnType<typeof discov
     });
 }
 
+function collectRoadmapLintSuggestions(roadmapIds: string[], tasks: Awaited<ReturnType<typeof loadTasks>>["tasks"]): string[] {
+  const suggestions: string[] = [];
+
+  if (roadmapIds.length === 0) {
+    suggestions.push("- No roadmap IDs found in roadmap.md. Add at least one ROADMAP-xxxx milestone.");
+  }
+
+  if (tasks.length === 0) {
+    suggestions.push("- No tasks found in tasks.md. Add task cards and bind roadmapRefs for traceability.");
+    return suggestions;
+  }
+
+  const roadmapSet = new Set(roadmapIds);
+  const unboundTasks = tasks.filter((task) => task.roadmapRefs.length === 0);
+  if (unboundTasks.length > 0) {
+    suggestions.push(`- ${unboundTasks.length} task(s) have empty roadmapRefs. Bind ROADMAP-xxxx where applicable.`);
+  }
+
+  const unknownRefs = Array.from(new Set(
+    tasks.flatMap((task) => task.roadmapRefs).filter((id) => !roadmapSet.has(id))
+  ));
+  if (unknownRefs.length > 0) {
+    suggestions.push(`- Unknown roadmapRefs detected: ${unknownRefs.join(", ")}. Add missing roadmap IDs or fix task references.`);
+  }
+
+  const noLinkedRoadmaps = roadmapIds.filter((id) => !tasks.some((task) => task.roadmapRefs.includes(id)));
+  if (noLinkedRoadmaps.length > 0) {
+    suggestions.push(`- ${noLinkedRoadmaps.length} roadmap ID(s) have zero linked tasks. Consider binding tasks to: ${noLinkedRoadmaps.slice(0, 3).join(", ")}${noLinkedRoadmaps.length > 3 ? ", ..." : ""}.`);
+  }
+
+  return suggestions;
+}
+
 export function isValidRoadmapId(id: string): boolean {
   return ROADMAP_ID_REGEX.test(id);
 }
@@ -70,6 +103,7 @@ export function registerRoadmapTools(server: McpServer): void {
       const governanceDir = await resolveGovernanceDir(projectPath);
       const roadmapIds = await readRoadmapIds(governanceDir);
       const { tasks } = await loadTasks(governanceDir);
+      const lintSuggestions = collectRoadmapLintSuggestions(roadmapIds, tasks);
 
       const markdown = [
         "# roadmapList",
@@ -89,6 +123,9 @@ export function registerRoadmapTools(server: McpServer): void {
         "",
         "## Agent Guidance",
         "- Pick one roadmap ID and call `roadmapContext`.",
+        "",
+        "## Lint Suggestions",
+        ...(lintSuggestions.length > 0 ? lintSuggestions : ["- (none)"]),
         "",
         "## Next Call",
         ...(roadmapIds.length > 0
@@ -132,6 +169,11 @@ export function registerRoadmapTools(server: McpServer): void {
 
       const { tasks } = await loadTasks(governanceDir);
       const relatedTasks = tasks.filter((task) => task.roadmapRefs.includes(roadmapId));
+      const roadmapIds = await readRoadmapIds(governanceDir);
+      const lintSuggestions = collectRoadmapLintSuggestions(roadmapIds, tasks);
+      if (relatedTasks.length === 0) {
+        lintSuggestions.push(`- relatedTasks=0 for ${roadmapId}. Batch bind task roadmapRefs to improve execution traceability.`);
+      }
 
       const markdown = [
         "# roadmapContext",
@@ -157,6 +199,9 @@ export function registerRoadmapTools(server: McpServer): void {
         "- Read roadmap references first, then related tasks.",
         "- Keep ROADMAP/TASK IDs unchanged while updating markdown files.",
         "- Re-run `roadmapContext` after edits to confirm references remain consistent.",
+        "",
+        "## Lint Suggestions",
+        ...(lintSuggestions.length > 0 ? lintSuggestions : ["- (none)"]),
         "",
         "## Next Call",
         `- roadmapContext(projectPath=\"${governanceDir}\", roadmapId=\"${roadmapId}\")`,

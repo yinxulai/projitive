@@ -51,3 +51,11 @@ Date: 2026-02-17
 ## Risk / Follow-up
 -
 ```
+
+## 4. Built-in Governance Checks (Module Guidance)
+
+- `Task` is required and must match `TASK-xxxx`
+- If `Roadmap` is present, it must match `ROADMAP-xxxx`
+- `Validation` should contain at least one verifiable evidence item
+- `Date` should use consistent date format
+- Report links should be reusable from `tasks.md` (`links`)

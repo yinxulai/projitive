@@ -5,7 +5,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { discoverGovernanceArtifacts } from "./helpers/files/index.js";
 import { catchIt } from "./helpers/catch/index.js";
-import { loadTasks, type Task } from "./tasks.js";
+import { collectTaskLintSuggestions, loadTasks, loadTasksDocument, type Task } from "./tasks.js";
 
 export const PROJECT_MARKER = ".projitive";
 const DEFAULT_GOVERNANCE_DIR = ".projitive";
@@ -82,16 +82,16 @@ function renderArtifactsMarkdown(artifacts: Awaited<ReturnType<typeof discoverGo
   return rows.join("\n");
 }
 
-async function readTasksSnapshot(governanceDir: string): Promise<{ tasksPath: string; exists: boolean; tasks: Task[] }> {
+async function readTasksSnapshot(governanceDir: string): Promise<{ tasksPath: string; exists: boolean; tasks: Task[]; lintSuggestions: string[] }> {
   const tasksPath = path.join(governanceDir, "tasks.md");
   const markdown = await fs.readFile(tasksPath, "utf-8").catch(() => undefined);
   if (typeof markdown !== "string") {
-    return { tasksPath, exists: false, tasks: [] };
+    return { tasksPath, exists: false, tasks: [], lintSuggestions: ["- tasks.md is missing. Initialize governance tasks structure first."] };
   }
 
   const { parseTasksBlock } = await import("./tasks.js");
   const tasks = await parseTasksBlock(markdown);
-  return { tasksPath, exists: true, tasks };
+  return { tasksPath, exists: true, tasks, lintSuggestions: collectTaskLintSuggestions(tasks, markdown) };
 }
 
 function latestTaskUpdatedAt(tasks: Task[]): string {
@@ -333,6 +333,10 @@ export function registerProjectTools(server: McpServer): void {
         "- If files were skipped and you want to overwrite templates, rerun with force=true.",
         "- Continue with projectContext and taskList for execution.",
         "",
+        "## Lint Suggestions",
+        "- After init, fill owner/roadmapRefs/links in tasks.md before marking DONE.",
+        "- Keep task source-of-truth inside marker block only.",
+        "",
         "## Next Call",
         `- projectContext(projectPath=\"${initialized.governanceDir}\")`,
       ].join("\n");
@@ -372,6 +376,11 @@ export function registerProjectTools(server: McpServer): void {
         "- Use one discovered project path and call `projectLocate` to lock governance root.",
         "- Then call `projectContext` to inspect current governance state.",
         "",
+        "## Lint Suggestions",
+        ...(projects.length === 0
+          ? ["- No governance root discovered. Add `.projitive` marker and baseline artifacts before execution."]
+          : ["- Run `projectContext` on a discovered project to receive module-level lint suggestions."]),
+        "",
         "## Next Call",
         ...(projects.length > 0
           ? [`- projectLocate(inputPath=\"${projects[0]}\")`]
@@ -410,6 +419,7 @@ export function registerProjectTools(server: McpServer): void {
             governanceDir,
             tasksPath: snapshot.tasksPath,
             tasksExists: snapshot.exists,
+            lintSuggestions: snapshot.lintSuggestions,
             total: snapshot.tasks.length,
             inProgress,
             todo,
@@ -456,6 +466,13 @@ export function registerProjectTools(server: McpServer): void {
         "- Then call `taskList` and `taskContext` to continue execution.",
         "- If `tasksPath` is missing, create tasks.md using project convention before task-level operations.",
         "",
+        "## Lint Suggestions",
+        ...(ranked.length > 0
+          ? ranked[0].lintSuggestions.length > 0
+            ? ranked[0].lintSuggestions
+            : ["- (none)"]
+          : ["- (none)"]),
+        "",
         "## Next Call",
         ...(ranked.length > 0
           ? [`- projectContext(projectPath=\"${ranked[0].governanceDir}\")`]
@@ -491,6 +508,9 @@ export function registerProjectTools(server: McpServer): void {
         "## Agent Guidance",
         "- Call `projectContext` with this governanceDir to get task and roadmap summaries.",
         "",
+        "## Lint Suggestions",
+        "- Run `projectContext` to get governance/module lint suggestions for this project.",
+        "",
         "## Next Call",
         `- projectContext(projectPath=\"${governanceDir}\")`,
       ].join("\n");
@@ -511,8 +531,9 @@ export function registerProjectTools(server: McpServer): void {
     async ({ projectPath }) => {
       const governanceDir = await resolveGovernanceDir(projectPath);
       const artifacts = await discoverGovernanceArtifacts(governanceDir);
-      const { tasksPath, tasks } = await loadTasks(governanceDir);
+      const { tasksPath, tasks, markdown: tasksMarkdown } = await loadTasksDocument(governanceDir);
       const roadmapIds = await readRoadmapIds(governanceDir);
+      const lintSuggestions = collectTaskLintSuggestions(tasks, tasksMarkdown);
 
       const taskSummary = {
         total: tasks.length,
@@ -544,6 +565,9 @@ export function registerProjectTools(server: McpServer): void {
         "## Agent Guidance",
         "- Start from `taskList` to choose a target task.",
         "- Then call `taskContext` with a task ID to retrieve evidence locations and reading order.",
+        "",
+        "## Lint Suggestions",
+        ...(lintSuggestions.length > 0 ? lintSuggestions : ["- (none)"]),
         "",
         "## Next Call",
         `- taskList(projectPath=\"${governanceDir}\")`,

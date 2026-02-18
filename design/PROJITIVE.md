@@ -32,3 +32,10 @@ version: 1
 name: expense-governance
 owner: team-platform
 ```
+
+## 4. Built-in Governance Checks (Module Guidance)
+
+- Exactly one `.projitive` marker should exist per governance root
+- Nested duplicate markers should be warned as ambiguity risk
+- Upward nearest-marker resolution should be deterministic
+- Missing marker should return explicit error (no silent fallback)

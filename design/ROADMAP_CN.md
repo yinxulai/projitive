@@ -45,3 +45,11 @@
 ### 依赖
 -
 ```
+
+## 4、内建治理检查建议（模块内）
+
+- 每个里程碑 ID 必须唯一（`ROADMAP-xxxx`）
+- ID 一经发布不可修改
+- roadmap ID 应被任务 `roadmapRefs` 关联
+- 若某里程碑长期 `relatedTasks=0`，应告警并提示补绑任务
+- 时间格式应统一（`YYYY-MM-DD` 或 `YYYY-QN`）

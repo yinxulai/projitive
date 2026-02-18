@@ -51,3 +51,11 @@ Date: 2026-02-17
 ## Risk / Follow-up
 -
 ```
+
+## 4、内建治理检查建议（模块内）
+
+- `Task` 必填且必须匹配 `TASK-xxxx`
+- 若填写 `Roadmap`，必须匹配 `ROADMAP-xxxx`
+- `Validation` 至少包含一条可复查证据
+- `Date` 建议统一日期格式
+- 报告证据应可被 `tasks.md` 的 `links` 复用引用

@@ -58,3 +58,11 @@ Constraints:
 Output Format:
 -
 ```
+
+## 4. Built-in Governance Checks (Module Guidance)
+
+- Task-level hook path has higher priority than global hook file
+- Warn when configured hook files are missing or unreadable
+- Empty hook file should be treated as no-op, not fatal
+- Invalid front-matter should degrade gracefully to markdown body
+- Hook content should include objective + constraints + output format

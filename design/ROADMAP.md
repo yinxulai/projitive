@@ -45,3 +45,11 @@ Recommended template:
 ### Dependencies
 -
 ```
+
+## 4. Built-in Governance Checks (Module Guidance)
+
+- Every milestone ID must be unique (`ROADMAP-xxxx`)
+- IDs must be immutable once published
+- Roadmap IDs should be referenced by tasks via `roadmapRefs`
+- Warn when a roadmap ID has zero related tasks for long periods
+- Keep time format consistent (`YYYY-MM-DD` or `YYYY-QN`)

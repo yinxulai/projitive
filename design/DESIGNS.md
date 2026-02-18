@@ -57,3 +57,11 @@ Last Updated: 2026-02-17
 
 ## Risks and Rollback
 ```
+
+## 4. Built-in Governance Checks (Module Guidance)
+
+- `Task` metadata is required and must match `TASK-xxxx`
+- `Roadmap` metadata, if present, must match `ROADMAP-xxxx`
+- `Last Updated` should be valid timestamp/date format
+- Ensure decision docs are referenced by related task `links`
+- Avoid duplicate primary design docs for the same decision scope

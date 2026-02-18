@@ -54,3 +54,13 @@ Recommended markdown-native example:
   - onCompleted: ./hooks/on_task_completed.md
 <!-- PROJITIVE:TASKS:END -->
 ~~~
+
+## 4. Built-in Governance Checks (Module Guidance)
+
+- Parse source of truth only inside marker block (`PROJITIVE:TASKS:START/END`)
+- Warn if any `TASK-xxxx` appears outside marker block (possible split source)
+- `IN_PROGRESS` should have non-empty `owner`
+- `DONE` should have at least one `links` evidence
+- `BLOCKED` should include blocker reason in `summary`
+- `updatedAt` should be valid ISO8601 UTC
+- `roadmapRefs` should link to existing `ROADMAP-xxxx` when applicable
