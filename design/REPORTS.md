@@ -1,5 +1,7 @@
 # `reports/` Directory Design Specification
 
+Language: English | [简体中文](REPORTS_CN.md)
+
 ## 1. Role in Project Governance
 
 Captures execution results and validation conclusions, answering “what was delivered and how it is proven”.

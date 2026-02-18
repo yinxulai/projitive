@@ -1,8 +1,54 @@
 # Projitive
 
+Language: English | [简体中文](README_CN.md)
+
 **Current Spec Version: projitive-spec v1.0.0**
 
-Projitive is an abstract governance model and toolset for Agent-driven project execution, not a domain-specific task system.
+Projitive is a governance model + MCP toolchain for Agent-driven software delivery.
+
+It helps teams turn "AI can code" into "AI can continuously ship with traceability".
+
+## Why Developers Use Projitive
+
+- Ship faster with guardrails: standard task states, evidence rules, and stable execution loops.
+- Keep repos auditable: every transition links to design/report evidence.
+- Stay tool-agnostic: works with Copilot, Claude Code, and other MCP-compatible agents.
+- Scale across projects: same conventions and method family (`List/Context/Next/Scan/Locate`).
+
+## What You Get Today
+
+- A complete governance spec under `design/`
+- A production MCP server under `packages/mcp/`
+- Built-in Resources + Prompts + Tools for agent workflow consistency
+- Release-driven CI publishing pipeline for MCP package
+
+## How It Helps Agents Manage and Advance Projects (Design Rationale)
+
+Projitive is designed to solve a common failure mode in AI delivery: agents can edit code, but cannot reliably manage project state over time.
+
+Its design uses four constraints to make agent execution stable:
+
+- **State machine first**: task statuses (`TODO`, `IN_PROGRESS`, `BLOCKED`, `DONE`) define explicit progress semantics.
+- **Evidence first**: transitions are valid only when artifacts (`designs/`, `reports/`) prove the change.
+- **Context first**: agents resolve governance root and read canonical files before acting.
+- **Loop first**: delivery is iterative, not one-shot (`discover -> decide -> execute -> verify -> next`).
+
+In practice, this lets an agent manage projects like a lightweight operator:
+
+1. Discover what to do (`taskNext` / `projectNext`)
+2. Build actionable context (`taskContext` / `projectContext`)
+3. Execute updates in governed artifacts
+4. Re-verify consistency and move to next cycle
+
+This is the core idea: **convert ad-hoc coding into auditable, repeatable project progression**.
+
+## Quick Start (5 minutes)
+
+1. Read `design/README.md` for governance conventions.
+2. Add `.projitive` marker file in your governance root.
+3. Prepare governance artifacts: `README.md`, `roadmap.md`, `tasks.md`, `designs/`, `reports/`, `hooks/`.
+4. Start MCP server from `packages/mcp`.
+5. Let agent run: `taskNext -> taskContext -> update -> verify`.
 
 It defines three capability layers:
 - Rules layer: unified semantics for projects, tasks, states, and evidence

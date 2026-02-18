@@ -1,5 +1,7 @@
 # `README.md` Design Specification
 
+Language: English | [简体中文](README_CN.md)
+
 ## 1. Role in Project Governance
 
 Defines the specification of the governance artifact `README.md` as the Agent onboarding entry.

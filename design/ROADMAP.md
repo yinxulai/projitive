@@ -1,5 +1,7 @@
 # `roadmap.md` Design Specification
 
+Language: English | [简体中文](ROADMAP_CN.md)
+
 ## 1. Role in Project Governance
 
 Defines stage goals and milestones, answering “what is next”.

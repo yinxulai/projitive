@@ -1,5 +1,7 @@
 # `designs/` Directory Design Specification
 
+Language: English | [简体中文](DESIGNS_CN.md)
+
 ## 1. Role in Project Governance
 
 Records solution design and key decisions, answering “why this approach is chosen”.

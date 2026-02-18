@@ -1,5 +1,7 @@
 # `.projitive` 设计说明
 
+语言：简体中文 | [English](PROJITIVE.md)
+
 ## 1、该文件的作用
 
 `.projitive` 是治理定位锚点，用于声明“该目录是一个 Projitive 治理规划目录”。

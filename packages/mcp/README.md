@@ -1,52 +1,119 @@
 # @projitive/mcp
 
+Language: English | [简体中文](README_CN.md)
+
 **Current Spec Version: projitive-spec v1.0.0 | MCP Version: 1.0.0**
 
-Projitive MCP server（语义化接口设计版），用于帮助 Agent 发现项目、发现任务、定位证据，并按治理流程推进。
+Projitive MCP server (semantic interface edition) helps agents discover projects, select tasks, locate evidence, and execute under governance workflows.
 
-## 规范版本
+## Agent Delivery Loop
 
-- 当前遵循规范版本：`projitive-spec v1.0.0`
-- 说明：Projitive 是通用治理规范，MCP 只是该规范的一种工具实现。
-- 对齐规则：MCP 的主版本必须与规范主版本一致（当前均为 `v1.x`）
+```mermaid
+flowchart LR
+  A[taskNext / projectNext] --> B[taskContext / projectContext]
+  B --> C[Update tasks/designs/reports]
+  C --> D[taskContext verify]
+  D --> E{More actionable work?}
+  E -->|Yes| A
+  E -->|No| F[Done / wait for new tasks]
+```
 
-## 设计边界
+## Why Developers Choose This MCP
 
-- MCP 负责：发现、定位、汇总、推进指导。
-- AI 负责：读取与更新 Markdown 正文内容。
-- MCP 不提供：`task.update_*`、`roadmap.update_*`、`sync_*` 这类直接写入治理工件的方法。
-- 所有工具返回内容：面向 Agent 的 Markdown（不是 JSON 对象）。
-- 输出结构统一为：`Summary` / `Evidence` / `Agent Guidance` / `Next Call`。
-- 错误结构统一为：`Error` / `Next Step` / `Retry Example`。
+- Predictable API family: `List/Context` as core, `Next/Scan/Locate` for acceleration.
+- Governance-safe automation: state changes are guided by evidence-first workflow.
+- Agent-ready outputs: markdown contracts optimized for tool-chaining, not raw JSON blobs.
+- Production publishing pipeline: release-triggered CI with lint/test/publish gates.
 
-## MCP 能力机制
+## How It Helps Agents Manage and Advance Projects
 
-- Tools：执行发现/定位/汇总动作（当前主通道）。
-- Resources：提供可读取上下文工件，供 Agent 在无额外参数时快速装载背景。
-- Prompts：提供参数化执行模板，减少 Agent 在治理更新时的流程偏差。
+This MCP is designed to make agent execution operational, not just informative. It gives agents a closed-loop workflow:
 
-### Resources（已实现）
+1. **Find what to do next**
+  - `taskNext` or `projectNext` ranks actionable targets.
+2. **Build the right context**
+  - `taskContext` / `projectContext` / `roadmapContext` provide evidence, references, and next-call hints.
+3. **Execute with governance constraints**
+  - Agent updates markdown artifacts (`tasks.md`, `designs/`, `reports/`) with immutable IDs and evidence rules.
+4. **Re-verify and continue**
+  - Re-run `taskContext` (or `roadmapContext`) to confirm consistency, then move to the next task.
 
-- `projitive://governance/workspace`：读取 `.projitive/README.md`
-- `projitive://governance/tasks`：读取 `.projitive/tasks.md`
-- `projitive://governance/roadmap`：读取 `.projitive/roadmap.md`
-- `projitive://mcp/method-catalog`：方法命名与角色目录（List/Context/Next/Scan/Locate）
+In short: it converts agent work from ad-hoc edits into a **discover → decide → execute → verify** delivery loop.
 
-### Prompts（已实现）
+## Agent Workflow (Shortest Path)
 
-- `executeTaskWorkflow`：标准执行链（`taskNext -> taskContext -> artifacts update -> verify`）
-- `updateTaskStatusWithEvidence`：状态迁移与证据对齐模板
-- `triageProjectGovernance`：项目级治理分诊模板
+```text
+taskNext
+  -> taskContext
+  -> update artifacts (tasks/designs/reports)
+  -> taskContext (verify)
+  -> taskNext (next cycle)
+```
+
+When the agent starts inside a project:
+
+```text
+projectLocate -> projectContext -> taskList -> taskContext
+```
+
+## Quick Start
+
+```bash
+cd packages/mcp
+npm ci
+npm run build
+npm run test
+```
+
+Then configure your MCP client to run:
+
+```bash
+node /absolute/path/to/packages/mcp/output/index.js
+```
+
+## Spec Version
+
+- Current aligned spec version: `projitive-spec v1.0.0`
+- Note: Projitive is a general governance specification; MCP is one implementation of this spec.
+- Alignment rule: MCP major version must match the spec major version (currently both `v1.x`).
+
+## Design Boundaries
+
+- MCP handles discovery, locating, summarization, and execution guidance.
+- Agents/AI handle reading and updating markdown content.
+- MCP does not provide direct artifact-write APIs such as `task.update_*`, `roadmap.update_*`, or `sync_*`.
+- All tool outputs are agent-oriented Markdown (not raw JSON objects).
+- Standard output sections: `Summary` / `Evidence` / `Agent Guidance` / `Next Call`.
+- Standard error sections: `Error` / `Next Step` / `Retry Example`.
+
+## MCP Capability Model
+
+- Tools: execute discovery/locating/summarization actions (primary channel).
+- Resources: expose readable governance artifacts for low-cost context loading.
+- Prompts: provide parameterized workflow templates to reduce execution drift.
+
+### Resources (Implemented)
+
+- `projitive://governance/workspace`: reads `.projitive/README.md`
+- `projitive://governance/tasks`: reads `.projitive/tasks.md`
+- `projitive://governance/roadmap`: reads `.projitive/roadmap.md`
+- `projitive://mcp/method-catalog`: method naming and role catalog (`List/Context/Next/Scan/Locate`)
+
+### Prompts (Implemented)
+
+- `executeTaskWorkflow`: standard execution chain (`taskNext -> taskContext -> artifacts update -> verify`)
+- `updateTaskStatusWithEvidence`: status transition + evidence alignment template
+- `triageProjectGovernance`: project-level governance triage template
 
 ## Tools Methods
 
-### 发现层
+### Discovery Layer
 
 #### `projectNext`
 
-- **作用**：直接拉取最近可推进的项目（按可执行任务数和最近更新时间排序）。
-- **输入**：`rootPath?`、`maxDepth?`、`limit?`
-- **输出示例（Markdown）**：
+- **Purpose**: directly list recently actionable projects (ranked by actionable task count and recency).
+- **Input**: `rootPath?`, `maxDepth?`, `limit?`
+- **Output Example (Markdown)**:
 
 ```markdown
 # projectNext
@@ -73,9 +140,9 @@ Projitive MCP server（语义化接口设计版），用于帮助 Agent 发现�
 
 #### `projectScan`
 
-- **作用**：扫描目录并发现可治理项目。
-- **输入**：`rootPath?`、`maxDepth?`
-- **输出示例（Markdown）**：
+- **Purpose**: scan directories and discover governable projects.
+- **Input**: `rootPath?`, `maxDepth?`
+- **Output Example (Markdown)**:
 
 ```markdown
 # projectScan
@@ -100,9 +167,9 @@ Projitive MCP server（语义化接口设计版），用于帮助 Agent 发现�
 
 #### `projectLocate`
 
-- **作用**：当 Agent 已经在某个项目目录内时，向上定位最近 `.projitive`，确定当前项目治理根目录。
-- **输入**：`inputPath`
-- **输出示例（Markdown）**：
+- **Purpose**: when an agent is already inside a project path, resolve the nearest `.projitive` upward.
+- **Input**: `inputPath`
+- **Output Example (Markdown)**:
 
 ```markdown
 # projectLocate
@@ -121,9 +188,9 @@ Projitive MCP server（语义化接口设计版），用于帮助 Agent 发现�
 
 #### `projectContext`
 
-- **作用**：自动汇总治理状态，而不是只返回文件列表。
-- **输入**：`projectPath`
-- **输出示例（Markdown）**：
+- **Purpose**: summarize governance state instead of only returning file lists.
+- **Input**: `projectPath`
+- **Output Example (Markdown)**:
 
 ```markdown
 # projectContext
@@ -157,13 +224,13 @@ Projitive MCP server（语义化接口设计版），用于帮助 Agent 发现�
 - taskList(projectPath="/workspace/proj-a")
 ```
 
-### 任务层
+### Task Layer
 
 #### `taskNext`
 
-- **作用**：一步完成“发现项目 + 选择最可推进任务 + 返回证据定位与阅读顺序”，用于 Agent 直接开工。
-- **输入**：`rootPath?`、`maxDepth?`、`topCandidates?`
-- **输出示例（Markdown）**：
+- **Purpose**: one-step workflow for project discovery + best task selection + evidence/read-order output.
+- **Input**: `rootPath?`, `maxDepth?`, `topCandidates?`
+- **Output Example (Markdown)**:
 
 ```markdown
 # taskNext
@@ -204,13 +271,13 @@ Projitive MCP server（语义化接口设计版），用于帮助 Agent 发现�
 - taskContext(projectPath="/workspace/proj-a", taskId="TASK-0003")
 ```
 
-- **推荐路径**：优先调用 `taskNext`，避免 `projectNext -> projectContext -> taskList -> taskContext` 的多跳链路。
+- **Recommended Path**: prefer `taskNext` to avoid multi-hop flow (`projectNext -> projectContext -> taskList -> taskContext`).
 
 #### `taskList`
 
-- **作用**：返回当前项目任务清单，支持按状态过滤与排序。
-- **输入**：`projectPath`、`status?`、`limit?`
-- **输出示例（Markdown）**：
+- **Purpose**: list tasks in current project, with optional status filtering and limiting.
+- **Input**: `projectPath`, `status?`, `limit?`
+- **Output Example (Markdown)**:
 
 ```markdown
 # taskList
@@ -235,16 +302,16 @@ Projitive MCP server（语义化接口设计版），用于帮助 Agent 发现�
 
 #### `taskContext`
 
-- **作用**：基于任务 ID 一次性返回任务详情 + 关联证据位置（替代 `trace.references`）。
-- **输入**：`projectPath`、`taskId`
-- **HOOKS 注入**：
-  - 若存在 `hooks/task_get_head.md`，其内容会自动追加到返回结果最前面。
-  - 若存在 `hooks/task_get_footer.md`，其内容会自动追加到返回结果最后面。
-  - 用于给 Agent 注入项目级自定义提示，不改变 taskContext 核心结构。
-- **输出示例（Markdown）**：
+- **Purpose**: return task detail + related evidence locations in one call (replacing `trace.references`).
+- **Input**: `projectPath`, `taskId`
+- **HOOK Injection**:
+  - If `hooks/task_get_head.md` exists, its content is prepended to result.
+  - If `hooks/task_get_footer.md` exists, its content is appended to result.
+  - Used for project-level custom guidance without changing core `taskContext` shape.
+- **Output Example (Markdown)**:
 
 ```markdown
-[hooks/task_get_head.md 内容（如果存在）]
+[hooks/task_get_head.md content (if present)]
 
 ---
 
@@ -287,16 +354,16 @@ Projitive MCP server（语义化接口设计版），用于帮助 Agent 发现�
 
 ---
 
-[hooks/task_get_footer.md 内容（如果存在）]
+[hooks/task_get_footer.md content (if present)]
 ```
 
-### 路线层
+### Roadmap Layer
 
 #### `roadmapList`
 
-- **作用**：列出路线图项目及其关联任务概览。
-- **输入**：`projectPath`
-- **输出示例（Markdown）**：
+- **Purpose**: list roadmap items and linked task summary.
+- **Input**: `projectPath`
+- **Output Example (Markdown)**:
 
 ```markdown
 # roadmapList
@@ -319,9 +386,9 @@ Projitive MCP server（语义化接口设计版），用于帮助 Agent 发现�
 
 #### `roadmapContext`
 
-- **作用**：获取单个路线图详情与证据定位信息。
-- **输入**：`projectPath`、`roadmapId`
-- **输出示例（Markdown）**：
+- **Purpose**: get single roadmap detail and reference locations.
+- **Input**: `projectPath`, `roadmapId`
+- **Output Example (Markdown)**:
 
 ```markdown
 # roadmapContext
@@ -349,7 +416,7 @@ Projitive MCP server（语义化接口设计版），用于帮助 Agent 发现�
 - roadmapContext(projectPath="/workspace/proj-a", roadmapId="ROADMAP-0001")
 ```
 
-## 统一错误输出示例
+## Unified Error Output Example
 
 ```markdown
 # taskContext
@@ -365,9 +432,9 @@ Projitive MCP server（语义化接口设计版），用于帮助 Agent 发现�
 - taskContext(projectPath="/workspace/proj-a", taskId="TASK-0001")
 ```
 
-## Agent 推荐调用流程
+## Recommended Agent Call Flow
 
-1. `taskNext`：一步发现并选择最可推进任务，直接开工（默认路径）。
-2. `taskContext`：在需要更完整上下文时，按 taskId 拉取详细证据。
-3. `projectNext`：仅在需要“先选项目、再选任务”的项目级调度场景使用（可选）。
-4. 当 Agent 已在项目内时，用 `projectLocate` 快速定位当前项目治理根目录。
+1. `taskNext`: one-step discovery and top task selection (default path).
+2. `taskContext`: fetch detailed evidence for a specific task ID when needed.
+3. `projectNext`: optional project-level scheduling flow when you need project-first dispatch.
+4. When already in a project path, use `projectLocate` to quickly resolve governance root.

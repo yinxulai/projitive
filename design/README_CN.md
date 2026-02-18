@@ -1,5 +1,7 @@
 # `README.md` 设计说明
 
+语言：简体中文 | [English](README.md)
+
 ## 1、该文件的作用
 
 定义“被治理项目中的 `README.md` 工件规范”，并作为 Agent 的治理入口说明。

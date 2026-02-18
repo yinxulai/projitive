@@ -1,5 +1,7 @@
 # `.projitive` Design Specification
 
+Language: English | [简体中文](PROJITIVE_CN.md)
+
 ## 1. Role in Project Governance
 
 `.projitive` is the governance marker used to declare that a directory is a Projitive governance root.

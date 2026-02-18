@@ -1,5 +1,7 @@
 # `tasks.md` Design Specification
 
+Language: English | [简体中文](TASKS_CN.md)
+
 ## 1. Role in Project Governance
 
 Defines the executable task pool and status transitions, answering “what should be done now”.

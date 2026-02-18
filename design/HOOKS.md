@@ -1,5 +1,7 @@
 # `hooks/` Directory Design Specification
 
+Language: English | [简体中文](HOOKS_CN.md)
+
 ## 1. Role in Project Governance
 
 Defines user-managed hook prompts that provide extra AI guidance at task lifecycle events (especially assignment and completion).
