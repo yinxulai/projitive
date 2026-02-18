@@ -1,7 +1,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
+import { discoverGovernanceArtifacts } from "./helpers/files/index.js";
+import { findTextReferences } from "./helpers/markdown/index.js";
 import { catchIt } from "./helpers/catch/index.js";
-import { resolveGovernanceDir } from "./projitive.js";
+import { resolveGovernanceDir, resolveScanDepth, resolveScanRoot, discoverProjects } from "./projitive.js";
 import { isValidRoadmapId } from "./roadmap.js";
 
 export const TASKS_START = "<!-- PROJITIVE:TASKS:START -->";
@@ -34,6 +38,127 @@ export type ActionableTaskCandidate = {
   taskUpdatedAtMs: number;
   taskPriority: number;
 };
+
+function asText(markdown: string) {
+  return {
+    content: [{ type: "text" as const, text: markdown }],
+  };
+}
+
+function renderErrorMarkdown(toolName: string, cause: string, nextSteps: string[], retryExample?: string): string {
+  return [
+    `# ${toolName}`,
+    "",
+    "## Error",
+    `- cause: ${cause}`,
+    "",
+    "## Next Step",
+    ...(nextSteps.length > 0 ? nextSteps : ["- (none)"]),
+    "",
+    "## Retry Example",
+    `- ${retryExample ?? "(none)"}`,
+  ].join("\n");
+}
+
+function taskStatusGuidance(task: Task): string[] {
+  if (task.status === "TODO") {
+    return [
+      "- This task is TODO: confirm scope and set execution plan before edits.",
+      "- Move to IN_PROGRESS only after owner and initial evidence are ready.",
+    ];
+  }
+
+  if (task.status === "IN_PROGRESS") {
+    return [
+      "- This task is IN_PROGRESS: prioritize finishing with report/design evidence updates.",
+      "- Verify references stay consistent before marking DONE.",
+    ];
+  }
+
+  if (task.status === "BLOCKED") {
+    return [
+      "- This task is BLOCKED: identify blocker and required unblock condition first.",
+      "- Reopen only after blocker evidence is documented.",
+    ];
+  }
+
+  return [
+    "- This task is DONE: only reopen when new requirement changes scope.",
+    "- Keep report evidence immutable unless correction is required.",
+  ];
+}
+
+function candidateFilesFromArtifacts(artifacts: Awaited<ReturnType<typeof discoverGovernanceArtifacts>>): string[] {
+  return artifacts
+    .filter((item) => item.exists)
+    .flatMap((item) => {
+      if (item.kind === "file") {
+        return [item.path];
+      }
+      return (item.markdownFiles ?? []).map((entry) => entry.path);
+    });
+}
+
+async function readOptionalMarkdown(filePath: string): Promise<string | undefined> {
+  const content = await fs.readFile(filePath, "utf-8").catch(() => undefined);
+  if (typeof content !== "string") {
+    return undefined;
+  }
+  const trimmed = content.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+async function readTaskContextHooks(governanceDir: string): Promise<{ head?: string; footer?: string; headPath: string; footerPath: string }> {
+  const headPath = path.join(governanceDir, "hooks", "task_get_head.md");
+  const footerPath = path.join(governanceDir, "hooks", "task_get_footer.md");
+
+  const [head, footer] = await Promise.all([readOptionalMarkdown(headPath), readOptionalMarkdown(footerPath)]);
+  return { head, footer, headPath, footerPath };
+}
+
+function latestTaskUpdatedAt(tasks: Task[]): string {
+  const timestamps = tasks
+    .map((task) => new Date(task.updatedAt).getTime())
+    .filter((value) => Number.isFinite(value));
+
+  if (timestamps.length === 0) {
+    return "(unknown)";
+  }
+
+  return new Date(Math.max(...timestamps)).toISOString();
+}
+
+function actionableScore(tasks: Task[]): number {
+  return tasks.filter((task) => task.status === "IN_PROGRESS").length * 2
+    + tasks.filter((task) => task.status === "TODO").length;
+}
+
+async function readActionableTaskCandidates(governanceDirs: string[]): Promise<ActionableTaskCandidate[]> {
+  const snapshots = await Promise.all(
+    governanceDirs.map(async (governanceDir) => {
+      const snapshot = await loadTasks(governanceDir);
+      return {
+        governanceDir,
+        tasksPath: snapshot.tasksPath,
+        tasks: snapshot.tasks,
+        projectScore: actionableScore(snapshot.tasks),
+        projectLatestUpdatedAt: latestTaskUpdatedAt(snapshot.tasks),
+      };
+    })
+  );
+
+  return snapshots.flatMap((item) => item.tasks
+    .filter((task) => task.status === "IN_PROGRESS" || task.status === "TODO")
+    .map((task) => ({
+      governanceDir: item.governanceDir,
+      tasksPath: item.tasksPath,
+      task,
+      projectScore: item.projectScore,
+      projectLatestUpdatedAt: item.projectLatestUpdatedAt,
+      taskUpdatedAtMs: toTaskUpdatedAtMs(task.updatedAt),
+      taskPriority: taskPriority(task.status),
+    })));
+}
 
 export function nowIso(): string {
   return new Date().toISOString();
@@ -310,4 +435,261 @@ export function validateTransition(from: TaskStatus, to: TaskStatus): boolean {
   };
 
   return allowed[from].has(to);
+}
+
+export function registerTaskTools(server: McpServer): void {
+  server.registerTool(
+    "taskList",
+    {
+      title: "Task List",
+      description: "List project tasks with optional status filter for agent planning",
+      inputSchema: {
+        projectPath: z.string(),
+        status: z.enum(["TODO", "IN_PROGRESS", "BLOCKED", "DONE"]).optional(),
+        limit: z.number().int().min(1).max(200).optional(),
+      },
+    },
+    async ({ projectPath, status, limit }) => {
+      const governanceDir = await resolveGovernanceDir(projectPath);
+      const { tasksPath, tasks } = await loadTasks(governanceDir);
+      const filtered = tasks
+        .filter((task) => (status ? task.status === status : true))
+        .slice(0, limit ?? 100);
+
+      const markdown = [
+        "# taskList",
+        "",
+        "## Summary",
+        `- governanceDir: ${governanceDir}`,
+        `- tasksPath: ${tasksPath}`,
+        `- filter.status: ${status ?? "(none)"}`,
+        `- returned: ${filtered.length}`,
+        "",
+        "## Evidence",
+        "- tasks:",
+        ...(filtered.length > 0
+          ? filtered.map((task) => `- ${task.id} | ${task.status} | ${task.title} | owner=${task.owner || ""} | updatedAt=${task.updatedAt}`)
+          : ["- (none)"]),
+        "",
+        "## Agent Guidance",
+        "- Pick one task ID and call `taskContext`.",
+        "",
+        "## Next Call",
+        `- taskContext(projectPath=\"${governanceDir}\", taskId=\"TASK-0001\")`,
+      ].join("\n");
+
+      return asText(markdown);
+    }
+  );
+
+  server.registerTool(
+    "taskNext",
+    {
+      title: "Task Next",
+      description: "One-step discover and select the most actionable task with evidence and start guidance",
+      inputSchema: {
+        rootPath: z.string().optional(),
+        maxDepth: z.number().int().min(0).max(8).optional(),
+        topCandidates: z.number().int().min(1).max(20).optional(),
+      },
+    },
+    async ({ rootPath, maxDepth, topCandidates }) => {
+      const root = resolveScanRoot(rootPath);
+      const depth = resolveScanDepth(maxDepth);
+      const projects = await discoverProjects(root, depth);
+      const rankedCandidates = rankActionableTaskCandidates(await readActionableTaskCandidates(projects));
+
+      if (rankedCandidates.length === 0) {
+        const markdown = [
+          "# taskNext",
+          "",
+          "## Summary",
+          `- rootPath: ${root}`,
+          `- maxDepth: ${depth}`,
+          `- matchedProjects: ${projects.length}`,
+          "- actionableTasks: 0",
+          "",
+          "## Evidence",
+          "- candidates:",
+          "- (none)",
+          "",
+          "## Agent Guidance",
+          "- No TODO/IN_PROGRESS task is available.",
+          "- Create or reopen tasks in tasks.md, then rerun `taskNext`.",
+          "",
+          "## Next Call",
+          `- projectNext(rootPath=\"${root}\", maxDepth=${depth})`,
+        ].join("\n");
+        return asText(markdown);
+      }
+
+      const selected = rankedCandidates[0];
+      const artifacts = await discoverGovernanceArtifacts(selected.governanceDir);
+      const fileCandidates = candidateFilesFromArtifacts(artifacts);
+      const referenceLocations = (
+        await Promise.all(fileCandidates.map((file) => findTextReferences(file, selected.task.id)))
+      ).flat();
+      const taskLocation = (await findTextReferences(selected.tasksPath, selected.task.id))[0];
+      const relatedArtifacts = Array.from(new Set(referenceLocations.map((item) => item.filePath)));
+      const suggestedReadOrder = [selected.tasksPath, ...relatedArtifacts.filter((item) => item !== selected.tasksPath)];
+      const candidateLimit = topCandidates ?? 5;
+
+      const markdown = [
+        "# taskNext",
+        "",
+        "## Summary",
+        `- rootPath: ${root}`,
+        `- maxDepth: ${depth}`,
+        `- matchedProjects: ${projects.length}`,
+        `- actionableTasks: ${rankedCandidates.length}`,
+        `- selectedProject: ${selected.governanceDir}`,
+        `- selectedTaskId: ${selected.task.id}`,
+        `- selectedTaskStatus: ${selected.task.status}`,
+        "",
+        "## Evidence",
+        "### Selected Task",
+        `- id: ${selected.task.id}`,
+        `- title: ${selected.task.title}`,
+        `- owner: ${selected.task.owner || "(none)"}`,
+        `- updatedAt: ${selected.task.updatedAt}`,
+        `- roadmapRefs: ${selected.task.roadmapRefs.join(", ") || "(none)"}`,
+        `- taskLocation: ${taskLocation ? `${taskLocation.filePath}#L${taskLocation.line}` : selected.tasksPath}`,
+        "",
+        "### Top Candidates",
+        ...rankedCandidates
+          .slice(0, candidateLimit)
+          .map((item, index) => `${index + 1}. ${item.task.id} | ${item.task.status} | ${item.task.title} | project=${item.governanceDir} | projectScore=${item.projectScore} | latest=${item.projectLatestUpdatedAt}`),
+        "",
+        "### Selection Reason",
+        "- Rank rule: projectScore DESC -> taskPriority DESC -> taskUpdatedAt DESC.",
+        `- Selected candidate scores: projectScore=${selected.projectScore}, taskPriority=${selected.taskPriority}, taskUpdatedAtMs=${selected.taskUpdatedAtMs}.`,
+        "",
+        "### Related Artifacts",
+        ...(relatedArtifacts.length > 0 ? relatedArtifacts.map((file) => `- ${file}`) : ["- (none)"]),
+        "",
+        "### Reference Locations",
+        ...(referenceLocations.length > 0
+          ? referenceLocations.map((item) => `- ${item.filePath}#L${item.line}: ${item.text}`)
+          : ["- (none)"]),
+        "",
+        "### Suggested Read Order",
+        ...suggestedReadOrder.map((item, index) => `${index + 1}. ${item}`),
+        "",
+        "## Agent Guidance",
+        "- Start immediately with Suggested Read Order and execute the selected task.",
+        "- Update markdown artifacts directly while keeping TASK/ROADMAP IDs unchanged.",
+        "- Re-run `taskContext` for the selectedTaskId after edits to verify evidence consistency.",
+        "",
+        "## Next Call",
+        `- taskContext(projectPath=\"${selected.governanceDir}\", taskId=\"${selected.task.id}\")`,
+      ].join("\n");
+
+      return asText(markdown);
+    }
+  );
+
+  server.registerTool(
+    "taskContext",
+    {
+      title: "Task Context",
+      description: "Get one task with detail, evidence locations, and execution guidance",
+      inputSchema: {
+        projectPath: z.string(),
+        taskId: z.string(),
+      },
+    },
+    async ({ projectPath, taskId }) => {
+      if (!isValidTaskId(taskId)) {
+        return {
+          ...asText(renderErrorMarkdown(
+            "taskContext",
+            `Invalid task ID format: ${taskId}`,
+            ["- expected format: TASK-0001", "- retry with a valid task ID"],
+            `taskContext(projectPath=\"${projectPath}\", taskId=\"TASK-0001\")`
+          )),
+          isError: true,
+        };
+      }
+
+      const governanceDir = await resolveGovernanceDir(projectPath);
+      const { tasksPath, tasks } = await loadTasks(governanceDir);
+      const taskContextHooks = await readTaskContextHooks(governanceDir);
+      const task = tasks.find((item) => item.id === taskId);
+      if (!task) {
+        return {
+          ...asText(renderErrorMarkdown(
+            "taskContext",
+            `Task not found: ${taskId}`,
+            ["- run `taskList` to discover available IDs", "- retry with an existing task ID"],
+            `taskList(projectPath=\"${governanceDir}\")`
+          )),
+          isError: true,
+        };
+      }
+
+      const taskLocation = (await findTextReferences(tasksPath, taskId))[0];
+      const artifacts = await discoverGovernanceArtifacts(governanceDir);
+      const fileCandidates = candidateFilesFromArtifacts(artifacts);
+      const referenceLocations = (
+        await Promise.all(fileCandidates.map((file) => findTextReferences(file, taskId)))
+      ).flat();
+
+      const relatedArtifacts = Array.from(new Set(referenceLocations.map((item) => item.filePath)));
+      const suggestedReadOrder = [tasksPath, ...relatedArtifacts.filter((item) => item !== tasksPath)];
+
+      const hookPaths = Object.values(task.hooks)
+        .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+        .map((value) => path.resolve(governanceDir, value));
+      const hookStatus = `head=${taskContextHooks.head ? "loaded" : "missing"}, footer=${taskContextHooks.footer ? "loaded" : "missing"}`;
+
+      const coreMarkdown = [
+        "# taskContext",
+        "",
+        "## Summary",
+        `- governanceDir: ${governanceDir}`,
+        `- taskId: ${task.id}`,
+        `- title: ${task.title}`,
+        `- status: ${task.status}`,
+        `- owner: ${task.owner}`,
+        `- updatedAt: ${task.updatedAt}`,
+        `- roadmapRefs: ${task.roadmapRefs.join(", ") || "(none)"}`,
+        `- taskLocation: ${taskLocation ? `${taskLocation.filePath}#L${taskLocation.line}` : tasksPath}`,
+        `- hookStatus: ${hookStatus}`,
+        "",
+        "## Evidence",
+        "### Related Artifacts",
+        ...(relatedArtifacts.length > 0 ? relatedArtifacts.map((file) => `- ${file}`) : ["- (none)"]),
+        "",
+        "### Reference Locations",
+        ...(referenceLocations.length > 0
+          ? referenceLocations.map((item) => `- ${item.filePath}#L${item.line}: ${item.text}`)
+          : ["- (none)"]),
+        "",
+        "### Hook Paths",
+        ...(hookPaths.length > 0 ? hookPaths.map((item) => `- ${item}`) : ["- (none)"]),
+        "",
+        "### Suggested Read Order",
+        ...suggestedReadOrder.map((item, index) => `${index + 1}. ${item}`),
+        "",
+        "## Agent Guidance",
+        "- Read the files in Suggested Read Order.",
+        "- Verify whether current status and evidence are consistent.",
+        ...taskStatusGuidance(task),
+        "- If updates are needed, edit tasks/designs/reports markdown directly and keep TASK IDs unchanged.",
+        "- After editing, re-run `taskContext` to verify references and context consistency.",
+        "",
+        "## Next Call",
+        `- taskContext(projectPath=\"${governanceDir}\", taskId=\"${task.id}\")`,
+      ].join("\n");
+
+      const markdownParts = [
+        taskContextHooks.head,
+        coreMarkdown,
+        taskContextHooks.footer,
+      ].filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+
+      const markdown = markdownParts.join("\n\n---\n\n");
+      return asText(markdown);
+    }
+  );
 }

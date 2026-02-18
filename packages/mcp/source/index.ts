@@ -1,680 +1,262 @@
-import path from "node:path";
-import process from "node:process";
-import fs from "node:fs/promises";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { z } from "zod";
-import { discoverGovernanceArtifacts } from "./helpers/files/index.js";
-import { findTextReferences } from "./helpers/markdown/index.js";
-import { discoverProjects, resolveGovernanceDir } from "./projitive.js";
-import { isValidRoadmapId } from "./roadmap.js";
-import {
-  isValidTaskId,
-  loadTasks,
-  parseTasksBlock,
-  rankActionableTaskCandidates,
-  taskPriority,
-  toTaskUpdatedAtMs,
-  type ActionableTaskCandidate,
-  type Task,
-} from "./tasks.js";
+#!/usr/bin/env node
 
-const PROJITIVE_SPEC_VERSION = "1.0.0";
+import fs from "node:fs/promises"
+import path from "node:path"
+import process from "node:process"
+import { fileURLToPath } from "node:url"
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
+import { z } from "zod"
+import { registerProjectTools } from "./projitive.js"
+import { registerTaskTools } from "./tasks.js"
+import { registerRoadmapTools } from "./roadmap.js"
+
+const PROJITIVE_SPEC_VERSION = "1.0.0"
 
 const server = new McpServer({
-  name: "projitive-mcp",
+  name: "projitive",
   version: PROJITIVE_SPEC_VERSION,
   description: "Semantic Projitive MCP for project/task discovery and agent guidance with markdown-first outputs",
-});
+})
 
-function asText(markdown: string) {
-  return {
-    content: [{ type: "text" as const, text: markdown }],
-  };
+const currentFilePath = fileURLToPath(import.meta.url)
+const sourceDir = path.dirname(currentFilePath)
+const repoRoot = path.resolve(sourceDir, "..", "..", "..")
+
+function resolveRepoFile(relativePath: string): string {
+  return path.join(repoRoot, relativePath)
 }
 
-function renderErrorMarkdown(toolName: string, cause: string, nextSteps: string[]): string {
+async function readMarkdownOrFallback(relativePath: string, fallbackTitle: string): Promise<string> {
+  const absolutePath = resolveRepoFile(relativePath)
+  const content = await fs.readFile(absolutePath, "utf-8").catch(() => undefined)
+  if (typeof content === "string" && content.trim().length > 0) {
+    return content
+  }
+
   return [
-    `# ${toolName}`,
+    `# ${fallbackTitle}`,
     "",
-    "## Error",
-    `- cause: ${cause}`,
+    `- file: ${relativePath}`,
+    "- status: missing-or-empty",
+    "- next: create this file or ensure it has readable markdown content",
+  ].join("\n")
+}
+
+function renderMethodCatalogMarkdown(): string {
+  return [
+    "# MCP Method Catalog",
     "",
-    "## Next Step",
-    ...(nextSteps.length > 0 ? nextSteps : ["- (none)"]),
-  ].join("\n");
+    "## Core Pattern",
+    "- Prefer List/Context for primary discovery/detail flows.",
+    "- Use Next/Scan/Locate for acceleration and bootstrapping.",
+    "",
+    "## Methods",
+    "| Group | Method | Role |",
+    "|---|---|---|",
+    "| Project | projectScan | discover governance projects by marker |",
+    "| Project | projectNext | rank actionable projects |",
+    "| Project | projectLocate | resolve nearest governance root |",
+    "| Project | projectContext | summarize project governance context |",
+    "| Task | taskList | list tasks with optional filters |",
+    "| Task | taskNext | select top actionable task |",
+    "| Task | taskContext | inspect one task with references |",
+    "| Roadmap | roadmapList | list roadmap IDs and linked tasks |",
+    "| Roadmap | roadmapContext | inspect one roadmap with references |",
+  ].join("\n")
 }
 
-function normalizePath(inputPath?: string): string {
-  return inputPath ? path.resolve(inputPath) : process.cwd();
-}
-
-function candidateFilesFromArtifacts(artifacts: Awaited<ReturnType<typeof discoverGovernanceArtifacts>>): string[] {
-  return artifacts
-    .filter((item) => item.exists)
-    .flatMap((item) => {
-      if (item.kind === "file") {
-        return [item.path];
-      }
-      return (item.markdownFiles ?? []).map((entry) => entry.path);
-    });
-}
-
-async function readOptionalMarkdown(filePath: string): Promise<string | undefined> {
-  const content = await fs.readFile(filePath, "utf-8").catch(() => undefined);
-  if (typeof content !== "string") {
-    return undefined;
-  }
-  const trimmed = content.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
-}
-
-async function readTaskGetHooks(governanceDir: string): Promise<{ head?: string; footer?: string; headPath: string; footerPath: string }> {
-  const headPath = path.join(governanceDir, "hooks", "task_get_head.md");
-  const footerPath = path.join(governanceDir, "hooks", "task_get_footer.md");
-
-  const [head, footer] = await Promise.all([readOptionalMarkdown(headPath), readOptionalMarkdown(footerPath)]);
-  return { head, footer, headPath, footerPath };
-}
-
-async function readRoadmapIds(governanceDir: string): Promise<string[]> {
-  const roadmapPath = path.join(governanceDir, "roadmap.md");
-  try {
-    const markdown = await fs.readFile(roadmapPath, "utf-8");
-    const matches = markdown.match(/ROADMAP-\d{4}/g) ?? [];
-    return Array.from(new Set(matches));
-  } catch {
-    return [];
-  }
-}
-
-function renderArtifactsMarkdown(artifacts: Awaited<ReturnType<typeof discoverGovernanceArtifacts>>): string {
-  const rows = artifacts.map((item) => {
-    if (item.kind === "file") {
-      const lineText = item.lineCount == null ? "-" : String(item.lineCount);
-      return `- ${item.exists ? "✅" : "❌"} ${item.name}  \n  path: ${item.path}  \n  lineCount: ${lineText}`;
-    }
-
-    const nested = (item.markdownFiles ?? [])
-      .map((entry) => `    - ${entry.path} (lines: ${entry.lineCount})`)
-      .join("\n");
-    return `- ${item.exists ? "✅" : "❌"} ${item.name}/  \n  path: ${item.path}${nested ? `\n  markdownFiles:\n${nested}` : ""}`;
-  });
-
-  return rows.join("\n");
-}
-
-async function readTasksSnapshot(governanceDir: string): Promise<{ tasksPath: string; exists: boolean; tasks: Task[] }> {
-  const tasksPath = path.join(governanceDir, "tasks.md");
-  const markdown = await fs.readFile(tasksPath, "utf-8").catch(() => undefined);
-  if (typeof markdown !== "string") {
-    return { tasksPath, exists: false, tasks: [] };
-  }
-
-  const tasks = await parseTasksBlock(markdown);
-  return { tasksPath, exists: true, tasks };
-}
-
-function latestTaskUpdatedAt(tasks: Task[]): string {
-  const timestamps = tasks
-    .map((task) => new Date(task.updatedAt).getTime())
-    .filter((value) => Number.isFinite(value));
-
-  if (timestamps.length === 0) {
-    return "(unknown)";
-  }
-
-  return new Date(Math.max(...timestamps)).toISOString();
-}
-
-function actionableScore(tasks: Task[]): number {
-  return tasks.filter((task) => task.status === "IN_PROGRESS").length * 2
-    + tasks.filter((task) => task.status === "TODO").length;
-}
-
-async function readActionableTaskCandidates(governanceDirs: string[]): Promise<ActionableTaskCandidate[]> {
-  const snapshots = await Promise.all(
-    governanceDirs.map(async (governanceDir) => {
-      const snapshot = await readTasksSnapshot(governanceDir);
-      return {
-        governanceDir,
-        tasksPath: snapshot.tasksPath,
-        tasks: snapshot.tasks,
-        projectScore: actionableScore(snapshot.tasks),
-        projectLatestUpdatedAt: latestTaskUpdatedAt(snapshot.tasks),
-      };
+function registerGovernanceResources(): void {
+  server.registerResource(
+    "governanceWorkspace",
+    "projitive://governance/workspace",
+    {
+      title: "Governance Workspace",
+      description: "Primary governance README under .projitive",
+      mimeType: "text/markdown",
+    },
+    async () => ({
+      contents: [
+        {
+          uri: "projitive://governance/workspace",
+          text: await readMarkdownOrFallback(".projitive/README.md", "Governance Workspace"),
+        },
+      ],
     })
-  );
+  )
 
-  return snapshots.flatMap((item) => item.tasks
-    .filter((task) => task.status === "IN_PROGRESS" || task.status === "TODO")
-    .map((task) => ({
-      governanceDir: item.governanceDir,
-      tasksPath: item.tasksPath,
-      task,
-      projectScore: item.projectScore,
-      projectLatestUpdatedAt: item.projectLatestUpdatedAt,
-      taskUpdatedAtMs: toTaskUpdatedAtMs(task.updatedAt),
-      taskPriority: taskPriority(task.status),
-    })));
+  server.registerResource(
+    "governanceTasks",
+    "projitive://governance/tasks",
+    {
+      title: "Governance Tasks",
+      description: "Current task pool and status under .projitive/tasks.md",
+      mimeType: "text/markdown",
+    },
+    async () => ({
+      contents: [
+        {
+          uri: "projitive://governance/tasks",
+          text: await readMarkdownOrFallback(".projitive/tasks.md", "Governance Tasks"),
+        },
+      ],
+    })
+  )
+
+  server.registerResource(
+    "governanceRoadmap",
+    "projitive://governance/roadmap",
+    {
+      title: "Governance Roadmap",
+      description: "Current roadmap under .projitive/roadmap.md",
+      mimeType: "text/markdown",
+    },
+    async () => ({
+      contents: [
+        {
+          uri: "projitive://governance/roadmap",
+          text: await readMarkdownOrFallback(".projitive/roadmap.md", "Governance Roadmap"),
+        },
+      ],
+    })
+  )
+
+  server.registerResource(
+    "mcpMethodCatalog",
+    "projitive://mcp/method-catalog",
+    {
+      title: "MCP Method Catalog",
+      description: "Method naming and purpose map for agent routing",
+      mimeType: "text/markdown",
+    },
+    async () => ({
+      contents: [
+        {
+          uri: "projitive://mcp/method-catalog",
+          text: renderMethodCatalogMarkdown(),
+        },
+      ],
+    })
+  )
 }
 
-server.registerTool(
-  "project.scan",
-  {
-    title: "Project Scan",
-    description: "Scan filesystem and discover project governance roots marked by .projitive",
-    inputSchema: {
-      rootPath: z.string().optional(),
-      maxDepth: z.number().int().min(0).max(8).optional(),
-    },
-  },
-  async ({ rootPath, maxDepth }) => {
-    const root = normalizePath(rootPath);
-    const projects = await discoverProjects(root, maxDepth ?? 3);
-
-    const markdown = [
-      "# project.scan",
-      "",
-      "## Summary",
-      `- rootPath: ${root}`,
-      `- maxDepth: ${maxDepth ?? 3}`,
-      `- discoveredCount: ${projects.length}`,
-      "",
-      "## Evidence",
-      "- projects:",
-      ...(projects.length > 0 ? projects.map((project, index) => `${index + 1}. ${project}`) : ["- (none)"]),
-      "",
-      "## Agent Guidance",
-      "- Next: call `project.locate` with one target path to lock the active governance root.",
-      "- Then: call `project.overview` to view artifact and task status.",
-    ].join("\n");
-
-    return asText(markdown);
+function asUserPrompt(text: string) {
+  return {
+    messages: [
+      {
+        role: "user" as const,
+        content: {
+          type: "text" as const,
+          text,
+        },
+      },
+    ],
   }
-);
+}
 
-server.registerTool(
-  "project.next",
-  {
-    title: "Project Next",
-    description: "Directly list recently actionable projects for immediate agent progression",
-    inputSchema: {
-      rootPath: z.string().optional(),
-      maxDepth: z.number().int().min(0).max(8).optional(),
-      limit: z.number().int().min(1).max(50).optional(),
+function registerGovernancePrompts(): void {
+  server.registerPrompt(
+    "executeTaskWorkflow",
+    {
+      title: "Execute Task Workflow",
+      description: "Guide an agent through taskNext -> taskContext -> artifact update -> verification",
+      argsSchema: {
+        rootPath: z.string().optional(),
+        projectPath: z.string().optional(),
+        taskId: z.string().optional(),
+      },
     },
-  },
-  async ({ rootPath, maxDepth, limit }) => {
-    const root = normalizePath(rootPath);
-    const projects = await discoverProjects(root, maxDepth ?? 3);
-    const snapshots = await Promise.all(
-      projects.map(async (governanceDir) => {
-        const snapshot = await readTasksSnapshot(governanceDir);
-        const inProgress = snapshot.tasks.filter((task) => task.status === "IN_PROGRESS").length;
-        const todo = snapshot.tasks.filter((task) => task.status === "TODO").length;
-        const blocked = snapshot.tasks.filter((task) => task.status === "BLOCKED").length;
-        const done = snapshot.tasks.filter((task) => task.status === "DONE").length;
-        const actionable = inProgress + todo;
-
-        return {
-          governanceDir,
-          tasksPath: snapshot.tasksPath,
-          tasksExists: snapshot.exists,
-          total: snapshot.tasks.length,
-          inProgress,
-          todo,
-          blocked,
-          done,
-          actionable,
-          latestUpdatedAt: latestTaskUpdatedAt(snapshot.tasks),
-          score: actionableScore(snapshot.tasks),
-        };
-      })
-    );
-
-    const ranked = snapshots
-      .filter((item) => item.actionable > 0)
-      .sort((a, b) => {
-        if (b.score !== a.score) {
-          return b.score - a.score;
-        }
-        return b.latestUpdatedAt.localeCompare(a.latestUpdatedAt);
-      })
-      .slice(0, limit ?? 10);
-
-    const markdown = [
-      "# project.next",
-      "",
-      "## Summary",
-      `- rootPath: ${root}`,
-      `- maxDepth: ${maxDepth ?? 3}`,
-      `- matchedProjects: ${projects.length}`,
-      `- actionableProjects: ${ranked.length}`,
-      `- limit: ${limit ?? 10}`,
-      "",
-      "## Evidence",
-      "- rankedProjects:",
-      ...(ranked.length > 0
-        ? ranked.map(
-            (item, index) =>
-              `${index + 1}. ${item.governanceDir} | actionable=${item.actionable} | in_progress=${item.inProgress} | todo=${item.todo} | blocked=${item.blocked} | done=${item.done} | latest=${item.latestUpdatedAt} | tasksPath=${item.tasksPath}${item.tasksExists ? "" : " (missing)"}`
-          )
-        : ["- (none)"]),
-      "",
-      "## Agent Guidance",
-      "- Pick top 1 project and call `project.overview` with its governanceDir.",
-      "- Then call `task.list` and `task.get` to continue execution.",
-      "- If `tasksPath` is missing, create tasks.md using project convention before task-level operations.",
-    ].join("\n");
-
-    return asText(markdown);
-  }
-);
-
-server.registerTool(
-  "project.locate",
-  {
-    title: "Project Locate",
-    description: "Resolve current project governance root from an in-project path by finding the nearest .projitive marker",
-    inputSchema: {
-      inputPath: z.string(),
-    },
-  },
-  async ({ inputPath }) => {
-    const resolvedFrom = normalizePath(inputPath);
-    const governanceDir = await resolveGovernanceDir(resolvedFrom);
-    const markerPath = path.join(governanceDir, ".projitive");
-
-    const markdown = [
-      "# project.locate",
-      "",
-      "## Summary",
-      `- resolvedFrom: ${resolvedFrom}`,
-      `- governanceDir: ${governanceDir}`,
-      `- markerPath: ${markerPath}`,
-      "",
-      "## Agent Guidance",
-      "- Next: call `project.overview` with this governanceDir to get task and roadmap summaries.",
-    ].join("\n");
-
-    return asText(markdown);
-  }
-);
-
-server.registerTool(
-  "project.overview",
-  {
-    title: "Project Overview",
-    description: "Summarize governance artifacts and task/roadmap status for agent planning",
-    inputSchema: {
-      projectPath: z.string(),
-    },
-  },
-  async ({ projectPath }) => {
-    const governanceDir = await resolveGovernanceDir(projectPath);
-    const artifacts = await discoverGovernanceArtifacts(governanceDir);
-    const { tasksPath, tasks } = await loadTasks(governanceDir);
-    const roadmapIds = await readRoadmapIds(governanceDir);
-
-    const taskSummary = {
-      total: tasks.length,
-      TODO: tasks.filter((task) => task.status === "TODO").length,
-      IN_PROGRESS: tasks.filter((task) => task.status === "IN_PROGRESS").length,
-      BLOCKED: tasks.filter((task) => task.status === "BLOCKED").length,
-      DONE: tasks.filter((task) => task.status === "DONE").length,
-    };
-
-    const markdown = [
-      "# project.overview",
-      "",
-      "## Summary",
-      `- governanceDir: ${governanceDir}`,
-      `- tasksFile: ${tasksPath}`,
-      `- roadmapIds: ${roadmapIds.length}`,
-      "",
-      "## Evidence",
-      "### Task Summary",
-      `- total: ${taskSummary.total}`,
-      `- TODO: ${taskSummary.TODO}`,
-      `- IN_PROGRESS: ${taskSummary.IN_PROGRESS}`,
-      `- BLOCKED: ${taskSummary.BLOCKED}`,
-      `- DONE: ${taskSummary.DONE}`,
-      "",
-      "### Artifacts",
-      renderArtifactsMarkdown(artifacts),
-      "",
-      "## Agent Guidance",
-      "- Next: call `task.list` to choose a target task.",
-      "- Then: call `task.get` with a task ID to retrieve evidence locations and reading order.",
-    ].join("\n");
-
-    return asText(markdown);
-  }
-);
-
-server.registerTool(
-  "task.list",
-  {
-    title: "Task List",
-    description: "List project tasks with optional status filter for agent planning",
-    inputSchema: {
-      projectPath: z.string(),
-      status: z.enum(["TODO", "IN_PROGRESS", "BLOCKED", "DONE"]).optional(),
-      limit: z.number().int().min(1).max(200).optional(),
-    },
-  },
-  async ({ projectPath, status, limit }) => {
-    const governanceDir = await resolveGovernanceDir(projectPath);
-    const { tasksPath, tasks } = await loadTasks(governanceDir);
-    const filtered = tasks
-      .filter((task) => (status ? task.status === status : true))
-      .slice(0, limit ?? 100);
-
-    const markdown = [
-      "# task.list",
-      "",
-      "## Summary",
-      `- governanceDir: ${governanceDir}`,
-      `- tasksPath: ${tasksPath}`,
-      `- filter.status: ${status ?? "(none)"}`,
-      `- returned: ${filtered.length}`,
-      "",
-      "## Evidence",
-      "- tasks:",
-      ...(filtered.length > 0
-        ? filtered.map((task) => `- ${task.id} | ${task.status} | ${task.title} | owner=${task.owner || ""} | updatedAt=${task.updatedAt}`)
-        : ["- (none)"]),
-      "",
-      "## Agent Guidance",
-      "- Next: pick one task ID and call `task.get`.",
-    ].join("\n");
-
-    return asText(markdown);
-  }
-);
-
-server.registerTool(
-  "task.next",
-  {
-    title: "Task Next",
-    description: "One-step discover and select the most actionable task with evidence and start guidance",
-    inputSchema: {
-      rootPath: z.string().optional(),
-      maxDepth: z.number().int().min(0).max(8).optional(),
-      topCandidates: z.number().int().min(1).max(20).optional(),
-    },
-  },
-  async ({ rootPath, maxDepth, topCandidates }) => {
-    const root = normalizePath(rootPath);
-    const projects = await discoverProjects(root, maxDepth ?? 3);
-    const rankedCandidates = rankActionableTaskCandidates(await readActionableTaskCandidates(projects));
-
-    if (rankedCandidates.length === 0) {
-      const markdown = [
-        "# task.next",
+    async ({ rootPath, projectPath, taskId }) => {
+      const text = [
+        "You are executing Projitive governance workflow.",
         "",
-        "## Summary",
-        `- rootPath: ${root}`,
-        `- maxDepth: ${maxDepth ?? 3}`,
-        `- matchedProjects: ${projects.length}`,
-        "- actionableTasks: 0",
+        "Execution order:",
+        taskId && projectPath
+          ? `1) Run taskContext(projectPath=\"${projectPath}\", taskId=\"${taskId}\").`
+          : `1) Run taskNext(${rootPath ? `rootPath=\"${rootPath}\"` : ""}).`,
+        "2) Read Suggested Read Order and collect blocking gaps.",
+        "3) Update markdown artifacts only (tasks/designs/reports/roadmap as needed).",
+        "4) Re-run taskContext for the selected task and verify references are consistent.",
         "",
-        "## Evidence",
-        "- candidates:",
-        "- (none)",
+        "Hard rules:",
+        "- Keep TASK/ROADMAP IDs immutable.",
+        "- Every status transition must have report evidence.",
+        "- Do not introduce non-governance file edits unless task scope requires.",
+      ].join("\n")
+
+      return asUserPrompt(text)
+    }
+  )
+
+  server.registerPrompt(
+    "updateTaskStatusWithEvidence",
+    {
+      title: "Update Task Status With Evidence",
+      description: "Template for safe task status transitions and evidence alignment",
+      argsSchema: {
+        projectPath: z.string(),
+        taskId: z.string(),
+        targetStatus: z.enum(["TODO", "IN_PROGRESS", "BLOCKED", "DONE"]),
+      },
+    },
+    async ({ projectPath, taskId, targetStatus }) => {
+      const text = [
+        "Perform a safe task status update using Projitive rules.",
         "",
-        "## Agent Guidance",
-        "- No TODO/IN_PROGRESS task is available.",
-        "- Create or reopen tasks in tasks.md, then rerun `task.next`.",
-      ].join("\n");
-      return asText(markdown);
+        `1) Run taskContext(projectPath=\"${projectPath}\", taskId=\"${taskId}\").`,
+        `2) Plan status transition toward ${targetStatus}.`,
+        "3) Update tasks.md status and updatedAt.",
+        "4) Add or update a report under reports/ with concrete evidence.",
+        "5) Re-run taskContext and confirm status/evidence/reference consistency.",
+        "",
+        "Checklist:",
+        "- Transition is valid per status machine.",
+        "- links/roadmapRefs remain parseable and consistent.",
+        "- Hook paths (if any) still resolve.",
+      ].join("\n")
+
+      return asUserPrompt(text)
     }
+  )
 
-    const selected = rankedCandidates[0];
-    const artifacts = await discoverGovernanceArtifacts(selected.governanceDir);
-    const fileCandidates = candidateFilesFromArtifacts(artifacts);
-    const referenceLocations = (
-      await Promise.all(fileCandidates.map((file) => findTextReferences(file, selected.task.id)))
-    ).flat();
-    const taskLocation = (await findTextReferences(selected.tasksPath, selected.task.id))[0];
-    const relatedArtifacts = Array.from(new Set(referenceLocations.map((item) => item.filePath)));
-    const suggestedReadOrder = [selected.tasksPath, ...relatedArtifacts.filter((item) => item !== selected.tasksPath)];
-    const candidateLimit = topCandidates ?? 5;
-
-    const markdown = [
-      "# task.next",
-      "",
-      "## Summary",
-      `- rootPath: ${root}`,
-      `- maxDepth: ${maxDepth ?? 3}`,
-      `- matchedProjects: ${projects.length}`,
-      `- actionableTasks: ${rankedCandidates.length}`,
-      `- selectedProject: ${selected.governanceDir}`,
-      `- selectedTaskId: ${selected.task.id}`,
-      `- selectedTaskStatus: ${selected.task.status}`,
-      "",
-      "## Evidence",
-      "### Selected Task",
-      `- id: ${selected.task.id}`,
-      `- title: ${selected.task.title}`,
-      `- owner: ${selected.task.owner || "(none)"}`,
-      `- updatedAt: ${selected.task.updatedAt}`,
-      `- roadmapRefs: ${selected.task.roadmapRefs.join(", ") || "(none)"}`,
-      `- taskLocation: ${taskLocation ? `${taskLocation.filePath}#L${taskLocation.line}` : selected.tasksPath}`,
-      "",
-      "### Top Candidates",
-      ...rankedCandidates
-        .slice(0, candidateLimit)
-        .map((item, index) => `${index + 1}. ${item.task.id} | ${item.task.status} | ${item.task.title} | project=${item.governanceDir} | projectScore=${item.projectScore} | latest=${item.projectLatestUpdatedAt}`),
-      "",
-      "### Related Artifacts",
-      ...(relatedArtifacts.length > 0 ? relatedArtifacts.map((file) => `- ${file}`) : ["- (none)"]),
-      "",
-      "### Reference Locations",
-      ...(referenceLocations.length > 0
-        ? referenceLocations.map((item) => `- ${item.filePath}#L${item.line}: ${item.text}`)
-        : ["- (none)"]),
-      "",
-      "### Suggested Read Order",
-      ...suggestedReadOrder.map((item, index) => `${index + 1}. ${item}`),
-      "",
-      "## Agent Guidance",
-      "- Start immediately with Suggested Read Order and execute the selected task.",
-      "- Update markdown artifacts directly while keeping TASK/ROADMAP IDs unchanged.",
-      "- Re-run `task.get` for the selectedTaskId after edits to verify evidence consistency.",
-    ].join("\n");
-
-    return asText(markdown);
-  }
-);
-
-server.registerTool(
-  "task.get",
-  {
-    title: "Task Get",
-    description: "Get one task with related evidence locations and a guidance prompt for the agent",
-    inputSchema: {
-      projectPath: z.string(),
-      taskId: z.string(),
+  server.registerPrompt(
+    "triageProjectGovernance",
+    {
+      title: "Triage Project Governance",
+      description: "Template to inspect a project and select next actionable governance task",
+      argsSchema: {
+        rootPath: z.string().optional(),
+      },
     },
-  },
-  async ({ projectPath, taskId }) => {
-    if (!isValidTaskId(taskId)) {
-      return {
-        ...asText(renderErrorMarkdown("task.get", `Invalid task ID format: ${taskId}`, ["- expected format: TASK-0001", "- retry with a valid task ID"])),
-        isError: true,
-      };
+    async ({ rootPath }) => {
+      const text = [
+        "Triage governance across projects and pick execution target.",
+        "",
+        `1) Run projectNext(${rootPath ? `rootPath=\"${rootPath}\"` : ""}).`,
+        "2) Select top ranked project.",
+        "3) Run projectContext(projectPath=<selectedProject>).",
+        "4) Run taskList(projectPath=<selectedProject>, status=IN_PROGRESS).",
+        "5) If none, run taskNext to select TODO/IN_PROGRESS candidate.",
+        "6) Continue with taskContext for detailed evidence mapping.",
+      ].join("\n")
+
+      return asUserPrompt(text)
     }
+  )
+}
 
-    const governanceDir = await resolveGovernanceDir(projectPath);
-    const { tasksPath, tasks } = await loadTasks(governanceDir);
-    const taskGetHooks = await readTaskGetHooks(governanceDir);
-    const task = tasks.find((item) => item.id === taskId);
-    if (!task) {
-      return {
-        ...asText(renderErrorMarkdown("task.get", `Task not found: ${taskId}`, ["- run `task.list` to discover available IDs", "- retry with an existing task ID"])),
-        isError: true,
-      };
-    }
+registerTaskTools(server)
+registerProjectTools(server)
+registerRoadmapTools(server)
+registerGovernanceResources()
+registerGovernancePrompts()
 
-    const taskLocation = (await findTextReferences(tasksPath, taskId))[0];
-    const artifacts = await discoverGovernanceArtifacts(governanceDir);
-    const fileCandidates = candidateFilesFromArtifacts(artifacts);
-    const referenceLocations = (
-      await Promise.all(fileCandidates.map((file) => findTextReferences(file, taskId)))
-    ).flat();
+async function main(): Promise<void> {
+  const transport = new StdioServerTransport()
+  await server.connect(transport)
+}
 
-    const relatedArtifacts = Array.from(new Set(referenceLocations.map((item) => item.filePath)));
-    const suggestedReadOrder = [tasksPath, ...relatedArtifacts.filter((item) => item !== tasksPath)];
-
-    const hookPaths = Object.values(task.hooks)
-      .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
-      .map((value) => path.resolve(governanceDir, value));
-    const hookStatus = `head=${taskGetHooks.head ? "loaded" : "missing"}, footer=${taskGetHooks.footer ? "loaded" : "missing"}`;
-
-    const coreMarkdown = [
-      "# task.get",
-      "",
-      "## Summary",
-      `- governanceDir: ${governanceDir}`,
-      `- taskId: ${task.id}`,
-      `- title: ${task.title}`,
-      `- status: ${task.status}`,
-      `- owner: ${task.owner}`,
-      `- updatedAt: ${task.updatedAt}`,
-      `- roadmapRefs: ${task.roadmapRefs.join(", ") || "(none)"}`,
-      `- taskLocation: ${taskLocation ? `${taskLocation.filePath}#L${taskLocation.line}` : tasksPath}`,
-      `- hookStatus: ${hookStatus}`,
-      "",
-      "## Evidence",
-      "### Related Artifacts",
-      ...(relatedArtifacts.length > 0 ? relatedArtifacts.map((file) => `- ${file}`) : ["- (none)"]),
-      "",
-      "### Reference Locations",
-      ...(referenceLocations.length > 0
-        ? referenceLocations.map((item) => `- ${item.filePath}#L${item.line}: ${item.text}`)
-        : ["- (none)"]),
-      "",
-      "### Hook Paths",
-      ...(hookPaths.length > 0 ? hookPaths.map((item) => `- ${item}`) : ["- (none)"]),
-      "",
-      "### Suggested Read Order",
-      ...suggestedReadOrder.map((item, index) => `${index + 1}. ${item}`),
-      "",
-      "## Agent Guidance",
-      "- Read the files in Suggested Read Order.",
-      "- Verify whether current status and evidence are consistent.",
-      "- If updates are needed, edit tasks/designs/reports markdown directly and keep TASK IDs unchanged.",
-      "- After editing, re-run `task.get` to verify references and context consistency.",
-    ].join("\n");
-
-    const markdownParts = [
-      taskGetHooks.head,
-      coreMarkdown,
-      taskGetHooks.footer,
-    ].filter((value): value is string => typeof value === "string" && value.trim().length > 0);
-
-    const markdown = markdownParts.join("\n\n---\n\n");
-    return asText(markdown);
-  }
-);
-
-server.registerTool(
-  "roadmap.list",
-  {
-    title: "Roadmap List",
-    description: "List roadmap IDs and related tasks for project planning",
-    inputSchema: {
-      projectPath: z.string(),
-    },
-  },
-  async ({ projectPath }) => {
-    const governanceDir = await resolveGovernanceDir(projectPath);
-    const roadmapIds = await readRoadmapIds(governanceDir);
-    const { tasks } = await loadTasks(governanceDir);
-
-    const markdown = [
-      "# roadmap.list",
-      "",
-      "## Summary",
-      `- governanceDir: ${governanceDir}`,
-      `- roadmapCount: ${roadmapIds.length}`,
-      "",
-      "## Evidence",
-      "- roadmaps:",
-      ...(roadmapIds.length > 0
-        ? roadmapIds.map((id) => {
-            const linkedTasks = tasks.filter((task) => task.roadmapRefs.includes(id));
-            return `- ${id} | linkedTasks=${linkedTasks.length}`;
-          })
-        : ["- (none)"]),
-      "",
-      "## Agent Guidance",
-      "- Next: call `roadmap.get` with a roadmap ID to inspect references and related tasks.",
-    ].join("\n");
-
-    return asText(markdown);
-  }
-);
-
-server.registerTool(
-  "roadmap.get",
-  {
-    title: "Roadmap Get",
-    description: "Get one roadmap with related task and evidence locations for agent guidance",
-    inputSchema: {
-      projectPath: z.string(),
-      roadmapId: z.string(),
-    },
-  },
-  async ({ projectPath, roadmapId }) => {
-    if (!isValidRoadmapId(roadmapId)) {
-      return {
-        ...asText(renderErrorMarkdown("roadmap.get", `Invalid roadmap ID format: ${roadmapId}`, ["- expected format: ROADMAP-0001", "- retry with a valid roadmap ID"])),
-        isError: true,
-      };
-    }
-
-    const governanceDir = await resolveGovernanceDir(projectPath);
-    const artifacts = await discoverGovernanceArtifacts(governanceDir);
-    const fileCandidates = candidateFilesFromArtifacts(artifacts);
-    const referenceLocations = (
-      await Promise.all(fileCandidates.map((file) => findTextReferences(file, roadmapId)))
-    ).flat();
-
-    const { tasks } = await loadTasks(governanceDir);
-    const relatedTasks = tasks.filter((task) => task.roadmapRefs.includes(roadmapId));
-
-    const markdown = [
-      "# roadmap.get",
-      "",
-      "## Summary",
-      `- governanceDir: ${governanceDir}`,
-      `- roadmapId: ${roadmapId}`,
-      `- relatedTasks: ${relatedTasks.length}`,
-      `- references: ${referenceLocations.length}`,
-      "",
-      "## Evidence",
-      "### Related Tasks",
-      ...(relatedTasks.length > 0
-        ? relatedTasks.map((task) => `- ${task.id} | ${task.status} | ${task.title}`)
-        : ["- (none)"]),
-      "",
-      "### Reference Locations",
-      ...(referenceLocations.length > 0
-        ? referenceLocations.map((item) => `- ${item.filePath}#L${item.line}: ${item.text}`)
-        : ["- (none)"]),
-      "",
-      "## Agent Guidance",
-      "- Read roadmap references first, then related tasks.",
-      "- Keep ROADMAP/TASK IDs unchanged while updating markdown files.",
-      "- Re-run `roadmap.get` after edits to confirm references remain consistent.",
-    ].join("\n");
-
-    return asText(markdown);
-  }
-);
-
-const transport = new StdioServerTransport();
-await server.connect(transport);
+void main().catch((error) => {
+  console.error("Server error:", error)
+  process.exit(1)
+})

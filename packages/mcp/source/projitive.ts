@@ -1,10 +1,108 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import process from "node:process";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
+import { discoverGovernanceArtifacts } from "./helpers/files/index.js";
 import { catchIt } from "./helpers/catch/index.js";
+import { loadTasks, type Task } from "./tasks.js";
 
 export const PROJECT_MARKER = ".projitive";
 
 const ignoreNames = new Set(["node_modules", ".git", ".next", "dist", "build"]);
+const DEFAULT_SCAN_DEPTH = 3;
+const MAX_SCAN_DEPTH = 8;
+
+function asText(markdown: string) {
+  return {
+    content: [{ type: "text" as const, text: markdown }],
+  };
+}
+
+function normalizePath(inputPath?: string): string {
+  return inputPath ? path.resolve(inputPath) : process.cwd();
+}
+
+function parseDepthFromEnv(rawDepth: string | undefined): number | undefined {
+  if (typeof rawDepth !== "string" || rawDepth.trim().length === 0) {
+    return undefined;
+  }
+
+  const parsed = Number.parseInt(rawDepth, 10);
+  if (!Number.isFinite(parsed)) {
+    return undefined;
+  }
+
+  return Math.min(MAX_SCAN_DEPTH, Math.max(0, parsed));
+}
+
+export function resolveScanRoot(inputPath?: string): string {
+  const fallback = process.env.PROJITIVE_SCAN_ROOT_PATH;
+  return normalizePath(inputPath ?? fallback);
+}
+
+export function resolveScanDepth(inputDepth?: number): number {
+  if (typeof inputDepth === "number") {
+    return inputDepth;
+  }
+  return parseDepthFromEnv(process.env.PROJITIVE_SCAN_MAX_DEPTH) ?? DEFAULT_SCAN_DEPTH;
+}
+
+function renderArtifactsMarkdown(artifacts: Awaited<ReturnType<typeof discoverGovernanceArtifacts>>): string {
+  const rows = artifacts.map((item) => {
+    if (item.kind === "file") {
+      const lineText = item.lineCount == null ? "-" : String(item.lineCount);
+      return `- ${item.exists ? "✅" : "❌"} ${item.name}  \n  path: ${item.path}  \n  lineCount: ${lineText}`;
+    }
+
+    const nested = (item.markdownFiles ?? [])
+      .map((entry) => `    - ${entry.path} (lines: ${entry.lineCount})`)
+      .join("\n");
+    return `- ${item.exists ? "✅" : "❌"} ${item.name}/  \n  path: ${item.path}${nested ? `\n  markdownFiles:\n${nested}` : ""}`;
+  });
+
+  return rows.join("\n");
+}
+
+async function readTasksSnapshot(governanceDir: string): Promise<{ tasksPath: string; exists: boolean; tasks: Task[] }> {
+  const tasksPath = path.join(governanceDir, "tasks.md");
+  const markdown = await fs.readFile(tasksPath, "utf-8").catch(() => undefined);
+  if (typeof markdown !== "string") {
+    return { tasksPath, exists: false, tasks: [] };
+  }
+
+  const { parseTasksBlock } = await import("./tasks.js");
+  const tasks = await parseTasksBlock(markdown);
+  return { tasksPath, exists: true, tasks };
+}
+
+function latestTaskUpdatedAt(tasks: Task[]): string {
+  const timestamps = tasks
+    .map((task) => new Date(task.updatedAt).getTime())
+    .filter((value) => Number.isFinite(value));
+
+  if (timestamps.length === 0) {
+    return "(unknown)";
+  }
+
+  return new Date(Math.max(...timestamps)).toISOString();
+}
+
+function actionableScore(tasks: Task[]): number {
+  return tasks.filter((task) => task.status === "IN_PROGRESS").length * 2
+    + tasks.filter((task) => task.status === "TODO").length;
+}
+
+async function readRoadmapIds(governanceDir: string): Promise<string[]> {
+  const roadmapPath = path.join(governanceDir, "roadmap.md");
+  try {
+    const markdown = await fs.readFile(roadmapPath, "utf-8");
+    const matches = markdown.match(/ROADMAP-\d{4}/g) ?? [];
+    return Array.from(new Set(matches));
+  } catch {
+    return [];
+  }
+}
 
 export async function hasProjectMarker(dirPath: string): Promise<boolean> {
   const markerPath = path.join(dirPath, PROJECT_MARKER);
@@ -66,4 +164,218 @@ export async function discoverProjects(rootPath: string, maxDepth: number): Prom
 
   await walk(rootPath, 0);
   return Array.from(new Set(results)).sort();
+}
+
+export function registerProjectTools(server: McpServer): void {
+  server.registerTool(
+    "projectScan",
+    {
+      title: "Project Scan",
+      description: "Scan filesystem and discover project governance roots marked by .projitive",
+      inputSchema: {
+        rootPath: z.string().optional(),
+        maxDepth: z.number().int().min(0).max(8).optional(),
+      },
+    },
+    async ({ rootPath, maxDepth }) => {
+      const root = resolveScanRoot(rootPath);
+      const depth = resolveScanDepth(maxDepth);
+      const projects = await discoverProjects(root, depth);
+
+      const markdown = [
+        "# projectScan",
+        "",
+        "## Summary",
+        `- rootPath: ${root}`,
+        `- maxDepth: ${depth}`,
+        `- discoveredCount: ${projects.length}`,
+        "",
+        "## Evidence",
+        "- projects:",
+        ...(projects.length > 0 ? projects.map((project, index) => `${index + 1}. ${project}`) : ["- (none)"]),
+        "",
+        "## Agent Guidance",
+        "- Use one discovered project path and call `projectLocate` to lock governance root.",
+        "- Then call `projectContext` to inspect current governance state.",
+        "",
+        "## Next Call",
+        ...(projects.length > 0
+          ? [`- projectLocate(inputPath=\"${projects[0]}\")`]
+          : ["- (none)"]),
+      ].join("\n");
+
+      return asText(markdown);
+    }
+  );
+
+  server.registerTool(
+    "projectNext",
+    {
+      title: "Project Next",
+      description: "Directly list recently actionable projects for immediate agent progression",
+      inputSchema: {
+        rootPath: z.string().optional(),
+        maxDepth: z.number().int().min(0).max(8).optional(),
+        limit: z.number().int().min(1).max(50).optional(),
+      },
+    },
+    async ({ rootPath, maxDepth, limit }) => {
+      const root = resolveScanRoot(rootPath);
+      const depth = resolveScanDepth(maxDepth);
+      const projects = await discoverProjects(root, depth);
+      const snapshots = await Promise.all(
+        projects.map(async (governanceDir) => {
+          const snapshot = await readTasksSnapshot(governanceDir);
+          const inProgress = snapshot.tasks.filter((task) => task.status === "IN_PROGRESS").length;
+          const todo = snapshot.tasks.filter((task) => task.status === "TODO").length;
+          const blocked = snapshot.tasks.filter((task) => task.status === "BLOCKED").length;
+          const done = snapshot.tasks.filter((task) => task.status === "DONE").length;
+          const actionable = inProgress + todo;
+
+          return {
+            governanceDir,
+            tasksPath: snapshot.tasksPath,
+            tasksExists: snapshot.exists,
+            total: snapshot.tasks.length,
+            inProgress,
+            todo,
+            blocked,
+            done,
+            actionable,
+            latestUpdatedAt: latestTaskUpdatedAt(snapshot.tasks),
+            score: actionableScore(snapshot.tasks),
+          };
+        })
+      );
+
+      const ranked = snapshots
+        .filter((item) => item.actionable > 0)
+        .sort((a, b) => {
+          if (b.score !== a.score) {
+            return b.score - a.score;
+          }
+          return b.latestUpdatedAt.localeCompare(a.latestUpdatedAt);
+        })
+        .slice(0, limit ?? 10);
+
+      const markdown = [
+        "# projectNext",
+        "",
+        "## Summary",
+        `- rootPath: ${root}`,
+        `- maxDepth: ${depth}`,
+        `- matchedProjects: ${projects.length}`,
+        `- actionableProjects: ${ranked.length}`,
+        `- limit: ${limit ?? 10}`,
+        "",
+        "## Evidence",
+        "- rankedProjects:",
+        ...(ranked.length > 0
+          ? ranked.map(
+              (item, index) =>
+                `${index + 1}. ${item.governanceDir} | actionable=${item.actionable} | in_progress=${item.inProgress} | todo=${item.todo} | blocked=${item.blocked} | done=${item.done} | latest=${item.latestUpdatedAt} | tasksPath=${item.tasksPath}${item.tasksExists ? "" : " (missing)"}`
+            )
+          : ["- (none)"]),
+        "",
+        "## Agent Guidance",
+        "- Pick top 1 project and call `projectContext` with its governanceDir.",
+        "- Then call `taskList` and `taskContext` to continue execution.",
+        "- If `tasksPath` is missing, create tasks.md using project convention before task-level operations.",
+        "",
+        "## Next Call",
+        ...(ranked.length > 0
+          ? [`- projectContext(projectPath=\"${ranked[0].governanceDir}\")`]
+          : ["- (none)"]),
+      ].join("\n");
+
+      return asText(markdown);
+    }
+  );
+
+  server.registerTool(
+    "projectLocate",
+    {
+      title: "Project Locate",
+      description: "Resolve current project governance root from an in-project path by finding the nearest .projitive marker",
+      inputSchema: {
+        inputPath: z.string(),
+      },
+    },
+    async ({ inputPath }) => {
+      const resolvedFrom = normalizePath(inputPath);
+      const governanceDir = await resolveGovernanceDir(resolvedFrom);
+      const markerPath = path.join(governanceDir, ".projitive");
+
+      const markdown = [
+        "# projectLocate",
+        "",
+        "## Summary",
+        `- resolvedFrom: ${resolvedFrom}`,
+        `- governanceDir: ${governanceDir}`,
+        `- markerPath: ${markerPath}`,
+        "",
+        "## Agent Guidance",
+        "- Call `projectContext` with this governanceDir to get task and roadmap summaries.",
+        "",
+        "## Next Call",
+        `- projectContext(projectPath=\"${governanceDir}\")`,
+      ].join("\n");
+
+      return asText(markdown);
+    }
+  );
+
+  server.registerTool(
+    "projectContext",
+    {
+      title: "Project Context",
+      description: "Summarize project governance context for task execution planning",
+      inputSchema: {
+        projectPath: z.string(),
+      },
+    },
+    async ({ projectPath }) => {
+      const governanceDir = await resolveGovernanceDir(projectPath);
+      const artifacts = await discoverGovernanceArtifacts(governanceDir);
+      const { tasksPath, tasks } = await loadTasks(governanceDir);
+      const roadmapIds = await readRoadmapIds(governanceDir);
+
+      const taskSummary = {
+        total: tasks.length,
+        TODO: tasks.filter((task) => task.status === "TODO").length,
+        IN_PROGRESS: tasks.filter((task) => task.status === "IN_PROGRESS").length,
+        BLOCKED: tasks.filter((task) => task.status === "BLOCKED").length,
+        DONE: tasks.filter((task) => task.status === "DONE").length,
+      };
+
+      const markdown = [
+        "# projectContext",
+        "",
+        "## Summary",
+        `- governanceDir: ${governanceDir}`,
+        `- tasksFile: ${tasksPath}`,
+        `- roadmapIds: ${roadmapIds.length}`,
+        "",
+        "## Evidence",
+        "### Task Summary",
+        `- total: ${taskSummary.total}`,
+        `- TODO: ${taskSummary.TODO}`,
+        `- IN_PROGRESS: ${taskSummary.IN_PROGRESS}`,
+        `- BLOCKED: ${taskSummary.BLOCKED}`,
+        `- DONE: ${taskSummary.DONE}`,
+        "",
+        "### Artifacts",
+        renderArtifactsMarkdown(artifacts),
+        "",
+        "## Agent Guidance",
+        "- Start from `taskList` to choose a target task.",
+        "- Then call `taskContext` with a task ID to retrieve evidence locations and reading order.",
+        "",
+        "## Next Call",
+        `- taskList(projectPath=\"${governanceDir}\")`,
+      ].join("\n");
+
+      return asText(markdown);
+    }
+  );
 }
