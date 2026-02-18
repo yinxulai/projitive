@@ -4,8 +4,15 @@ on:
   release:
     types:
       - published
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Release tag to verify against package version (must not start with v; optional, defaults to current ref)
+        required: false
+        type: string
 
 permissions:
+  id-token: write  # Required for OIDC
   contents: read
 
 jobs:
@@ -23,9 +30,9 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
+          cache: npm
           node-version: 20
           registry-url: https://registry.npmjs.org
-          cache: npm
           cache-dependency-path: packages/mcp/package-lock.json
 
       - name: Install dependencies
@@ -42,11 +49,10 @@ jobs:
 
       - name: Verify package version matches release tag
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.release_tag || github.ref_name }}
         run: |
           PACKAGE_VERSION=$(node -p "require('./package.json').version")
-          RELEASE_VERSION=${RELEASE_TAG#v}
-          if [ "$PACKAGE_VERSION" != "$RELEASE_VERSION" ]; then
+          if [ "$PACKAGE_VERSION" != "$RELEASE_TAG" ]; then
             echo "Package version ($PACKAGE_VERSION) does not match release tag ($RELEASE_TAG)."
             exit 1
           fi
