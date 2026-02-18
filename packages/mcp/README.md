@@ -2,7 +2,7 @@
 
 Language: English | [简体中文](README_CN.md)
 
-**Current Spec Version: projitive-spec v1.0.0 | MCP Version: 1.0.0**
+**Current Spec Version: projitive-spec v1.0.0 | MCP Version: 1.0.1**
 
 Projitive MCP server (semantic interface edition) helps agents discover projects, select tasks, locate evidence, and execute under governance workflows.
 
@@ -108,6 +108,34 @@ node /absolute/path/to/packages/mcp/output/index.js
 ## Tools Methods
 
 ### Discovery Layer
+
+#### `projectInit`
+
+- **Purpose**: manually initialize governance directory structure for a project (default `.projitive`).
+- **Input**: `rootPath?`, `governanceDir?`, `force?`
+- **Output Example (Markdown)**:
+
+```markdown
+# projectInit
+
+## Summary
+- rootPath: /workspace/proj-a
+- governanceDir: /workspace/proj-a/.projitive
+- markerPath: /workspace/proj-a/.projitive/.projitive
+- force: false
+
+## Evidence
+- createdFiles: 4
+- updatedFiles: 0
+- skippedFiles: 0
+
+## Agent Guidance
+- If files were skipped and you want to overwrite templates, rerun with force=true.
+- Continue with projectContext and taskList for execution.
+
+## Next Call
+- projectContext(projectPath="/workspace/proj-a/.projitive")
+```
 
 #### `projectNext`
 

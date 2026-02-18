@@ -8,6 +8,7 @@ import { catchIt } from "./helpers/catch/index.js";
 import { loadTasks, type Task } from "./tasks.js";
 
 export const PROJECT_MARKER = ".projitive";
+const DEFAULT_GOVERNANCE_DIR = ".projitive";
 
 const ignoreNames = new Set(["node_modules", ".git", ".next", "dist", "build"]);
 const DEFAULT_SCAN_DEPTH = 3;
@@ -21,6 +22,23 @@ function asText(markdown: string) {
 
 function normalizePath(inputPath?: string): string {
   return inputPath ? path.resolve(inputPath) : process.cwd();
+}
+
+function normalizeGovernanceDirName(input?: string): string {
+  const name = input?.trim() || DEFAULT_GOVERNANCE_DIR;
+  if (!name) {
+    throw new Error("governanceDir cannot be empty");
+  }
+  if (path.isAbsolute(name)) {
+    throw new Error("governanceDir must be a relative directory name");
+  }
+  if (name.includes("/") || name.includes("\\")) {
+    throw new Error("governanceDir must not contain path separators");
+  }
+  if (name === "." || name === "..") {
+    throw new Error("governanceDir must be a normal directory name");
+  }
+  return name;
 }
 
 function parseDepthFromEnv(rawDepth: string | undefined): number | undefined {
@@ -166,7 +184,163 @@ export async function discoverProjects(rootPath: string, maxDepth: number): Prom
   return Array.from(new Set(results)).sort();
 }
 
+type InitArtifactResult = {
+  path: string;
+  action: "created" | "updated" | "skipped";
+};
+
+type ProjectInitResult = {
+  rootPath: string;
+  governanceDir: string;
+  markerPath: string;
+  directories: InitArtifactResult[];
+  files: InitArtifactResult[];
+};
+
+async function pathExists(targetPath: string): Promise<boolean> {
+  const accessResult = await catchIt(fs.access(targetPath));
+  return !accessResult.isError();
+}
+
+async function writeTextFile(targetPath: string, content: string, force: boolean): Promise<InitArtifactResult> {
+  const exists = await pathExists(targetPath);
+  if (exists && !force) {
+    return { path: targetPath, action: "skipped" };
+  }
+
+  await fs.writeFile(targetPath, content, "utf-8");
+  return { path: targetPath, action: exists ? "updated" : "created" };
+}
+
+function defaultReadmeMarkdown(governanceDirName: string): string {
+  return [
+    "# Projitive Governance Workspace",
+    "",
+    `This directory (\`${governanceDirName}/\`) is the governance root for this project.`,
+    "",
+    "## Conventions",
+    "- Keep roadmap/task/design/report files in markdown.",
+    "- Keep IDs stable (TASK-xxxx / ROADMAP-xxxx).",
+    "- Update report evidence before status transitions.",
+  ].join("\n");
+}
+
+function defaultRoadmapMarkdown(): string {
+  return [
+    "# Roadmap",
+    "",
+    "## Active Milestones",
+    "- [ ] ROADMAP-0001: Bootstrap governance baseline (time: 2026-Q1)",
+  ].join("\n");
+}
+
+function defaultTasksMarkdown(): string {
+  const updatedAt = new Date().toISOString();
+  return [
+    "# Tasks",
+    "",
+    "<!-- PROJITIVE:TASKS:START -->",
+    "## TASK-0001 | TODO | Bootstrap governance workspace",
+    "- owner: unassigned",
+    "- summary: Create initial governance artifacts and confirm task execution loop.",
+    `- updatedAt: ${updatedAt}`,
+    "- links:",
+    "- roadmapRefs: ROADMAP-0001",
+    "- hooks:",
+    "<!-- PROJITIVE:TASKS:END -->",
+  ].join("\n");
+}
+
+export async function initializeProjectStructure(inputPath?: string, governanceDir?: string, force = false): Promise<ProjectInitResult> {
+  const rootPath = normalizePath(inputPath);
+  const governanceDirName = normalizeGovernanceDirName(governanceDir);
+
+  const rootStat = await catchIt(fs.stat(rootPath));
+  if (rootStat.isError()) {
+    throw new Error(`Path not found: ${rootPath}`);
+  }
+  if (!rootStat.value.isDirectory()) {
+    throw new Error(`rootPath must be a directory: ${rootPath}`);
+  }
+
+  const governancePath = path.join(rootPath, governanceDirName);
+  const directories: InitArtifactResult[] = [];
+
+  const requiredDirectories = [governancePath, path.join(governancePath, "designs"), path.join(governancePath, "reports"), path.join(governancePath, "hooks")];
+  for (const dirPath of requiredDirectories) {
+    const exists = await pathExists(dirPath);
+    await fs.mkdir(dirPath, { recursive: true });
+    directories.push({ path: dirPath, action: exists ? "skipped" : "created" });
+  }
+
+  const markerPath = path.join(governancePath, PROJECT_MARKER);
+  const files = await Promise.all([
+    writeTextFile(markerPath, "", force),
+    writeTextFile(path.join(governancePath, "README.md"), defaultReadmeMarkdown(governanceDirName), force),
+    writeTextFile(path.join(governancePath, "roadmap.md"), defaultRoadmapMarkdown(), force),
+    writeTextFile(path.join(governancePath, "tasks.md"), defaultTasksMarkdown(), force),
+  ]);
+
+  return {
+    rootPath,
+    governanceDir: governancePath,
+    markerPath,
+    directories,
+    files,
+  };
+}
+
 export function registerProjectTools(server: McpServer): void {
+  server.registerTool(
+    "projectInit",
+    {
+      title: "Project Init",
+      description: "Initialize Projitive governance directory structure manually (default .projitive)",
+      inputSchema: {
+        rootPath: z.string().optional(),
+        governanceDir: z.string().optional(),
+        force: z.boolean().optional(),
+      },
+    },
+    async ({ rootPath, governanceDir, force }) => {
+      const initialized = await initializeProjectStructure(rootPath, governanceDir, force ?? false);
+
+      const filesByAction = {
+        created: initialized.files.filter((item) => item.action === "created"),
+        updated: initialized.files.filter((item) => item.action === "updated"),
+        skipped: initialized.files.filter((item) => item.action === "skipped"),
+      };
+
+      const markdown = [
+        "# projectInit",
+        "",
+        "## Summary",
+        `- rootPath: ${initialized.rootPath}`,
+        `- governanceDir: ${initialized.governanceDir}`,
+        `- markerPath: ${initialized.markerPath}`,
+        `- force: ${force === true ? "true" : "false"}`,
+        "",
+        "## Evidence",
+        `- createdFiles: ${filesByAction.created.length}`,
+        `- updatedFiles: ${filesByAction.updated.length}`,
+        `- skippedFiles: ${filesByAction.skipped.length}`,
+        "- directories:",
+        ...initialized.directories.map((item) => `  - ${item.action}: ${item.path}`),
+        "- files:",
+        ...initialized.files.map((item) => `  - ${item.action}: ${item.path}`),
+        "",
+        "## Agent Guidance",
+        "- If files were skipped and you want to overwrite templates, rerun with force=true.",
+        "- Continue with projectContext and taskList for execution.",
+        "",
+        "## Next Call",
+        `- projectContext(projectPath=\"${initialized.governanceDir}\")`,
+      ].join("\n");
+
+      return asText(markdown);
+    }
+  );
+
   server.registerTool(
     "projectScan",
     {

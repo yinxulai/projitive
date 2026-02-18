@@ -54,6 +54,7 @@ function renderMethodCatalogMarkdown(): string {
     "## Methods",
     "| Group | Method | Role |",
     "|---|---|---|",
+    "| Project | projectInit | initialize governance directory structure |",
     "| Project | projectScan | discover governance projects by marker |",
     "| Project | projectNext | rank actionable projects |",
     "| Project | projectLocate | resolve nearest governance root |",
