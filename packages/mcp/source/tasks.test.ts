@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   TASKS_END,
   TASKS_START,
+  collectTaskLintSuggestions,
   isValidTaskId,
   normalizeTask,
   parseTasksBlock,
@@ -97,5 +98,61 @@ describe("tasks module", () => {
     expect(ranked[0].task.id).toBe("TASK-0003");
     expect(ranked[1].task.id).toBe("TASK-0002");
     expect(ranked[2].task.id).toBe("TASK-0001");
+  });
+
+  it("renders lint lines with stable code prefix", () => {
+    const task = normalizeTask({
+      id: "TASK-0001",
+      title: "lint",
+      status: "IN_PROGRESS",
+      owner: "",
+      roadmapRefs: [],
+    });
+
+    const lint = collectTaskLintSuggestions([task]);
+    expect(lint.some((line) => line.startsWith("- [TASK_IN_PROGRESS_OWNER_EMPTY]"))).toBe(true);
+    expect(lint.some((line) => line.startsWith("- [TASK_ROADMAP_REFS_EMPTY]"))).toBe(true);
+  });
+
+  it("scopes outside-marker lint to provided task IDs", () => {
+    const tasks = [
+      normalizeTask({ id: "TASK-0001", title: "A", status: "TODO", roadmapRefs: ["ROADMAP-0001"] }),
+      normalizeTask({ id: "TASK-0002", title: "B", status: "TODO", roadmapRefs: ["ROADMAP-0001"] }),
+    ];
+
+    const markdown = [
+      "# Tasks",
+      "TASK-0002 outside",
+      "TASK-0003 outside",
+      TASKS_START,
+      "## TASK-0001 | TODO | A",
+      "- owner: (none)",
+      "- summary: (none)",
+      "- updatedAt: 2026-02-18T00:00:00.000Z",
+      "- roadmapRefs: ROADMAP-0001",
+      "- links:",
+      "  - (none)",
+      "- hooks:",
+      "  - (none)",
+      "## TASK-0002 | TODO | B",
+      "- owner: (none)",
+      "- summary: (none)",
+      "- updatedAt: 2026-02-18T00:00:00.000Z",
+      "- roadmapRefs: ROADMAP-0001",
+      "- links:",
+      "  - (none)",
+      "- hooks:",
+      "  - (none)",
+      TASKS_END,
+    ].join("\n");
+
+    const scoped = collectTaskLintSuggestions(tasks, markdown, new Set(["TASK-0001"]));
+    const scopedOutside = scoped.find((line) => line.includes("TASK IDs found outside marker block"));
+    expect(scopedOutside).toBeUndefined();
+
+    const all = collectTaskLintSuggestions(tasks, markdown);
+    const allOutside = all.find((line) => line.includes("TASK IDs found outside marker block"));
+    expect(allOutside).toContain("TASK-0002");
+    expect(allOutside).toContain("TASK-0003");
   });
 });

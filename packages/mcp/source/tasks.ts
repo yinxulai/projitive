@@ -2,9 +2,21 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { candidateFilesFromArtifacts } from "./helpers/artifacts/index.js";
 import { discoverGovernanceArtifacts } from "./helpers/files/index.js";
 import { findTextReferences } from "./helpers/markdown/index.js";
+import {
+  asText,
+  evidenceSection,
+  guidanceSection,
+  lintSection,
+  nextCallSection,
+  renderErrorMarkdown,
+  renderToolResponseMarkdown,
+  summarySection,
+} from "./helpers/response/index.js";
 import { catchIt } from "./helpers/catch/index.js";
+import { TASK_LINT_CODES, renderLintSuggestions, type LintSuggestion } from "./helpers/linter/index.js";
 import { resolveGovernanceDir, resolveScanDepth, resolveScanRoot, discoverProjects } from "./projitive.js";
 import { isValidRoadmapId } from "./roadmap.js";
 
@@ -35,6 +47,8 @@ export type TaskDocument = {
   markdown: string;
 };
 
+export type TaskLintSuggestion = LintSuggestion;
+
 export type ActionableTaskCandidate = {
   governanceDir: string;
   tasksPath: string;
@@ -45,25 +59,8 @@ export type ActionableTaskCandidate = {
   taskPriority: number;
 };
 
-function asText(markdown: string) {
-  return {
-    content: [{ type: "text" as const, text: markdown }],
-  };
-}
-
-function renderErrorMarkdown(toolName: string, cause: string, nextSteps: string[], retryExample?: string): string {
-  return [
-    `# ${toolName}`,
-    "",
-    "## Error",
-    `- cause: ${cause}`,
-    "",
-    "## Next Step",
-    ...(nextSteps.length > 0 ? nextSteps : ["- (none)"]),
-    "",
-    "## Retry Example",
-    `- ${retryExample ?? "(none)"}`,
-  ].join("\n");
+function appendLintSuggestions(target: string[], suggestions: LintSuggestion[]): void {
+  target.push(...renderLintSuggestions(suggestions));
 }
 
 function taskStatusGuidance(task: Task): string[] {
@@ -92,17 +89,6 @@ function taskStatusGuidance(task: Task): string[] {
     "- This task is DONE: only reopen when new requirement changes scope.",
     "- Keep report evidence immutable unless correction is required.",
   ];
-}
-
-function candidateFilesFromArtifacts(artifacts: Awaited<ReturnType<typeof discoverGovernanceArtifacts>>): string[] {
-  return artifacts
-    .filter((item) => item.exists)
-    .flatMap((item) => {
-      if (item.kind === "file") {
-        return [item.path];
-      }
-      return (item.markdownFiles ?? []).map((entry) => entry.path);
-    });
 }
 
 async function readOptionalMarkdown(filePath: string): Promise<string | undefined> {
@@ -377,9 +363,15 @@ export function findTaskIdsOutsideMarkers(markdown: string): string[] {
   return Array.from(new Set(ids));
 }
 
-export function collectTaskLintSuggestions(tasks: Task[], markdown?: string): string[] {
-  const suggestions: string[] = [];
+type CollectTaskLintOptions = {
+  markdown?: string;
+  outsideMarkerScopeIds?: Set<string>;
+};
 
+function collectTaskLintSuggestionItems(tasks: Task[], options: CollectTaskLintOptions = {}): TaskLintSuggestion[] {
+  const suggestions: TaskLintSuggestion[] = [];
+
+  const { markdown, outsideMarkerScopeIds } = options;
   const duplicateIds = Array.from(
     tasks.reduce((counter, task) => {
       counter.set(task.id, (counter.get(task.id) ?? 0) + 1);
@@ -391,72 +383,125 @@ export function collectTaskLintSuggestions(tasks: Task[], markdown?: string): st
     .map(([id]) => id);
 
   if (duplicateIds.length > 0) {
-    suggestions.push(`- Duplicate task IDs detected: ${duplicateIds.join(", ")}. Keep task IDs unique in marker block.`);
+    suggestions.push({
+      code: TASK_LINT_CODES.DUPLICATE_ID,
+      message: `Duplicate task IDs detected: ${duplicateIds.join(", ")}.`,
+      fixHint: "Keep task IDs unique in marker block.",
+    });
   }
 
   const inProgressWithoutOwner = tasks.filter((task) => task.status === "IN_PROGRESS" && task.owner.trim().length === 0);
   if (inProgressWithoutOwner.length > 0) {
-    suggestions.push(`- ${inProgressWithoutOwner.length} IN_PROGRESS task(s) have empty owner. Set owner before continuing execution.`);
+    suggestions.push({
+      code: TASK_LINT_CODES.IN_PROGRESS_OWNER_EMPTY,
+      message: `${inProgressWithoutOwner.length} IN_PROGRESS task(s) have empty owner.`,
+      fixHint: "Set owner before continuing execution.",
+    });
   }
 
   const doneWithoutLinks = tasks.filter((task) => task.status === "DONE" && task.links.length === 0);
   if (doneWithoutLinks.length > 0) {
-    suggestions.push(`- ${doneWithoutLinks.length} DONE task(s) have no links evidence. Add at least one evidence link before keeping DONE.`);
+    suggestions.push({
+      code: TASK_LINT_CODES.DONE_LINKS_MISSING,
+      message: `${doneWithoutLinks.length} DONE task(s) have no links evidence.`,
+      fixHint: "Add at least one evidence link before keeping DONE.",
+    });
   }
 
   const blockedWithoutReason = tasks.filter((task) => task.status === "BLOCKED" && task.summary.trim().length === 0);
   if (blockedWithoutReason.length > 0) {
-    suggestions.push(`- ${blockedWithoutReason.length} BLOCKED task(s) have empty summary. Add blocker reason and unblock condition.`);
+    suggestions.push({
+      code: TASK_LINT_CODES.BLOCKED_SUMMARY_EMPTY,
+      message: `${blockedWithoutReason.length} BLOCKED task(s) have empty summary.`,
+      fixHint: "Add blocker reason and unblock condition.",
+    });
   }
 
   const invalidUpdatedAt = tasks.filter((task) => !Number.isFinite(new Date(task.updatedAt).getTime()));
   if (invalidUpdatedAt.length > 0) {
-    suggestions.push(`- ${invalidUpdatedAt.length} task(s) have invalid updatedAt format. Use ISO8601 UTC timestamp.`);
+    suggestions.push({
+      code: TASK_LINT_CODES.UPDATED_AT_INVALID,
+      message: `${invalidUpdatedAt.length} task(s) have invalid updatedAt format.`,
+      fixHint: "Use ISO8601 UTC timestamp.",
+    });
   }
 
   const missingRoadmapRefs = tasks.filter((task) => task.roadmapRefs.length === 0);
   if (missingRoadmapRefs.length > 0) {
-    suggestions.push(`- ${missingRoadmapRefs.length} task(s) have empty roadmapRefs. Bind at least one ROADMAP-xxxx when applicable.`);
+    suggestions.push({
+      code: TASK_LINT_CODES.ROADMAP_REFS_EMPTY,
+      message: `${missingRoadmapRefs.length} task(s) have empty roadmapRefs.`,
+      fixHint: "Bind at least one ROADMAP-xxxx when applicable.",
+    });
   }
 
   if (typeof markdown === "string") {
-    const outsideMarkerTaskIds = findTaskIdsOutsideMarkers(markdown);
+    const outsideMarkerTaskIds = findTaskIdsOutsideMarkers(markdown)
+      .filter((taskId) => (outsideMarkerScopeIds ? outsideMarkerScopeIds.has(taskId) : true));
     if (outsideMarkerTaskIds.length > 0) {
-      suggestions.push(`- TASK IDs found outside marker block: ${outsideMarkerTaskIds.join(", ")}. Keep task source of truth inside marker region only.`);
+      suggestions.push({
+        code: TASK_LINT_CODES.OUTSIDE_MARKER,
+        message: `TASK IDs found outside marker block: ${outsideMarkerTaskIds.join(", ")}.`,
+        fixHint: "Keep task source of truth inside marker region only.",
+      });
     }
   }
 
   return suggestions;
 }
 
+export function collectTaskLintSuggestions(tasks: Task[], markdown?: string, outsideMarkerScopeIds?: Set<string>): string[] {
+  return renderLintSuggestions(collectTaskLintSuggestionItems(tasks, { markdown, outsideMarkerScopeIds }));
+}
+
 function collectSingleTaskLintSuggestions(task: Task): string[] {
-  const suggestions: string[] = [];
+  const suggestions: TaskLintSuggestion[] = [];
 
   if (task.status === "IN_PROGRESS" && task.owner.trim().length === 0) {
-    suggestions.push("- Current task is IN_PROGRESS but owner is empty. Set owner before continuing execution.");
+    suggestions.push({
+      code: TASK_LINT_CODES.IN_PROGRESS_OWNER_EMPTY,
+      message: "Current task is IN_PROGRESS but owner is empty.",
+      fixHint: "Set owner before continuing execution.",
+    });
   }
 
   if (task.status === "DONE" && task.links.length === 0) {
-    suggestions.push("- Current task is DONE but has no links evidence. Add at least one evidence link.");
+    suggestions.push({
+      code: TASK_LINT_CODES.DONE_LINKS_MISSING,
+      message: "Current task is DONE but has no links evidence.",
+      fixHint: "Add at least one evidence link.",
+    });
   }
 
   if (task.status === "BLOCKED" && task.summary.trim().length === 0) {
-    suggestions.push("- Current task is BLOCKED but summary is empty. Add blocker reason and unblock condition.");
+    suggestions.push({
+      code: TASK_LINT_CODES.BLOCKED_SUMMARY_EMPTY,
+      message: "Current task is BLOCKED but summary is empty.",
+      fixHint: "Add blocker reason and unblock condition.",
+    });
   }
 
   if (!Number.isFinite(new Date(task.updatedAt).getTime())) {
-    suggestions.push("- Current task updatedAt is invalid. Use ISO8601 UTC timestamp.");
+    suggestions.push({
+      code: TASK_LINT_CODES.UPDATED_AT_INVALID,
+      message: "Current task updatedAt is invalid.",
+      fixHint: "Use ISO8601 UTC timestamp.",
+    });
   }
 
   if (task.roadmapRefs.length === 0) {
-    suggestions.push("- Current task has empty roadmapRefs. Bind ROADMAP-xxxx where applicable.");
+    suggestions.push({
+      code: TASK_LINT_CODES.ROADMAP_REFS_EMPTY,
+      message: "Current task has empty roadmapRefs.",
+      fixHint: "Bind ROADMAP-xxxx where applicable.",
+    });
   }
 
-  return suggestions;
+  return renderLintSuggestions(suggestions);
 }
 
 async function collectTaskFileLintSuggestions(governanceDir: string, task: Task): Promise<string[]> {
-  const suggestions: string[] = [];
+  const suggestions: TaskLintSuggestion[] = [];
 
   for (const link of task.links) {
     const normalized = link.trim();
@@ -471,7 +516,10 @@ async function collectTaskFileLintSuggestions(governanceDir: string, task: Task)
     const resolvedPath = path.resolve(governanceDir, normalized);
     const exists = await fs.access(resolvedPath).then(() => true).catch(() => false);
     if (!exists) {
-      suggestions.push(`- Link target not found: ${normalized} (resolved: ${resolvedPath}).`);
+      suggestions.push({
+        code: TASK_LINT_CODES.LINK_TARGET_MISSING,
+        message: `Link target not found: ${normalized} (resolved: ${resolvedPath}).`,
+      });
     }
   }
 
@@ -482,11 +530,14 @@ async function collectTaskFileLintSuggestions(governanceDir: string, task: Task)
     const resolvedPath = path.resolve(governanceDir, hookPath);
     const exists = await fs.access(resolvedPath).then(() => true).catch(() => false);
     if (!exists) {
-      suggestions.push(`- Hook file not found for ${hookKey}: ${hookPath} (resolved: ${resolvedPath}).`);
+      suggestions.push({
+        code: TASK_LINT_CODES.HOOK_FILE_MISSING,
+        message: `Hook file not found for ${hookKey}: ${hookPath} (resolved: ${resolvedPath}).`,
+      });
     }
   }
 
-  return suggestions;
+  return renderLintSuggestions(suggestions);
 }
 
 export function renderTasksMarkdown(tasks: Task[]): string {
@@ -590,38 +641,42 @@ export function registerTaskTools(server: McpServer): void {
       const filtered = tasks
         .filter((task) => (status ? task.status === status : true))
         .slice(0, limit ?? 100);
-      const lintSuggestions = collectTaskLintSuggestions(filtered, tasksMarkdown);
+      const lintSuggestions = collectTaskLintSuggestions(
+        filtered,
+        tasksMarkdown,
+        new Set(filtered.map((task) => task.id))
+      );
       if (status && filtered.length === 0) {
-        lintSuggestions.push(`- No tasks matched status=${status}. Confirm status values or update task states.`);
+        appendLintSuggestions(lintSuggestions, [
+          {
+            code: TASK_LINT_CODES.FILTER_EMPTY,
+            message: `No tasks matched status=${status}.`,
+            fixHint: "Confirm status values or update task states.",
+          },
+        ]);
       }
       const nextTaskId = filtered[0]?.id;
 
-      const markdown = [
-        "# taskList",
-        "",
-        "## Summary",
-        `- governanceDir: ${governanceDir}`,
-        `- tasksPath: ${tasksPath}`,
-        `- filter.status: ${status ?? "(none)"}`,
-        `- returned: ${filtered.length}`,
-        "",
-        "## Evidence",
-        "- tasks:",
-        ...(filtered.length > 0
-          ? filtered.map((task) => `- ${task.id} | ${task.status} | ${task.title} | owner=${task.owner || ""} | updatedAt=${task.updatedAt}`)
-          : ["- (none)"]),
-        "",
-        "## Agent Guidance",
-        "- Pick one task ID and call `taskContext`.",
-        "",
-        "## Lint Suggestions",
-        ...(lintSuggestions.length > 0 ? lintSuggestions : ["- (none)"]),
-        "",
-        "## Next Call",
-        ...(nextTaskId
-          ? [`- taskContext(projectPath=\"${governanceDir}\", taskId=\"${nextTaskId}\")`]
-          : ["- (none)"]),
-      ].join("\n");
+      const markdown = renderToolResponseMarkdown({
+        toolName: "taskList",
+        sections: [
+          summarySection([
+            `- governanceDir: ${governanceDir}`,
+            `- tasksPath: ${tasksPath}`,
+            `- filter.status: ${status ?? "(none)"}`,
+            `- returned: ${filtered.length}`,
+          ]),
+          evidenceSection([
+            "- tasks:",
+            ...filtered.map((task) => `- ${task.id} | ${task.status} | ${task.title} | owner=${task.owner || ""} | updatedAt=${task.updatedAt}`),
+          ]),
+          guidanceSection(["- Pick one task ID and call `taskContext`." ]),
+          lintSection(lintSuggestions),
+          nextCallSection(nextTaskId
+            ? `taskContext(projectPath=\"${governanceDir}\", taskId=\"${nextTaskId}\")`
+            : undefined),
+        ],
+      });
 
       return asText(markdown);
     }
@@ -645,29 +700,24 @@ export function registerTaskTools(server: McpServer): void {
       const rankedCandidates = rankActionableTaskCandidates(await readActionableTaskCandidates(projects));
 
       if (rankedCandidates.length === 0) {
-        const markdown = [
-          "# taskNext",
-          "",
-          "## Summary",
-          `- rootPath: ${root}`,
-          `- maxDepth: ${depth}`,
-          `- matchedProjects: ${projects.length}`,
-          "- actionableTasks: 0",
-          "",
-          "## Evidence",
-          "- candidates:",
-          "- (none)",
-          "",
-          "## Agent Guidance",
-          "- No TODO/IN_PROGRESS task is available.",
-          "- Create or reopen tasks in tasks.md, then rerun `taskNext`.",
-          "",
-          "## Lint Suggestions",
-          "- No actionable tasks found. Verify task statuses and required fields in marker block.",
-          "",
-          "## Next Call",
-          `- projectNext(rootPath=\"${root}\", maxDepth=${depth})`,
-        ].join("\n");
+        const markdown = renderToolResponseMarkdown({
+          toolName: "taskNext",
+          sections: [
+            summarySection([
+              `- rootPath: ${root}`,
+              `- maxDepth: ${depth}`,
+              `- matchedProjects: ${projects.length}`,
+              "- actionableTasks: 0",
+            ]),
+            evidenceSection(["- candidates:", "- (none)"]),
+            guidanceSection([
+              "- No TODO/IN_PROGRESS task is available.",
+              "- Create or reopen tasks in tasks.md, then rerun `taskNext`.",
+            ]),
+            lintSection(["- No actionable tasks found. Verify task statuses and required fields in marker block."]),
+            nextCallSection(`projectNext(rootPath=\"${root}\", maxDepth=${depth})`),
+          ],
+        });
         return asText(markdown);
       }
 
@@ -684,58 +734,56 @@ export function registerTaskTools(server: McpServer): void {
       const suggestedReadOrder = [selected.tasksPath, ...relatedArtifacts.filter((item) => item !== selected.tasksPath)];
       const candidateLimit = topCandidates ?? 5;
 
-      const markdown = [
-        "# taskNext",
-        "",
-        "## Summary",
-        `- rootPath: ${root}`,
-        `- maxDepth: ${depth}`,
-        `- matchedProjects: ${projects.length}`,
-        `- actionableTasks: ${rankedCandidates.length}`,
-        `- selectedProject: ${selected.governanceDir}`,
-        `- selectedTaskId: ${selected.task.id}`,
-        `- selectedTaskStatus: ${selected.task.status}`,
-        "",
-        "## Evidence",
-        "### Selected Task",
-        `- id: ${selected.task.id}`,
-        `- title: ${selected.task.title}`,
-        `- owner: ${selected.task.owner || "(none)"}`,
-        `- updatedAt: ${selected.task.updatedAt}`,
-        `- roadmapRefs: ${selected.task.roadmapRefs.join(", ") || "(none)"}`,
-        `- taskLocation: ${taskLocation ? `${taskLocation.filePath}#L${taskLocation.line}` : selected.tasksPath}`,
-        "",
-        "### Top Candidates",
-        ...rankedCandidates
-          .slice(0, candidateLimit)
-          .map((item, index) => `${index + 1}. ${item.task.id} | ${item.task.status} | ${item.task.title} | project=${item.governanceDir} | projectScore=${item.projectScore} | latest=${item.projectLatestUpdatedAt}`),
-        "",
-        "### Selection Reason",
-        "- Rank rule: projectScore DESC -> taskPriority DESC -> taskUpdatedAt DESC.",
-        `- Selected candidate scores: projectScore=${selected.projectScore}, taskPriority=${selected.taskPriority}, taskUpdatedAtMs=${selected.taskUpdatedAtMs}.`,
-        "",
-        "### Related Artifacts",
-        ...(relatedArtifacts.length > 0 ? relatedArtifacts.map((file) => `- ${file}`) : ["- (none)"]),
-        "",
-        "### Reference Locations",
-        ...(referenceLocations.length > 0
-          ? referenceLocations.map((item) => `- ${item.filePath}#L${item.line}: ${item.text}`)
-          : ["- (none)"]),
-        "",
-        "### Suggested Read Order",
-        ...suggestedReadOrder.map((item, index) => `${index + 1}. ${item}`),
-        "",
-        "## Agent Guidance",
-        "- Start immediately with Suggested Read Order and execute the selected task.",
-        "- Update markdown artifacts directly while keeping TASK/ROADMAP IDs unchanged.",
-        "- Re-run `taskContext` for the selectedTaskId after edits to verify evidence consistency.",
-        "",
-        "## Lint Suggestions",
-        ...(lintSuggestions.length > 0 ? lintSuggestions : ["- (none)"]),
-        "",
-        "## Next Call",
-        `- taskContext(projectPath=\"${selected.governanceDir}\", taskId=\"${selected.task.id}\")`,
-      ].join("\n");
+      const markdown = renderToolResponseMarkdown({
+        toolName: "taskNext",
+        sections: [
+          summarySection([
+            `- rootPath: ${root}`,
+            `- maxDepth: ${depth}`,
+            `- matchedProjects: ${projects.length}`,
+            `- actionableTasks: ${rankedCandidates.length}`,
+            `- selectedProject: ${selected.governanceDir}`,
+            `- selectedTaskId: ${selected.task.id}`,
+            `- selectedTaskStatus: ${selected.task.status}`,
+          ]),
+          evidenceSection([
+            "### Selected Task",
+            `- id: ${selected.task.id}`,
+            `- title: ${selected.task.title}`,
+            `- owner: ${selected.task.owner || "(none)"}`,
+            `- updatedAt: ${selected.task.updatedAt}`,
+            `- roadmapRefs: ${selected.task.roadmapRefs.join(", ") || "(none)"}`,
+            `- taskLocation: ${taskLocation ? `${taskLocation.filePath}#L${taskLocation.line}` : selected.tasksPath}`,
+            "",
+            "### Top Candidates",
+            ...rankedCandidates
+              .slice(0, candidateLimit)
+              .map((item, index) => `${index + 1}. ${item.task.id} | ${item.task.status} | ${item.task.title} | project=${item.governanceDir} | projectScore=${item.projectScore} | latest=${item.projectLatestUpdatedAt}`),
+            "",
+            "### Selection Reason",
+            "- Rank rule: projectScore DESC -> taskPriority DESC -> taskUpdatedAt DESC.",
+            `- Selected candidate scores: projectScore=${selected.projectScore}, taskPriority=${selected.taskPriority}, taskUpdatedAtMs=${selected.taskUpdatedAtMs}.`,
+            "",
+            "### Related Artifacts",
+            ...(relatedArtifacts.length > 0 ? relatedArtifacts.map((file) => `- ${file}`) : ["- (none)"]),
+            "",
+            "### Reference Locations",
+            ...(referenceLocations.length > 0
+              ? referenceLocations.map((item) => `- ${item.filePath}#L${item.line}: ${item.text}`)
+              : ["- (none)"]),
+            "",
+            "### Suggested Read Order",
+            ...suggestedReadOrder.map((item, index) => `${index + 1}. ${item}`),
+          ]),
+          guidanceSection([
+            "- Start immediately with Suggested Read Order and execute the selected task.",
+            "- Update markdown artifacts directly while keeping TASK/ROADMAP IDs unchanged.",
+            "- Re-run `taskContext` for the selectedTaskId after edits to verify evidence consistency.",
+          ]),
+          lintSection(lintSuggestions),
+          nextCallSection(`taskContext(projectPath=\"${selected.governanceDir}\", taskId=\"${selected.task.id}\")`),
+        ],
+      });
 
       return asText(markdown);
     }
@@ -757,7 +805,7 @@ export function registerTaskTools(server: McpServer): void {
           ...asText(renderErrorMarkdown(
             "taskContext",
             `Invalid task ID format: ${taskId}`,
-            ["- expected format: TASK-0001", "- retry with a valid task ID"],
+            ["expected format: TASK-0001", "retry with a valid task ID"],
             `taskContext(projectPath=\"${projectPath}\", taskId=\"TASK-0001\")`
           )),
           isError: true,
@@ -773,7 +821,7 @@ export function registerTaskTools(server: McpServer): void {
           ...asText(renderErrorMarkdown(
             "taskContext",
             `Task not found: ${taskId}`,
-            ["- run `taskList` to discover available IDs", "- retry with an existing task ID"],
+            ["run `taskList` to discover available IDs", "retry with an existing task ID"],
             `taskList(projectPath=\"${governanceDir}\")`
           )),
           isError: true,
@@ -787,7 +835,13 @@ export function registerTaskTools(server: McpServer): void {
 
       const outsideMarkerTaskIds = findTaskIdsOutsideMarkers(tasksMarkdown);
       if (outsideMarkerTaskIds.includes(task.id)) {
-        lintSuggestions.push(`- Current task ID appears outside marker block (${task.id}). Keep task source of truth inside marker region.`);
+        appendLintSuggestions(lintSuggestions, [
+          {
+            code: TASK_LINT_CODES.OUTSIDE_MARKER,
+            message: `Current task ID appears outside marker block (${task.id}).`,
+            fixHint: "Keep task source of truth inside marker region.",
+          },
+        ]);
       }
 
       const taskLocation = (await findTextReferences(tasksPath, taskId))[0];
@@ -806,54 +860,64 @@ export function registerTaskTools(server: McpServer): void {
       const hookStatus = `head=${taskContextHooks.head ? "loaded" : "missing"}, footer=${taskContextHooks.footer ? "loaded" : "missing"}`;
 
       if (!taskContextHooks.head) {
-        lintSuggestions.push(`- Missing ${taskContextHooks.headPath}. Add a task context head hook template if you need standardized preface.`);
+        appendLintSuggestions(lintSuggestions, [
+          {
+            code: TASK_LINT_CODES.CONTEXT_HOOK_HEAD_MISSING,
+            message: `Missing ${taskContextHooks.headPath}.`,
+            fixHint: "Add a task context head hook template if you need standardized preface.",
+          },
+        ]);
       }
       if (!taskContextHooks.footer) {
-        lintSuggestions.push(`- Missing ${taskContextHooks.footerPath}. Add a task context footer hook template for standardized close-out checks.`);
+        appendLintSuggestions(lintSuggestions, [
+          {
+            code: TASK_LINT_CODES.CONTEXT_HOOK_FOOTER_MISSING,
+            message: `Missing ${taskContextHooks.footerPath}.`,
+            fixHint: "Add a task context footer hook template for standardized close-out checks.",
+          },
+        ]);
       }
 
-      const coreMarkdown = [
-        "# taskContext",
-        "",
-        "## Summary",
-        `- governanceDir: ${governanceDir}`,
-        `- taskId: ${task.id}`,
-        `- title: ${task.title}`,
-        `- status: ${task.status}`,
-        `- owner: ${task.owner}`,
-        `- updatedAt: ${task.updatedAt}`,
-        `- roadmapRefs: ${task.roadmapRefs.join(", ") || "(none)"}`,
-        `- taskLocation: ${taskLocation ? `${taskLocation.filePath}#L${taskLocation.line}` : tasksPath}`,
-        `- hookStatus: ${hookStatus}`,
-        "",
-        "## Evidence",
-        "### Related Artifacts",
-        ...(relatedArtifacts.length > 0 ? relatedArtifacts.map((file) => `- ${file}`) : ["- (none)"]),
-        "",
-        "### Reference Locations",
-        ...(referenceLocations.length > 0
-          ? referenceLocations.map((item) => `- ${item.filePath}#L${item.line}: ${item.text}`)
-          : ["- (none)"]),
-        "",
-        "### Hook Paths",
-        ...(hookPaths.length > 0 ? hookPaths.map((item) => `- ${item}`) : ["- (none)"]),
-        "",
-        "### Suggested Read Order",
-        ...suggestedReadOrder.map((item, index) => `${index + 1}. ${item}`),
-        "",
-        "## Agent Guidance",
-        "- Read the files in Suggested Read Order.",
-        "- Verify whether current status and evidence are consistent.",
-        ...taskStatusGuidance(task),
-        "- If updates are needed, edit tasks/designs/reports markdown directly and keep TASK IDs unchanged.",
-        "- After editing, re-run `taskContext` to verify references and context consistency.",
-        "",
-        "## Lint Suggestions",
-        ...(lintSuggestions.length > 0 ? lintSuggestions : ["- (none)"]),
-        "",
-        "## Next Call",
-        `- taskContext(projectPath=\"${governanceDir}\", taskId=\"${task.id}\")`,
-      ].join("\n");
+      const coreMarkdown = renderToolResponseMarkdown({
+        toolName: "taskContext",
+        sections: [
+          summarySection([
+            `- governanceDir: ${governanceDir}`,
+            `- taskId: ${task.id}`,
+            `- title: ${task.title}`,
+            `- status: ${task.status}`,
+            `- owner: ${task.owner}`,
+            `- updatedAt: ${task.updatedAt}`,
+            `- roadmapRefs: ${task.roadmapRefs.join(", ") || "(none)"}`,
+            `- taskLocation: ${taskLocation ? `${taskLocation.filePath}#L${taskLocation.line}` : tasksPath}`,
+            `- hookStatus: ${hookStatus}`,
+          ]),
+          evidenceSection([
+            "### Related Artifacts",
+            ...(relatedArtifacts.length > 0 ? relatedArtifacts.map((file) => `- ${file}`) : ["- (none)"]),
+            "",
+            "### Reference Locations",
+            ...(referenceLocations.length > 0
+              ? referenceLocations.map((item) => `- ${item.filePath}#L${item.line}: ${item.text}`)
+              : ["- (none)"]),
+            "",
+            "### Hook Paths",
+            ...(hookPaths.length > 0 ? hookPaths.map((item) => `- ${item}`) : ["- (none)"]),
+            "",
+            "### Suggested Read Order",
+            ...suggestedReadOrder.map((item, index) => `${index + 1}. ${item}`),
+          ]),
+          guidanceSection([
+            "- Read the files in Suggested Read Order.",
+            "- Verify whether current status and evidence are consistent.",
+            ...taskStatusGuidance(task),
+            "- If updates are needed, edit tasks/designs/reports markdown directly and keep TASK IDs unchanged.",
+            "- After editing, re-run `taskContext` to verify references and context consistency.",
+          ]),
+          lintSection(lintSuggestions),
+          nextCallSection(`taskContext(projectPath=\"${governanceDir}\", taskId=\"${task.id}\")`),
+        ],
+      });
 
       const markdownParts = [
         taskContextHooks.head,

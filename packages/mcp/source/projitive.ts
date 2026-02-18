@@ -5,6 +5,16 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { discoverGovernanceArtifacts } from "./helpers/files/index.js";
 import { catchIt } from "./helpers/catch/index.js";
+import { PROJECT_LINT_CODES, renderLintSuggestions } from "./helpers/linter/index.js";
+import {
+  asText,
+  evidenceSection,
+  guidanceSection,
+  lintSection,
+  nextCallSection,
+  renderToolResponseMarkdown,
+  summarySection,
+} from "./helpers/response/index.js";
 import { collectTaskLintSuggestions, loadTasks, loadTasksDocument, type Task } from "./tasks.js";
 
 export const PROJECT_MARKER = ".projitive";
@@ -13,12 +23,6 @@ const DEFAULT_GOVERNANCE_DIR = ".projitive";
 const ignoreNames = new Set(["node_modules", ".git", ".next", "dist", "build"]);
 const DEFAULT_SCAN_DEPTH = 3;
 const MAX_SCAN_DEPTH = 8;
-
-function asText(markdown: string) {
-  return {
-    content: [{ type: "text" as const, text: markdown }],
-  };
-}
 
 function normalizePath(inputPath?: string): string {
   return inputPath ? path.resolve(inputPath) : process.cwd();
@@ -86,7 +90,18 @@ async function readTasksSnapshot(governanceDir: string): Promise<{ tasksPath: st
   const tasksPath = path.join(governanceDir, "tasks.md");
   const markdown = await fs.readFile(tasksPath, "utf-8").catch(() => undefined);
   if (typeof markdown !== "string") {
-    return { tasksPath, exists: false, tasks: [], lintSuggestions: ["- tasks.md is missing. Initialize governance tasks structure first."] };
+    return {
+      tasksPath,
+      exists: false,
+      tasks: [],
+      lintSuggestions: renderLintSuggestions([
+        {
+          code: PROJECT_LINT_CODES.TASKS_FILE_MISSING,
+          message: "tasks.md is missing.",
+          fixHint: "Initialize governance tasks structure first.",
+        },
+      ]),
+    };
   }
 
   const { parseTasksBlock } = await import("./tasks.js");
@@ -311,35 +326,35 @@ export function registerProjectTools(server: McpServer): void {
         skipped: initialized.files.filter((item) => item.action === "skipped"),
       };
 
-      const markdown = [
-        "# projectInit",
-        "",
-        "## Summary",
-        `- rootPath: ${initialized.rootPath}`,
-        `- governanceDir: ${initialized.governanceDir}`,
-        `- markerPath: ${initialized.markerPath}`,
-        `- force: ${force === true ? "true" : "false"}`,
-        "",
-        "## Evidence",
-        `- createdFiles: ${filesByAction.created.length}`,
-        `- updatedFiles: ${filesByAction.updated.length}`,
-        `- skippedFiles: ${filesByAction.skipped.length}`,
-        "- directories:",
-        ...initialized.directories.map((item) => `  - ${item.action}: ${item.path}`),
-        "- files:",
-        ...initialized.files.map((item) => `  - ${item.action}: ${item.path}`),
-        "",
-        "## Agent Guidance",
-        "- If files were skipped and you want to overwrite templates, rerun with force=true.",
-        "- Continue with projectContext and taskList for execution.",
-        "",
-        "## Lint Suggestions",
-        "- After init, fill owner/roadmapRefs/links in tasks.md before marking DONE.",
-        "- Keep task source-of-truth inside marker block only.",
-        "",
-        "## Next Call",
-        `- projectContext(projectPath=\"${initialized.governanceDir}\")`,
-      ].join("\n");
+      const markdown = renderToolResponseMarkdown({
+        toolName: "projectInit",
+        sections: [
+          summarySection([
+            `- rootPath: ${initialized.rootPath}`,
+            `- governanceDir: ${initialized.governanceDir}`,
+            `- markerPath: ${initialized.markerPath}`,
+            `- force: ${force === true ? "true" : "false"}`,
+          ]),
+          evidenceSection([
+            `- createdFiles: ${filesByAction.created.length}`,
+            `- updatedFiles: ${filesByAction.updated.length}`,
+            `- skippedFiles: ${filesByAction.skipped.length}`,
+            "- directories:",
+            ...initialized.directories.map((item) => `  - ${item.action}: ${item.path}`),
+            "- files:",
+            ...initialized.files.map((item) => `  - ${item.action}: ${item.path}`),
+          ]),
+          guidanceSection([
+            "- If files were skipped and you want to overwrite templates, rerun with force=true.",
+            "- Continue with projectContext and taskList for execution.",
+          ]),
+          lintSection([
+            "- After init, fill owner/roadmapRefs/links in tasks.md before marking DONE.",
+            "- Keep task source-of-truth inside marker block only.",
+          ]),
+          nextCallSection(`projectContext(projectPath=\"${initialized.governanceDir}\")`),
+        ],
+      });
 
       return asText(markdown);
     }
@@ -360,32 +375,30 @@ export function registerProjectTools(server: McpServer): void {
       const depth = resolveScanDepth(maxDepth);
       const projects = await discoverProjects(root, depth);
 
-      const markdown = [
-        "# projectScan",
-        "",
-        "## Summary",
-        `- rootPath: ${root}`,
-        `- maxDepth: ${depth}`,
-        `- discoveredCount: ${projects.length}`,
-        "",
-        "## Evidence",
-        "- projects:",
-        ...(projects.length > 0 ? projects.map((project, index) => `${index + 1}. ${project}`) : ["- (none)"]),
-        "",
-        "## Agent Guidance",
-        "- Use one discovered project path and call `projectLocate` to lock governance root.",
-        "- Then call `projectContext` to inspect current governance state.",
-        "",
-        "## Lint Suggestions",
-        ...(projects.length === 0
-          ? ["- No governance root discovered. Add `.projitive` marker and baseline artifacts before execution."]
-          : ["- Run `projectContext` on a discovered project to receive module-level lint suggestions."]),
-        "",
-        "## Next Call",
-        ...(projects.length > 0
-          ? [`- projectLocate(inputPath=\"${projects[0]}\")`]
-          : ["- (none)"]),
-      ].join("\n");
+      const markdown = renderToolResponseMarkdown({
+        toolName: "projectScan",
+        sections: [
+          summarySection([
+            `- rootPath: ${root}`,
+            `- maxDepth: ${depth}`,
+            `- discoveredCount: ${projects.length}`,
+          ]),
+          evidenceSection([
+            "- projects:",
+            ...projects.map((project, index) => `${index + 1}. ${project}`),
+          ]),
+          guidanceSection([
+            "- Use one discovered project path and call `projectLocate` to lock governance root.",
+            "- Then call `projectContext` to inspect current governance state.",
+          ]),
+          lintSection(projects.length === 0
+            ? ["- No governance root discovered. Add `.projitive` marker and baseline artifacts before execution."]
+            : ["- Run `projectContext` on a discovered project to receive module-level lint suggestions."]),
+          nextCallSection(projects[0]
+            ? `projectLocate(inputPath=\"${projects[0]}\")`
+            : undefined),
+        ],
+      });
 
       return asText(markdown);
     }
@@ -420,7 +433,6 @@ export function registerProjectTools(server: McpServer): void {
             tasksPath: snapshot.tasksPath,
             tasksExists: snapshot.exists,
             lintSuggestions: snapshot.lintSuggestions,
-            total: snapshot.tasks.length,
             inProgress,
             todo,
             blocked,
@@ -442,42 +454,34 @@ export function registerProjectTools(server: McpServer): void {
         })
         .slice(0, limit ?? 10);
 
-      const markdown = [
-        "# projectNext",
-        "",
-        "## Summary",
-        `- rootPath: ${root}`,
-        `- maxDepth: ${depth}`,
-        `- matchedProjects: ${projects.length}`,
-        `- actionableProjects: ${ranked.length}`,
-        `- limit: ${limit ?? 10}`,
-        "",
-        "## Evidence",
-        "- rankedProjects:",
-        ...(ranked.length > 0
-          ? ranked.map(
+      const markdown = renderToolResponseMarkdown({
+        toolName: "projectNext",
+        sections: [
+          summarySection([
+            `- rootPath: ${root}`,
+            `- maxDepth: ${depth}`,
+            `- matchedProjects: ${projects.length}`,
+            `- actionableProjects: ${ranked.length}`,
+            `- limit: ${limit ?? 10}`,
+          ]),
+          evidenceSection([
+            "- rankedProjects:",
+            ...ranked.map(
               (item, index) =>
                 `${index + 1}. ${item.governanceDir} | actionable=${item.actionable} | in_progress=${item.inProgress} | todo=${item.todo} | blocked=${item.blocked} | done=${item.done} | latest=${item.latestUpdatedAt} | tasksPath=${item.tasksPath}${item.tasksExists ? "" : " (missing)"}`
-            )
-          : ["- (none)"]),
-        "",
-        "## Agent Guidance",
-        "- Pick top 1 project and call `projectContext` with its governanceDir.",
-        "- Then call `taskList` and `taskContext` to continue execution.",
-        "- If `tasksPath` is missing, create tasks.md using project convention before task-level operations.",
-        "",
-        "## Lint Suggestions",
-        ...(ranked.length > 0
-          ? ranked[0].lintSuggestions.length > 0
-            ? ranked[0].lintSuggestions
-            : ["- (none)"]
-          : ["- (none)"]),
-        "",
-        "## Next Call",
-        ...(ranked.length > 0
-          ? [`- projectContext(projectPath=\"${ranked[0].governanceDir}\")`]
-          : ["- (none)"]),
-      ].join("\n");
+            ),
+          ]),
+          guidanceSection([
+            "- Pick top 1 project and call `projectContext` with its governanceDir.",
+            "- Then call `taskList` and `taskContext` to continue execution.",
+            "- If `tasksPath` is missing, create tasks.md using project convention before task-level operations.",
+          ]),
+          lintSection(ranked[0]?.lintSuggestions ?? []),
+          nextCallSection(ranked[0]
+            ? `projectContext(projectPath=\"${ranked[0].governanceDir}\")`
+            : undefined),
+        ],
+      });
 
       return asText(markdown);
     }
@@ -497,23 +501,19 @@ export function registerProjectTools(server: McpServer): void {
       const governanceDir = await resolveGovernanceDir(resolvedFrom);
       const markerPath = path.join(governanceDir, ".projitive");
 
-      const markdown = [
-        "# projectLocate",
-        "",
-        "## Summary",
-        `- resolvedFrom: ${resolvedFrom}`,
-        `- governanceDir: ${governanceDir}`,
-        `- markerPath: ${markerPath}`,
-        "",
-        "## Agent Guidance",
-        "- Call `projectContext` with this governanceDir to get task and roadmap summaries.",
-        "",
-        "## Lint Suggestions",
-        "- Run `projectContext` to get governance/module lint suggestions for this project.",
-        "",
-        "## Next Call",
-        `- projectContext(projectPath=\"${governanceDir}\")`,
-      ].join("\n");
+      const markdown = renderToolResponseMarkdown({
+        toolName: "projectLocate",
+        sections: [
+          summarySection([
+            `- resolvedFrom: ${resolvedFrom}`,
+            `- governanceDir: ${governanceDir}`,
+            `- markerPath: ${markerPath}`,
+          ]),
+          guidanceSection(["- Call `projectContext` with this governanceDir to get task and roadmap summaries."]),
+          lintSection(["- Run `projectContext` to get governance/module lint suggestions for this project."]),
+          nextCallSection(`projectContext(projectPath=\"${governanceDir}\")`),
+        ],
+      });
 
       return asText(markdown);
     }
@@ -543,35 +543,33 @@ export function registerProjectTools(server: McpServer): void {
         DONE: tasks.filter((task) => task.status === "DONE").length,
       };
 
-      const markdown = [
-        "# projectContext",
-        "",
-        "## Summary",
-        `- governanceDir: ${governanceDir}`,
-        `- tasksFile: ${tasksPath}`,
-        `- roadmapIds: ${roadmapIds.length}`,
-        "",
-        "## Evidence",
-        "### Task Summary",
-        `- total: ${taskSummary.total}`,
-        `- TODO: ${taskSummary.TODO}`,
-        `- IN_PROGRESS: ${taskSummary.IN_PROGRESS}`,
-        `- BLOCKED: ${taskSummary.BLOCKED}`,
-        `- DONE: ${taskSummary.DONE}`,
-        "",
-        "### Artifacts",
-        renderArtifactsMarkdown(artifacts),
-        "",
-        "## Agent Guidance",
-        "- Start from `taskList` to choose a target task.",
-        "- Then call `taskContext` with a task ID to retrieve evidence locations and reading order.",
-        "",
-        "## Lint Suggestions",
-        ...(lintSuggestions.length > 0 ? lintSuggestions : ["- (none)"]),
-        "",
-        "## Next Call",
-        `- taskList(projectPath=\"${governanceDir}\")`,
-      ].join("\n");
+      const markdown = renderToolResponseMarkdown({
+        toolName: "projectContext",
+        sections: [
+          summarySection([
+            `- governanceDir: ${governanceDir}`,
+            `- tasksFile: ${tasksPath}`,
+            `- roadmapIds: ${roadmapIds.length}`,
+          ]),
+          evidenceSection([
+            "### Task Summary",
+            `- total: ${taskSummary.total}`,
+            `- TODO: ${taskSummary.TODO}`,
+            `- IN_PROGRESS: ${taskSummary.IN_PROGRESS}`,
+            `- BLOCKED: ${taskSummary.BLOCKED}`,
+            `- DONE: ${taskSummary.DONE}`,
+            "",
+            "### Artifacts",
+            renderArtifactsMarkdown(artifacts),
+          ]),
+          guidanceSection([
+            "- Start from `taskList` to choose a target task.",
+            "- Then call `taskContext` with a task ID to retrieve evidence locations and reading order.",
+          ]),
+          lintSection(lintSuggestions),
+          nextCallSection(`taskList(projectPath=\"${governanceDir}\")`),
+        ],
+      });
 
       return asText(markdown);
     }
