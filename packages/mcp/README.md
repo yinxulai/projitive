@@ -58,17 +58,43 @@ projectLocate -> projectContext -> taskList -> taskContext
 
 ## Quick Start
 
+Use npm package directly in MCP client configuration:
+
+```bash
+npx -y @projitive/mcp
+```
+
+MCP client config example (`mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "projitive": {
+      "command": "npx",
+      "args": ["-y", "@projitive/mcp"],
+      "env": {
+        "PROJITIVE_SCAN_ROOT_PATH": "/absolute/path/to/your/workspace",
+        "PROJITIVE_SCAN_MAX_DEPTH": "3"
+      }
+    }
+  }
+}
+```
+
+Environment variables:
+
+- `PROJITIVE_SCAN_ROOT_PATH`: fallback scan root for discovery methods when `rootPath` is omitted.
+- `PROJITIVE_SCAN_MAX_DEPTH`: fallback scan depth when `maxDepth` is omitted (`0-8`, default `3`).
+
+Local path startup is not the recommended usage mode in this README.
+
+For maintainers/contributors only:
+
 ```bash
 cd packages/mcp
 npm ci
 npm run build
 npm run test
-```
-
-Then configure your MCP client to run:
-
-```bash
-node /absolute/path/to/packages/mcp/output/index.js
 ```
 
 ## Spec Version

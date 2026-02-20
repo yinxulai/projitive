@@ -113,4 +113,53 @@ Key design specs include:
 2. Add `.projitive` to your target governance directory
 3. Prepare governance artifacts (`README.md`, `roadmap.md`, `tasks.md`, `designs/`, `reports/`, `hooks/`)
 4. In governance `README.md`, define `Required Reading for Agents` (local + external guides)
-5. Run `packages/mcp` and operate through MCP tools
+5. Configure MCP client with npm package and operate through MCP tools
+
+## MCP Install, Configure, and Use
+
+### 1) Install MCP via npm package
+
+Use the published package directly:
+
+```bash
+npx -y @projitive/mcp
+```
+
+Local build/start is not provided as the recommended usage path in this guide.
+
+### 2) Configure MCP client
+
+In your MCP client config (for example `mcp.json`), register the npm package as a stdio server:
+
+
+```json
+{
+  "mcpServers": {
+    "projitive": {
+      "command": "npx",
+      "args": ["-y", "@projitive/mcp"],
+      "env": {
+        "PROJITIVE_SCAN_ROOT_PATH": "/absolute/path/to/your/workspace",
+        "PROJITIVE_SCAN_MAX_DEPTH": "3"
+      }
+    }
+  }
+}
+```
+
+Environment variables:
+
+- `PROJITIVE_SCAN_ROOT_PATH`: default root directory used by scan/discovery methods (for example `projectNext` / `taskNext`) when `rootPath` is not provided.
+- `PROJITIVE_SCAN_MAX_DEPTH`: default scan depth when `maxDepth` is not provided (range `0-8`, default `3`).
+
+### 3) Verify and run the workflow
+
+After connecting the server in your MCP client, run this minimal sequence:
+
+```text
+projectLocate -> projectContext -> taskNext -> taskContext
+```
+
+Then execute updates in governed artifacts (`tasks.md`, `designs/`, `reports/`) and re-check with `taskContext`.
+
+For full method references and outputs, see `packages/mcp/README.md`.

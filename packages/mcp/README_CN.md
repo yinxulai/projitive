@@ -60,17 +60,43 @@ projectLocate -> projectContext -> taskList -> taskContext
 
 ## 快速开始
 
+建议直接通过 npm 包方式在 MCP 客户端使用：
+
+```bash
+npx -y @projitive/mcp
+```
+
+MCP 客户端配置示例（`mcp.json`）：
+
+```json
+{
+  "mcpServers": {
+    "projitive": {
+      "command": "npx",
+      "args": ["-y", "@projitive/mcp"],
+      "env": {
+        "PROJITIVE_SCAN_ROOT_PATH": "/你的工作区绝对路径",
+        "PROJITIVE_SCAN_MAX_DEPTH": "3"
+      }
+    }
+  }
+}
+```
+
+环境变量说明：
+
+- `PROJITIVE_SCAN_ROOT_PATH`：当未传 `rootPath` 时，作为扫描/发现方法的默认根目录。
+- `PROJITIVE_SCAN_MAX_DEPTH`：当未传 `maxDepth` 时使用的默认扫描深度（`0-8`，默认 `3`）。
+
+本 README 不建议本地路径方式启动。
+
+仅维护者/贡献者开发时可用：
+
 ```bash
 cd packages/mcp
 npm ci
 npm run build
 npm run test
-```
-
-在 MCP 客户端中可直接配置本地启动：
-
-```bash
-node /绝对路径/packages/mcp/output/index.js
 ```
 
 ## MCP 能力机制
