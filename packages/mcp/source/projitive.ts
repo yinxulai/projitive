@@ -259,10 +259,29 @@ function defaultTasksMarkdown(): string {
     "- owner: unassigned",
     "- summary: Create initial governance artifacts and confirm task execution loop.",
     `- updatedAt: ${updatedAt}`,
-    "- links:",
     "- roadmapRefs: ROADMAP-0001",
-    "- hooks:",
+    "- links:",
+    "  - (none)",
     "<!-- PROJITIVE:TASKS:END -->",
+  ].join("\n");
+}
+
+function defaultNoTaskDiscoveryHookMarkdown(): string {
+  return [
+    "Objective:",
+    "- When no actionable task exists, proactively discover meaningful work and convert it into TODO tasks.",
+    "",
+    "Checklist:",
+    "- Check whether code violates project guides/specs; create tasks for each actionable gap.",
+    "- Check test coverage improvement opportunities; create tasks for high-value missing tests.",
+    "- Check development/testing workflow bottlenecks; create tasks for reliability and speed improvements.",
+    "- Check TODO/FIXME/HACK comments; turn feasible items into governed tasks.",
+    "- Check dependency/security hygiene and stale tooling; create tasks where upgrades are justified.",
+    "",
+    "Output Format:",
+    "- Candidate findings (3-10)",
+    "- Proposed tasks (TASK-xxxx style)",
+    "- Priority rationale",
   ].join("\n");
 }
 
@@ -294,6 +313,7 @@ export async function initializeProjectStructure(inputPath?: string, governanceD
     writeTextFile(path.join(governancePath, "README.md"), defaultReadmeMarkdown(governanceDirName), force),
     writeTextFile(path.join(governancePath, "roadmap.md"), defaultRoadmapMarkdown(), force),
     writeTextFile(path.join(governancePath, "tasks.md"), defaultTasksMarkdown(), force),
+    writeTextFile(path.join(governancePath, "hooks", "task_no_actionable.md"), defaultNoTaskDiscoveryHookMarkdown(), force),
   ]);
 
   return {

@@ -66,6 +66,7 @@ describe("projitive module", () => {
       path.join(root, ".projitive", "README.md"),
       path.join(root, ".projitive", "roadmap.md"),
       path.join(root, ".projitive", "tasks.md"),
+      path.join(root, ".projitive", "hooks", "task_no_actionable.md"),
       path.join(root, ".projitive", "designs"),
       path.join(root, ".projitive", "reports"),
       path.join(root, ".projitive", "hooks"),

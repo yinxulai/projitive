@@ -50,6 +50,17 @@ taskNext
   -> taskNext (next cycle)
 ```
 
+When no actionable task exists (`actionableTasks: 0`), use bootstrap path:
+
+```text
+taskNext
+  -> projectContext
+  -> create 1-3 TODO tasks in tasks.md marker block (from roadmap/readme/report gaps)
+  -> taskNext
+```
+
+Optional customization: add `hooks/task_no_actionable.md` in governance root to override the default no-task discovery checklist.
+
 When the agent starts inside a project:
 
 ```text
@@ -358,17 +369,9 @@ npm run test
 
 - **Purpose**: return task detail + related evidence locations in one call (replacing `trace.references`).
 - **Input**: `projectPath`, `taskId`
-- **HOOK Injection**:
-  - If `hooks/task_get_head.md` exists, its content is prepended to result.
-  - If `hooks/task_get_footer.md` exists, its content is appended to result.
-  - Used for project-level custom guidance without changing core `taskContext` shape.
 - **Output Example (Markdown)**:
 
 ```markdown
-[hooks/task_get_head.md content (if present)]
-
----
-
 # taskContext
 
 ## Summary
@@ -380,7 +383,6 @@ npm run test
 - updatedAt: 2026-02-17T12:00:00.000Z
 - roadmapRefs: ROADMAP-0001
 - taskLocation: /workspace/proj-a/tasks.md#L42
-- hookStatus: head=loaded, footer=missing
 
 ## Evidence
 ### Related Artifacts
@@ -405,10 +407,6 @@ npm run test
 
 ## Next Call
 - taskContext(projectPath="/workspace/proj-a", taskId="TASK-0003")
-
----
-
-[hooks/task_get_footer.md content (if present)]
 ```
 
 ### Roadmap Layer

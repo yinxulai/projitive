@@ -53,7 +53,7 @@ Recommended template:
 ## Required Reading for Agents
 - Local: ./tasks.md
 - Local: ./roadmap.md
-- Local: ./hooks/on_task_assigned.md
+- Local: ./hooks/task_no_actionable.md
 - External: <official-guide-path-or-link>
 
 ## Related Artifacts

@@ -20,15 +20,14 @@
 	- `IN_PROGRESS -> DONE`：必须有验证证据
 	- `* -> BLOCKED`：必须记录阻塞原因与解锁条件
 - 最小字段建议：`id`、`title`、`status`、`owner`、`updatedAt`、`links`
-- 可选字段：`roadmapRefs`、`hooks`
-- 可选字段：`hooks`，用于任务级 HOOK 选择（如发放/完成提示覆盖）
+- 可选字段：`roadmapRefs`
 - 任务条目格式要求统一，便于 Agent 与工具解析
 - 标准格式为 marker 内的 Markdown 原生任务分段
 - 每个任务必须有唯一任务 ID
 - 推荐任务 ID 格式：`TASK-0001`、`TASK-0002` ...
 - 任务应在适用时包含关联 roadmap ID（如 `ROADMAP-0001`）
 - `designs/` 和 `reports/` 必须引用任务 ID 以支持反查
-- 任务生命周期事件可触发 `hooks/` 中的提示（尤其是发放与完成）
+- HOOK 机制属于全局后台机制（位于 `hooks/`），不在任务卡中声明
 
 推荐字段规范：
 - `id`：`TASK-\d{4}`（如 `TASK-0001`）
@@ -37,7 +36,6 @@
 - `links`：仅放相对路径或 URL
 - `links`：仅放相对路径或 URL（不要放纯 roadmap ID）
 - `roadmapRefs`：可选字符串数组，元素必须匹配 `ROADMAP-\d{4}`
-- `hooks`：可选对象，键如 `onAssigned`、`onCompleted`，值为 `hooks/` 下相对路径
 
 推荐 Markdown 原生示例：
 
@@ -50,9 +48,6 @@
 - roadmapRefs: ROADMAP-0001
 - links:
   - ./designs/task-state-machine-design.md
-- hooks:
-  - onAssigned: ./hooks/on_task_assigned.md
-  - onCompleted: ./hooks/on_task_completed.md
 <!-- PROJITIVE:TASKS:END -->
 ~~~
 

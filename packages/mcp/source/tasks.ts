@@ -26,8 +26,6 @@ export const ALLOWED_STATUS = ["TODO", "IN_PROGRESS", "BLOCKED", "DONE"] as cons
 export const TASK_ID_REGEX = /^TASK-\d{4}$/;
 
 export type TaskStatus = (typeof ALLOWED_STATUS)[number];
-export type HookKey = "onAssigned" | "onCompleted" | "onBlocked" | "onReopened";
-export type TaskHooks = Partial<Record<HookKey, string>>;
 
 export type Task = {
   id: string;
@@ -38,7 +36,6 @@ export type Task = {
   updatedAt: string;
   links: string[];
   roadmapRefs: string[];
-  hooks: TaskHooks;
 };
 
 export type TaskDocument = {
@@ -100,12 +97,39 @@ async function readOptionalMarkdown(filePath: string): Promise<string | undefine
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
-async function readTaskContextHooks(governanceDir: string): Promise<{ head?: string; footer?: string; headPath: string; footerPath: string }> {
-  const headPath = path.join(governanceDir, "hooks", "task_get_head.md");
-  const footerPath = path.join(governanceDir, "hooks", "task_get_footer.md");
+const NO_TASK_DISCOVERY_HOOK_FILE = "task_no_actionable.md";
 
-  const [head, footer] = await Promise.all([readOptionalMarkdown(headPath), readOptionalMarkdown(footerPath)]);
-  return { head, footer, headPath, footerPath };
+const DEFAULT_NO_TASK_DISCOVERY_GUIDANCE = [
+  "- Check whether current code violates project guide/spec conventions; create TODO tasks for each actionable gap.",
+  "- Check unit/integration test coverage and identify high-value missing tests; create TODO tasks for meaningful coverage improvements.",
+  "- Check development/testing workflow for bottlenecks (slow feedback, fragile scripts, unclear runbooks); create TODO tasks to improve reliability.",
+  "- Scan for TODO/FIXME/HACK comments and convert feasible items into governed TODO tasks with evidence links.",
+  "- Check dependency freshness and security advisories; create tasks for safe upgrades when needed.",
+  "- Check repeated manual operations that can be automated (lint/test/release checks); create tasks to reduce operational toil.",
+];
+
+function parseHookChecklist(markdown: string): string[] {
+  return markdown
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .filter((line) => /^[-*+]\s+/.test(line))
+    .map((line) => (line.startsWith("*") ? `-${line.slice(1)}` : line));
+}
+
+export async function resolveNoTaskDiscoveryGuidance(governanceDir?: string): Promise<string[]> {
+  if (!governanceDir) {
+    return DEFAULT_NO_TASK_DISCOVERY_GUIDANCE;
+  }
+
+  const hookPath = path.join(governanceDir, "hooks", NO_TASK_DISCOVERY_HOOK_FILE);
+  const markdown = await readOptionalMarkdown(hookPath);
+  if (typeof markdown !== "string") {
+    return DEFAULT_NO_TASK_DISCOVERY_GUIDANCE;
+  }
+
+  const checklist = parseHookChecklist(markdown);
+  return checklist.length > 0 ? checklist : DEFAULT_NO_TASK_DISCOVERY_GUIDANCE;
 }
 
 function latestTaskUpdatedAt(tasks: Task[]): string {
@@ -123,6 +147,32 @@ function latestTaskUpdatedAt(tasks: Task[]): string {
 function actionableScore(tasks: Task[]): number {
   return tasks.filter((task) => task.status === "IN_PROGRESS").length * 2
     + tasks.filter((task) => task.status === "TODO").length;
+}
+
+async function readRoadmapIds(governanceDir: string): Promise<string[]> {
+  const roadmapPath = path.join(governanceDir, "roadmap.md");
+  try {
+    const markdown = await fs.readFile(roadmapPath, "utf-8");
+    const matches = markdown.match(/ROADMAP-\d{4}/g) ?? [];
+    return Array.from(new Set(matches));
+  } catch {
+    return [];
+  }
+}
+
+export function renderTaskSeedTemplate(roadmapRef: string): string[] {
+  return [
+    "```markdown",
+    "## TASK-0001 | TODO | Define initial executable objective",
+    "- owner: ai-copilot",
+    "- summary: Convert one roadmap milestone or report gap into an actionable task.",
+    "- updatedAt: 2026-01-01T00:00:00.000Z",
+    `- roadmapRefs: ${roadmapRef}`,
+    "- links:",
+    "  - ./README.md",
+    "  - ./roadmap.md",
+    "```",
+  ];
 }
 
 async function readActionableTaskCandidates(governanceDirs: string[]): Promise<ActionableTaskCandidate[]> {
@@ -198,15 +248,6 @@ export function normalizeTask(task: Partial<Task> & { id: string; title: string 
     ? task.roadmapRefs.map(String).filter((value) => isValidRoadmapId(value))
     : [];
 
-  const inputHooks = task.hooks ?? {};
-  const normalizedHooks: TaskHooks = {};
-  for (const key of ["onAssigned", "onCompleted", "onBlocked", "onReopened"] as const) {
-    const value = inputHooks[key];
-    if (typeof value === "string" && value.trim().length > 0) {
-      normalizedHooks[key] = value;
-    }
-  }
-
   return {
     id: String(task.id),
     title: String(task.title),
@@ -216,7 +257,6 @@ export function normalizeTask(task: Partial<Task> & { id: string; title: string 
     updatedAt: task.updatedAt ? String(task.updatedAt) : nowIso(),
     links: Array.isArray(task.links) ? task.links.map(String) : [],
     roadmapRefs: Array.from(new Set(normalizedRoadmapRefs)),
-    hooks: normalizedHooks,
   };
 }
 
@@ -259,7 +299,6 @@ export async function parseTasksBlock(markdown: string): Promise<Task[]> {
       updatedAt: nowIso(),
       links: [],
       roadmapRefs: [],
-      hooks: {},
     };
 
     let inLinks = false;
@@ -334,14 +373,7 @@ export async function parseTasksBlock(markdown: string): Promise<Task[]> {
       }
 
       if (inHooks) {
-        const hookMatch = nestedValue.match(/^(onAssigned|onCompleted|onBlocked|onReopened):\s+(.+)$/);
-        if (hookMatch) {
-          const [, hookKey, hookPath] = hookMatch;
-          taskDraft.hooks = {
-            ...(taskDraft.hooks ?? {}),
-            [hookKey]: hookPath.trim(),
-          };
-        }
+        continue;
       }
     }
 
@@ -523,20 +555,6 @@ async function collectTaskFileLintSuggestions(governanceDir: string, task: Task)
     }
   }
 
-  const hookEntries = Object.entries(task.hooks)
-    .filter(([, value]) => typeof value === "string" && value.trim().length > 0) as Array<[string, string]>;
-
-  for (const [hookKey, hookPath] of hookEntries) {
-    const resolvedPath = path.resolve(governanceDir, hookPath);
-    const exists = await fs.access(resolvedPath).then(() => true).catch(() => false);
-    if (!exists) {
-      suggestions.push({
-        code: TASK_LINT_CODES.HOOK_FILE_MISSING,
-        message: `Hook file not found for ${hookKey}: ${hookPath} (resolved: ${resolvedPath}).`,
-      });
-    }
-  }
-
   return renderLintSuggestions(suggestions);
 }
 
@@ -547,14 +565,6 @@ export function renderTasksMarkdown(tasks: Task[]): string {
       ? ["- links:", ...task.links.map((link) => `  - ${link}`)]
       : ["- links:", "  - (none)"];
 
-    const hookEntries = Object.entries(task.hooks)
-      .filter(([, value]) => typeof value === "string" && value.trim().length > 0)
-      .map(([key, value]) => `  - ${key}: ${value}`);
-
-    const hooks = hookEntries.length > 0
-      ? ["- hooks:", ...hookEntries]
-      : ["- hooks:", "  - (none)"];
-
     return [
       `## ${task.id} | ${task.status} | ${task.title}`,
       `- owner: ${task.owner || "(none)"}`,
@@ -562,7 +572,6 @@ export function renderTasksMarkdown(tasks: Task[]): string {
       `- updatedAt: ${task.updatedAt}`,
       `- roadmapRefs: ${roadmapRefs}`,
       ...links,
-      ...hooks,
     ].join("\n");
   });
 
@@ -700,6 +709,30 @@ export function registerTaskTools(server: McpServer): void {
       const rankedCandidates = rankActionableTaskCandidates(await readActionableTaskCandidates(projects));
 
       if (rankedCandidates.length === 0) {
+        const projectSnapshots = await Promise.all(
+          projects.map(async (governanceDir) => {
+            const { tasksPath, tasks } = await loadTasks(governanceDir);
+            const roadmapIds = await readRoadmapIds(governanceDir);
+            const todo = tasks.filter((task) => task.status === "TODO").length;
+            const inProgress = tasks.filter((task) => task.status === "IN_PROGRESS").length;
+            const blocked = tasks.filter((task) => task.status === "BLOCKED").length;
+            const done = tasks.filter((task) => task.status === "DONE").length;
+            return {
+              governanceDir,
+              tasksPath,
+              roadmapIds,
+              total: tasks.length,
+              todo,
+              inProgress,
+              blocked,
+              done,
+            };
+          })
+        );
+
+        const preferredProject = projectSnapshots[0];
+        const preferredRoadmapRef = preferredProject?.roadmapIds[0] ?? "ROADMAP-0001";
+        const noTaskDiscoveryGuidance = await resolveNoTaskDiscoveryGuidance(preferredProject?.governanceDir);
         const markdown = renderToolResponseMarkdown({
           toolName: "taskNext",
           sections: [
@@ -709,13 +742,35 @@ export function registerTaskTools(server: McpServer): void {
               `- matchedProjects: ${projects.length}`,
               "- actionableTasks: 0",
             ]),
-            evidenceSection(["- candidates:", "- (none)"]),
+            evidenceSection([
+              "### Project Snapshots",
+              ...(projectSnapshots.length > 0
+                ? projectSnapshots.map(
+                    (item, index) => `${index + 1}. ${item.governanceDir} | total=${item.total} | todo=${item.todo} | in_progress=${item.inProgress} | blocked=${item.blocked} | done=${item.done} | roadmapIds=${item.roadmapIds.join(", ") || "(none)"} | tasksPath=${item.tasksPath}`
+                  )
+                : ["- (none)"]),
+              "",
+              "### Seed Task Template",
+              ...renderTaskSeedTemplate(preferredRoadmapRef),
+            ]),
             guidanceSection([
               "- No TODO/IN_PROGRESS task is available.",
-              "- Create or reopen tasks in tasks.md, then rerun `taskNext`.",
+              "- Use no-task discovery checklist below to proactively find and create meaningful TODO tasks.",
+              "",
+              "### No-Task Discovery Checklist",
+              ...noTaskDiscoveryGuidance,
+              "",
+              "- If no tasks exist, derive 1-3 TODO tasks from roadmap milestones, README scope, or unresolved report gaps.",
+              "- If only BLOCKED/DONE tasks exist, reopen one blocked item or create a follow-up TODO task.",
+              "- After adding tasks inside marker block, rerun `taskNext` to re-rank actionable work.",
             ]),
-            lintSection(["- No actionable tasks found. Verify task statuses and required fields in marker block."]),
-            nextCallSection(`projectNext(rootPath=\"${root}\", maxDepth=${depth})`),
+            lintSection([
+              "- No actionable tasks found. Verify task statuses and required fields in marker block.",
+              "- Ensure each new task has stable TASK-xxxx ID and at least one roadmapRefs item.",
+            ]),
+            nextCallSection(preferredProject
+              ? `projectContext(projectPath=\"${preferredProject.governanceDir}\")`
+              : `projectScan(rootPath=\"${root}\", maxDepth=${depth})`),
           ],
         });
         return asText(markdown);
@@ -814,7 +869,6 @@ export function registerTaskTools(server: McpServer): void {
 
       const governanceDir = await resolveGovernanceDir(projectPath);
       const { tasksPath, tasks, markdown: tasksMarkdown } = await loadTasksDocument(governanceDir);
-      const taskContextHooks = await readTaskContextHooks(governanceDir);
       const task = tasks.find((item) => item.id === taskId);
       if (!task) {
         return {
@@ -854,30 +908,6 @@ export function registerTaskTools(server: McpServer): void {
       const relatedArtifacts = Array.from(new Set(referenceLocations.map((item) => item.filePath)));
       const suggestedReadOrder = [tasksPath, ...relatedArtifacts.filter((item) => item !== tasksPath)];
 
-      const hookPaths = Object.values(task.hooks)
-        .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
-        .map((value) => path.resolve(governanceDir, value));
-      const hookStatus = `head=${taskContextHooks.head ? "loaded" : "missing"}, footer=${taskContextHooks.footer ? "loaded" : "missing"}`;
-
-      if (!taskContextHooks.head) {
-        appendLintSuggestions(lintSuggestions, [
-          {
-            code: TASK_LINT_CODES.CONTEXT_HOOK_HEAD_MISSING,
-            message: `Missing ${taskContextHooks.headPath}.`,
-            fixHint: "Add a task context head hook template if you need standardized preface.",
-          },
-        ]);
-      }
-      if (!taskContextHooks.footer) {
-        appendLintSuggestions(lintSuggestions, [
-          {
-            code: TASK_LINT_CODES.CONTEXT_HOOK_FOOTER_MISSING,
-            message: `Missing ${taskContextHooks.footerPath}.`,
-            fixHint: "Add a task context footer hook template for standardized close-out checks.",
-          },
-        ]);
-      }
-
       const coreMarkdown = renderToolResponseMarkdown({
         toolName: "taskContext",
         sections: [
@@ -890,7 +920,6 @@ export function registerTaskTools(server: McpServer): void {
             `- updatedAt: ${task.updatedAt}`,
             `- roadmapRefs: ${task.roadmapRefs.join(", ") || "(none)"}`,
             `- taskLocation: ${taskLocation ? `${taskLocation.filePath}#L${taskLocation.line}` : tasksPath}`,
-            `- hookStatus: ${hookStatus}`,
           ]),
           evidenceSection([
             "### Related Artifacts",
@@ -900,9 +929,6 @@ export function registerTaskTools(server: McpServer): void {
             ...(referenceLocations.length > 0
               ? referenceLocations.map((item) => `- ${item.filePath}#L${item.line}: ${item.text}`)
               : ["- (none)"]),
-            "",
-            "### Hook Paths",
-            ...(hookPaths.length > 0 ? hookPaths.map((item) => `- ${item}`) : ["- (none)"]),
             "",
             "### Suggested Read Order",
             ...suggestedReadOrder.map((item, index) => `${index + 1}. ${item}`),
@@ -919,14 +945,7 @@ export function registerTaskTools(server: McpServer): void {
         ],
       });
 
-      const markdownParts = [
-        taskContextHooks.head,
-        coreMarkdown,
-        taskContextHooks.footer,
-      ].filter((value): value is string => typeof value === "string" && value.trim().length > 0);
-
-      const markdown = markdownParts.join("\n\n---\n\n");
-      return asText(markdown);
+      return asText(coreMarkdown);
     }
   );
 }

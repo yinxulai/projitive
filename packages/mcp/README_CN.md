@@ -52,6 +52,17 @@ taskNext
   -> taskNext（进入下一轮）
 ```
 
+当没有可执行任务（`actionableTasks: 0`）时，使用启动路径：
+
+```text
+taskNext
+  -> projectContext
+  -> 在 tasks.md 标记区基于 roadmap/readme/report 缺口新增 1-3 个 TODO 任务
+  -> taskNext
+```
+
+可选：在治理根目录添加 `hooks/task_no_actionable.md`，可覆盖默认的“无任务发现清单”。
+
 如果 Agent 已在项目目录内：
 
 ```text

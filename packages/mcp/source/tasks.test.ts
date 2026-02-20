@@ -7,12 +7,17 @@ import {
   normalizeTask,
   parseTasksBlock,
   rankActionableTaskCandidates,
+  resolveNoTaskDiscoveryGuidance,
+  renderTaskSeedTemplate,
   renderTasksMarkdown,
   taskPriority,
   toTaskUpdatedAtMs,
   validateTransition,
   type ActionableTaskCandidate,
 } from "./tasks.js";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
 function buildCandidate(partial: Partial<ActionableTaskCandidate> & { id: string; title: string; status: "TODO" | "IN_PROGRESS" | "BLOCKED" | "DONE" }): ActionableTaskCandidate {
   const task = normalizeTask({
@@ -45,8 +50,6 @@ describe("tasks module", () => {
       "- roadmapRefs: ROADMAP-0001",
       "- links:",
       "  - ./designs/example.md",
-      "- hooks:",
-      "  - onAssigned: ./hooks/on_task_assigned.md",
       TASKS_END,
     ].join("\n");
 
@@ -55,7 +58,7 @@ describe("tasks module", () => {
     expect(tasks[0].id).toBe("TASK-0001");
     expect(tasks[0].status).toBe("TODO");
     expect(tasks[0].roadmapRefs).toEqual(["ROADMAP-0001"]);
-    expect(tasks[0].hooks).toEqual({ onAssigned: "./hooks/on_task_assigned.md" });
+    expect(tasks[0].links).toEqual(["./designs/example.md"]);
   });
 
   it("renders markdown containing markers", () => {
@@ -132,16 +135,12 @@ describe("tasks module", () => {
       "- roadmapRefs: ROADMAP-0001",
       "- links:",
       "  - (none)",
-      "- hooks:",
-      "  - (none)",
       "## TASK-0002 | TODO | B",
       "- owner: (none)",
       "- summary: (none)",
       "- updatedAt: 2026-02-18T00:00:00.000Z",
       "- roadmapRefs: ROADMAP-0001",
       "- links:",
-      "  - (none)",
-      "- hooks:",
       "  - (none)",
       TASKS_END,
     ].join("\n");
@@ -154,5 +153,42 @@ describe("tasks module", () => {
     const allOutside = all.find((line) => line.includes("TASK IDs found outside marker block"));
     expect(allOutside).toContain("TASK-0002");
     expect(allOutside).toContain("TASK-0003");
+  });
+
+  it("renders seed task template with provided roadmap ref", () => {
+    const lines = renderTaskSeedTemplate("ROADMAP-0099");
+    const markdown = lines.join("\n");
+
+    expect(markdown).toContain("## TASK-0001 | TODO | Define initial executable objective");
+    expect(markdown).toContain("- roadmapRefs: ROADMAP-0099");
+    expect(markdown).toContain("- links:");
+    expect(markdown).not.toContain("- hooks:");
+  });
+
+  it("uses default no-task guidance when hook file is absent", async () => {
+    const guidance = await resolveNoTaskDiscoveryGuidance("/path/that/does/not/exist");
+    expect(guidance.length).toBeGreaterThan(3);
+    expect(guidance.some((line) => line.includes("TODO/FIXME/HACK"))).toBe(true);
+  });
+
+  it("uses hook checklist when task_no_actionable hook exists", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "projitive-mcp-test-"));
+    const hooksDir = path.join(dir, "hooks");
+    await fs.mkdir(hooksDir, { recursive: true });
+    await fs.writeFile(
+      path.join(hooksDir, "task_no_actionable.md"),
+      [
+        "Objective:",
+        "- custom-item-1",
+        "- custom-item-2",
+      ].join("\n"),
+      "utf-8"
+    );
+
+    const guidance = await resolveNoTaskDiscoveryGuidance(dir);
+    expect(guidance).toContain("- custom-item-1");
+    expect(guidance).toContain("- custom-item-2");
+
+    await fs.rm(dir, { recursive: true, force: true });
   });
 });

@@ -213,7 +213,7 @@ function registerGovernancePrompts(): void {
         "Checklist:",
         "- Transition is valid per status machine.",
         "- links/roadmapRefs remain parseable and consistent.",
-        "- Hook paths (if any) still resolve.",
+        "- Only `hooks/task_no_actionable.md` is used as global background hook for no-task discovery.",
       ].join("\n")
 
       return asUserPrompt(text)

@@ -20,15 +20,14 @@ Defines the executable task pool and status transitions, answering “what shoul
   - `IN_PROGRESS -> DONE`: must include validation evidence
   - `* -> BLOCKED`: must include blocker reason and unblock condition
 - Recommended minimum fields: `id`, `title`, `status`, `owner`, `updatedAt`, `links`
-- Recommended optional fields: `roadmapRefs`, `hooks`
-- Optional field: `hooks` for task-level hook selection (e.g., assign/complete prompt overrides)
+- Recommended optional fields: `roadmapRefs`
 - Keep task item format stable for Agent/tool parsing
 - Canonical format is markdown-native task sections inside fixed markers
 - Every task MUST have a unique task ID
 - Recommended task ID format: `TASK-0001`, `TASK-0002`, ...
 - Task item should include related roadmap IDs when applicable (for example `ROADMAP-0001`)
 - Task IDs must be referenced by `designs/` and `reports/` for reverse lookup
-- Task lifecycle events may trigger hooks in `hooks/` (especially assignment and completion)
+- Hook mechanism is global and backend-managed under `hooks/`, not declared in task cards
 
 Recommended field constraints:
 - `id`: `TASK-\d{4}` (for example `TASK-0001`)
@@ -36,7 +35,6 @@ Recommended field constraints:
 - `updatedAt`: ISO8601 UTC timestamp
 - `links`: relative paths or URLs only (do not place raw roadmap IDs here)
 - `roadmapRefs`: optional string array, each item must match `ROADMAP-\d{4}`
-- `hooks`: optional object, keys like `onAssigned`, `onCompleted`, values are relative paths under `hooks/`
 
 Recommended markdown-native example:
 
@@ -49,9 +47,6 @@ Recommended markdown-native example:
 - roadmapRefs: ROADMAP-0001
 - links:
   - ./designs/task-state-machine-design.md
-- hooks:
-  - onAssigned: ./hooks/on_task_assigned.md
-  - onCompleted: ./hooks/on_task_completed.md
 <!-- PROJITIVE:TASKS:END -->
 ~~~
 

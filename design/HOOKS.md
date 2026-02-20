@@ -4,36 +4,28 @@ Language: English | [简体中文](HOOKS_CN.md)
 
 ## 1. Role in Project Governance
 
-Defines user-managed hook prompts that provide extra AI guidance at task lifecycle events (especially assignment and completion).
+Defines one global backend hook used when no actionable task exists, so agents can proactively discover and create tasks.
 
 ## 2. Design Principles
 
 - User-controlled guidance: prompts are authored by governance owners
-- Event-driven injection: prompts are bound to explicit lifecycle events
-- Deterministic behavior: stable file naming and loading priority
+- Deterministic behavior: stable global file naming and loading behavior
 - Context-safe: prompts should constrain scope and avoid ambiguous intent
+- Backend mechanism: hooks are global runtime controls, not task/roadmap-facing fields
 
 ## 3. Writing Style / Format for Content or Subfiles
 
 - Directory location: `<governanceDir>/hooks/`
-- Recommended event files:
-  - `on_task_assigned.md`: extra prompt when a task is assigned/started
-  - `on_task_completed.md`: extra prompt when a task is marked done
-- Optional event files:
-  - `on_task_blocked.md`
-  - `on_task_reopened.md`
+- Supported hook file:
+  - `task_no_actionable.md`: checklist prompt used when `taskNext` finds `actionableTasks: 0`
 - Prompt style recommendations:
   - start with objective and constraints
   - include expected output format
   - avoid project-irrelevant instructions
-- Suggested front-matter fields (optional):
-  - `id`: hook identifier (e.g., `HOOK-ASSIGN-001`)
-  - `scope`: `global` or `task`
-  - `appliesTo`: task ID list or wildcard
-- Precedence rules:
-  - Task-level hook path (from `tasks.md` `hooks.*`) has highest priority
-  - If task-level hook is not configured, fallback to global event file in `hooks/`
-  - If both missing, continue without hook injection
+- Scope rules:
+  - Hook scope is global at governance level only
+  - `tasks.md` and `roadmap.md` must not define hook selection fields
+  - If `task_no_actionable.md` is missing, built-in default checklist is used
 - Failure-handling rules:
   - Missing file: log warning and continue
   - Invalid front-matter: ignore front-matter, fallback to markdown body
@@ -44,9 +36,8 @@ Recommended template:
 
 ```md
 ---
-id: HOOK-ASSIGN-001
-scope: task
-appliesTo: ["TASK-0001", "TASK-0002"]
+id: HOOK-NO-TASK-001
+scope: global
 ---
 
 Objective:
@@ -61,8 +52,8 @@ Output Format:
 
 ## 4. Built-in Governance Checks (Module Guidance)
 
-- Task-level hook path has higher priority than global hook file
-- Warn when configured hook files are missing or unreadable
+- Hook files are global backend controls under `hooks/`
+- Warn when `task_no_actionable.md` exists but is unreadable
 - Empty hook file should be treated as no-op, not fatal
 - Invalid front-matter should degrade gracefully to markdown body
 - Hook content should include objective + constraints + output format

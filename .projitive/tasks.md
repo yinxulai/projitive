@@ -14,9 +14,6 @@
   - ./tasks.md
   - ./designs/self-management-bootstrap.md
   - ./reports/bootstrap-2026-02-17.md
-- hooks:
-  - onAssigned: ./hooks/on_task_assigned.md
-  - onCompleted: ./hooks/on_task_completed.md
 
 ## TASK-0002 | TODO | Stabilize default task.next workflow
 - owner: ai-copilot
@@ -27,8 +24,6 @@
   - ../packages/mcp/README.md
   - ../packages/mcp/source/index.ts
   - ../packages/mcp/source/tasks.ts
-- hooks:
-  - (none)
 
 ## TASK-0003 | TODO | Prepare spec v1.1 governance change proposal
 - owner: ai-copilot
@@ -39,6 +34,37 @@
   - ../README.md
   - ../design/ROADMAP.md
   - ../design/TASKS.md
-- hooks:
-  - (none)
+
+## TASK-0004 | IN_PROGRESS | Consolidate recommended task discovery workflow
+- owner: ai-copilot
+- summary: Align docs, prompts, and tool guidance on one canonical flow (`taskNext -> taskContext -> update -> verify`) with clear fallback paths.
+- updatedAt: 2026-02-20T20:51:00.000Z
+- roadmapRefs: ROADMAP-0004
+- links:
+  - ../README.md
+  - ../packages/mcp/README.md
+  - ../packages/mcp/source/tasks.ts
+  - ./README.md
+
+## TASK-0005 | TODO | Improve auto-discovery and task creation mechanism
+- owner: ai-copilot
+- summary: Propose and implement safer auto-discovery defaults plus a governed task creation mechanism with validation rules.
+- updatedAt: 2026-02-20T00:00:00.000Z
+- roadmapRefs: ROADMAP-0004
+- links:
+  - ../packages/mcp/source/projitive.ts
+  - ../packages/mcp/source/tasks.ts
+  - ../design/TASKS.md
+  - ./roadmap.md
+
+## TASK-0006 | TODO | Enhance MCP design onboarding context
+- owner: ai-copilot
+- summary: Add fast-start context for agents to understand Projitive design goals, constraints, and execution rules in minimal calls.
+- updatedAt: 2026-02-20T00:00:00.000Z
+- roadmapRefs: ROADMAP-0004
+- links:
+  - ../design/README.md
+  - ../design/PROJITIVE.md
+  - ../packages/mcp/source/index.ts
+  - ../packages/mcp/README.md
 <!-- PROJITIVE:TASKS:END -->

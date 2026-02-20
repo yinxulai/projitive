@@ -53,7 +53,7 @@
 ## Agent 必读
 - Local: ./tasks.md
 - Local: ./roadmap.md
-- Local: ./hooks/on_task_assigned.md
+- Local: ./hooks/task_no_actionable.md
 - External: <official-guide-path-or-link>
 
 ## 关联工件
