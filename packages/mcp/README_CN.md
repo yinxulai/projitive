@@ -2,7 +2,7 @@
 
 语言：简体中文 | [English](README.md)
 
-**当前规范版本：projitive-spec v1.0.0 | MCP 版本：1.0.4**
+**当前规范版本：projitive-spec v1.0.0 | MCP 版本：1.0.5**
 
 Projitive MCP Server 是一套面向 Agent 的治理执行接口，帮助你在项目中稳定完成：发现上下文、选择任务、读取证据、持续推进。
 
