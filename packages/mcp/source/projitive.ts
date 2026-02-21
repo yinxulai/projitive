@@ -498,13 +498,12 @@ export function registerProjectTools(server: McpServer): void {
       title: "Project Next",
       description: "Rank actionable projects and return the best execution target",
       inputSchema: {
-        maxDepth: z.number().int().min(0).max(8).optional(),
         limit: z.number().int().min(1).max(50).optional(),
       },
     },
-    async ({ maxDepth, limit }) => {
+    async ({ limit }) => {
       const root = resolveScanRoot();
-      const depth = resolveScanDepth(maxDepth);
+      const depth = resolveScanDepth();
       const projects = await discoverProjects(root, depth);
       const snapshots = await Promise.all(
         projects.map(async (governanceDir) => {

@@ -697,13 +697,12 @@ export function registerTaskTools(server: McpServer): void {
       title: "Task Next",
       description: "Start here to auto-select the highest-priority actionable task",
       inputSchema: {
-        maxDepth: z.number().int().min(0).max(8).optional(),
-        topCandidates: z.number().int().min(1).max(20).optional(),
+        limit: z.number().int().min(1).max(20).optional(),
       },
     },
-    async ({ maxDepth, topCandidates }) => {
+    async ({ limit }) => {
       const root = resolveScanRoot();
-      const depth = resolveScanDepth(maxDepth);
+      const depth = resolveScanDepth();
       const projects = await discoverProjects(root, depth);
       const rankedCandidates = rankActionableTaskCandidates(await readActionableTaskCandidates(projects));
 
@@ -786,7 +785,7 @@ export function registerTaskTools(server: McpServer): void {
       const taskLocation = (await findTextReferences(selected.tasksPath, selected.task.id))[0];
       const relatedArtifacts = Array.from(new Set(referenceLocations.map((item) => item.filePath)));
       const suggestedReadOrder = [selected.tasksPath, ...relatedArtifacts.filter((item) => item !== selected.tasksPath)];
-      const candidateLimit = topCandidates ?? 5;
+      const candidateLimit = limit ?? 5;
 
       const markdown = renderToolResponseMarkdown({
         toolName: "taskNext",

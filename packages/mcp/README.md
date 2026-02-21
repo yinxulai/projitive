@@ -2,7 +2,7 @@
 
 Language: English | [简体中文](README_CN.md)
 
-**Current Spec Version: projitive-spec v1.0.0 | MCP Version: 1.0.7**
+**Current Spec Version: projitive-spec v1.0.0 | MCP Version: 1.0.8**
 
 Projitive MCP server (semantic interface edition) helps agents discover projects, select tasks, locate evidence, and execute under governance workflows.
 
@@ -177,7 +177,7 @@ npm run test
 #### `projectNext`
 
 - **Purpose**: directly list recently actionable projects (ranked by actionable task count and recency).
-- **Input**: `maxDepth?`, `limit?`
+- **Input**: `limit?`
 - **Output Example (Markdown)**:
 
 ```markdown
@@ -294,7 +294,7 @@ npm run test
 #### `taskNext`
 
 - **Purpose**: one-step workflow for project discovery + best task selection + evidence/read-order output.
-- **Input**: `maxDepth?`, `topCandidates?`
+- **Input**: `limit?`
 - **Output Example (Markdown)**:
 
 ```markdown
