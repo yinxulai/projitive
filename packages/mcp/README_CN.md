@@ -2,7 +2,7 @@
 
 语言：简体中文 | [English](README.md)
 
-**当前规范版本：projitive-spec v1.0.0 | MCP 版本：1.0.5**
+**当前规范版本：projitive-spec v1.0.0 | MCP 版本：1.0.6**
 
 Projitive MCP Server 是一套面向 Agent 的治理执行接口，帮助你在项目中稳定完成：发现上下文、选择任务、读取证据、持续推进。
 
@@ -143,6 +143,11 @@ npm run test
 | Task | `taskContext` | 单任务详情与证据定位 |
 | Roadmap | `roadmapList` | 列路线图与关联任务 |
 | Roadmap | `roadmapContext` | 单路线图详情与引用定位 |
+
+参数约束（重要）：
+
+- `projectInit` 必须显式传入 `projectPath`，避免误在工作区根目录初始化。
+- `projectNext` 与 `taskNext` 不再支持 `rootPath` 入参，扫描根目录统一由 `PROJITIVE_SCAN_ROOT_PATH` 控制。
 
 ## 语言切换
 

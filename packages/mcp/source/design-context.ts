@@ -113,8 +113,11 @@ export function registerDesignContextPrompts(server: McpServer): void {
             text: [
               "Execute Projitive task with minimal calls:",
               "",
+              "Prerequisite:",
+              "- If target project has no `.projitive`, run: projectInit(projectPath=<project-dir>)",
+              "",
               "STEP 1: Get task (1 call)",
-              "- Run: taskNext(rootPath=workspace)",
+              "- Run: taskNext()",
               "- Result: selectedTaskId, suggestedReadOrder",
               "",
               "STEP 2: Load context (1-2 calls)",

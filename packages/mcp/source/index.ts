@@ -56,7 +56,7 @@ function renderMethodCatalogMarkdown(): string {
     "## Start Here",
     "- Unknown project path: `projectScan` -> `projectLocate` -> `projectContext` -> `taskNext`.",
     "- Known project path: `projectContext` -> `taskNext` (or `taskList`) -> `taskContext`.",
-    "- Need to bootstrap governance: call `projectInit` only when `.projitive` is missing.",
+    "- Need to bootstrap governance: call `projectInit(projectPath=\"<project-dir>\")` only when `.projitive` is missing.",
     "",
     "## Methods",
     "| Order | Group | Method | Agent Use |",
@@ -70,8 +70,8 @@ function renderMethodCatalogMarkdown(): string {
     "| 7 | Roadmap | roadmapList | inspect roadmap-task linkage |",
     "| 8 | Roadmap | roadmapContext | inspect one roadmap with references |",
     "| 9 | Project | projectNext | rank actionable projects across workspace |",
-    "| 10 | Project | projectInit | bootstrap governance files if missing |",
-  ].join("\n")
+    "| 10 | Project | projectInit | bootstrap governance files if missing |"
+    ].join("\n")
 }
 
 function registerGovernanceResources(): void {
@@ -169,15 +169,14 @@ function registerGovernancePrompts(): void {
       title: "Execute Task Workflow",
       description: "Primary execution prompt: select one task, execute, and verify evidence consistency",
       argsSchema: {
-        rootPath: z.string().optional(),
         projectPath: z.string().optional(),
         taskId: z.string().optional(),
       },
     },
-    async ({ rootPath, projectPath, taskId }) => {
+    async ({ projectPath, taskId }) => {
       const taskEntry = taskId && projectPath
         ? `1) Run taskContext(projectPath=\"${projectPath}\", taskId=\"${taskId}\").`
-        : `1) Run taskNext(${rootPath ? `rootPath=\"${rootPath}\"` : ""}).`;
+        : "1) Run taskNext().";
 
       const text = [
         "You are executing Projitive governance workflow in agent-first mode.",
@@ -189,6 +188,7 @@ function registerGovernancePrompts(): void {
         "4) Re-run taskContext for the selected task and verify references.",
         "",
         "Fallbacks:",
+        "- If `.projitive` is missing for a known project, run `projectInit(projectPath=\"<project-dir>\")` first.",
         "- If taskNext returns no actionable task, follow its no-task checklist and create 1-3 TODO tasks.",
         "- If project is unknown, run projectScan -> projectLocate -> projectContext before task tools.",
         "",
@@ -239,18 +239,17 @@ function registerGovernancePrompts(): void {
     {
       title: "Triage Project Governance",
       description: "Discovery-first triage prompt to pick project and next executable task",
-      argsSchema: {
-        rootPath: z.string().optional(),
-      },
+      argsSchema: {},
     },
-    async ({ rootPath }) => {
+    async () => {
       const text = [
         "Triage governance and pick one execution target quickly.",
         "",
+        "0) If known project has no `.projitive`, run projectInit(projectPath=<project-dir>) first.",
         "1) If project path is unknown, run projectScan() and pick one discovered project.",
-        `2) Run projectNext(${rootPath ? `rootPath=\"${rootPath}\"` : ""}) to rank projects.`,
+        "2) Run projectNext() to rank projects.",
         "3) Run projectContext(projectPath=<selectedProject>).",
-        "4) Run taskNext(rootPath=<workspaceRootIfNeeded>) for best actionable task.",
+        "4) Run taskNext() for best actionable task.",
         "5) If manual filtering is needed, run taskList(projectPath=<selectedProject>, status=IN_PROGRESS).",
         "6) Continue with taskContext(projectPath=<selectedProject>, taskId=<selectedTaskId>).",
       ].join("\n")

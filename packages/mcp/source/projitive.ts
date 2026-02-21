@@ -299,7 +299,7 @@ function defaultNoTaskDiscoveryHookMarkdown(): string {
   ].join("\n");
 }
 
-export async function initializeProjectStructure(inputPath?: string, governanceDir?: string, force = false): Promise<ProjectInitResult> {
+export async function initializeProjectStructure(inputPath: string, governanceDir?: string, force = false): Promise<ProjectInitResult> {
   const projectPath = normalizePath(inputPath);
   const governanceDirName = normalizeGovernanceDirName(governanceDir);
 
@@ -346,7 +346,7 @@ export function registerProjectTools(server: McpServer): void {
       title: "Project Init",
       description: "Bootstrap governance files when a project has no .projitive yet",
       inputSchema: {
-        projectPath: z.string().optional(),
+        projectPath: z.string(),
         governanceDir: z.string().optional(),
         force: z.boolean().optional(),
       },
@@ -441,13 +441,12 @@ export function registerProjectTools(server: McpServer): void {
       title: "Project Next",
       description: "Rank actionable projects and return the best execution target",
       inputSchema: {
-        rootPath: z.string().optional(),
         maxDepth: z.number().int().min(0).max(8).optional(),
         limit: z.number().int().min(1).max(50).optional(),
       },
     },
-    async ({ rootPath, maxDepth, limit }) => {
-      const root = resolveScanRoot(rootPath);
+    async ({ maxDepth, limit }) => {
+      const root = resolveScanRoot();
       const depth = resolveScanDepth(maxDepth);
       const projects = await discoverProjects(root, depth);
       const snapshots = await Promise.all(

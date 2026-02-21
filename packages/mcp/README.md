@@ -2,7 +2,7 @@
 
 Language: English | [简体中文](README_CN.md)
 
-**Current Spec Version: projitive-spec v1.0.0 | MCP Version: 1.0.5**
+**Current Spec Version: projitive-spec v1.0.0 | MCP Version: 1.0.6**
 
 Projitive MCP server (semantic interface edition) helps agents discover projects, select tasks, locate evidence, and execute under governance workflows.
 
@@ -149,7 +149,7 @@ npm run test
 #### `projectInit`
 
 - **Purpose**: manually initialize governance directory structure for a project (default `.projitive`).
-- **Input**: `projectPath?`, `governanceDir?`, `force?`
+- **Input**: `projectPath`, `governanceDir?`, `force?`
 - **Output Example (Markdown)**:
 
 ```markdown
@@ -177,7 +177,7 @@ npm run test
 #### `projectNext`
 
 - **Purpose**: directly list recently actionable projects (ranked by actionable task count and recency).
-- **Input**: `rootPath?`, `maxDepth?`, `limit?`
+- **Input**: `maxDepth?`, `limit?`
 - **Output Example (Markdown)**:
 
 ```markdown
@@ -294,7 +294,7 @@ npm run test
 #### `taskNext`
 
 - **Purpose**: one-step workflow for project discovery + best task selection + evidence/read-order output.
-- **Input**: `rootPath?`, `maxDepth?`, `topCandidates?`
+- **Input**: `maxDepth?`, `topCandidates?`
 - **Output Example (Markdown)**:
 
 ```markdown

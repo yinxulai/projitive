@@ -697,13 +697,12 @@ export function registerTaskTools(server: McpServer): void {
       title: "Task Next",
       description: "Start here to auto-select the highest-priority actionable task",
       inputSchema: {
-        rootPath: z.string().optional(),
         maxDepth: z.number().int().min(0).max(8).optional(),
         topCandidates: z.number().int().min(1).max(20).optional(),
       },
     },
-    async ({ rootPath, maxDepth, topCandidates }) => {
-      const root = resolveScanRoot(rootPath);
+    async ({ maxDepth, topCandidates }) => {
+      const root = resolveScanRoot();
       const depth = resolveScanDepth(maxDepth);
       const projects = await discoverProjects(root, depth);
       const rankedCandidates = rankActionableTaskCandidates(await readActionableTaskCandidates(projects));
