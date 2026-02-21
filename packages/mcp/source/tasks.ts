@@ -637,7 +637,7 @@ export function registerTaskTools(server: McpServer): void {
     "taskList",
     {
       title: "Task List",
-      description: "List project tasks with optional status filter for agent planning",
+      description: "List tasks for a known project and optionally filter by status",
       inputSchema: {
         projectPath: z.string(),
         status: z.enum(["TODO", "IN_PROGRESS", "BLOCKED", "DONE"]).optional(),
@@ -695,7 +695,7 @@ export function registerTaskTools(server: McpServer): void {
     "taskNext",
     {
       title: "Task Next",
-      description: "One-step discover and select the most actionable task with evidence and start guidance",
+      description: "Start here to auto-select the highest-priority actionable task",
       inputSchema: {
         rootPath: z.string().optional(),
         maxDepth: z.number().int().min(0).max(8).optional(),
@@ -848,7 +848,7 @@ export function registerTaskTools(server: McpServer): void {
     "taskContext",
     {
       title: "Task Context",
-      description: "Get one task with detail, evidence locations, and execution guidance",
+      description: "Get deep context, evidence links, and read order for one task",
       inputSchema: {
         projectPath: z.string(),
         taskId: z.string(),

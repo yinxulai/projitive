@@ -6,17 +6,16 @@
   "author": "",
   "type": "module",
   "bin": {
-    "mcp": "output/index.js"
+    "mcp": "output/source/index.js"
   },
-  "main": "./output/index.js",
-  "types": "./output/index.d.ts",
+  "main": "./output/source/index.js",
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
     "test": "vitest run",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "build": "tsc -p tsconfig.json",
+    "build": "rm -rf output && tsc -p tsconfig.json",
     "prepublishOnly": "npm run build",
     "dev": "tsc -p tsconfig.json --watch"
   },

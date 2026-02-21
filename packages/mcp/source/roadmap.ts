@@ -98,7 +98,7 @@ export function registerRoadmapTools(server: McpServer): void {
     "roadmapList",
     {
       title: "Roadmap List",
-      description: "List roadmap IDs and related tasks for project planning",
+      description: "List roadmap IDs and task linkage for planning or traceability",
       inputSchema: {
         projectPath: z.string(),
       },
@@ -139,7 +139,7 @@ export function registerRoadmapTools(server: McpServer): void {
     "roadmapContext",
     {
       title: "Roadmap Context",
-      description: "Get one roadmap with related tasks, references, and execution context",
+      description: "Inspect one roadmap with linked tasks and reference locations",
       inputSchema: {
         projectPath: z.string(),
         roadmapId: z.string(),

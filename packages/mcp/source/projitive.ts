@@ -344,7 +344,7 @@ export function registerProjectTools(server: McpServer): void {
     "projectInit",
     {
       title: "Project Init",
-      description: "Initialize Projitive governance directory structure manually (default .projitive)",
+      description: "Bootstrap governance files when a project has no .projitive yet",
       inputSchema: {
         projectPath: z.string().optional(),
         governanceDir: z.string().optional(),
@@ -398,7 +398,7 @@ export function registerProjectTools(server: McpServer): void {
     "projectScan",
     {
       title: "Project Scan",
-      description: "Scan filesystem and discover project governance roots marked by .projitive",
+      description: "Start here when project path is unknown; discover all governance roots",
       inputSchema: {},
     },
     async () => {
@@ -439,7 +439,7 @@ export function registerProjectTools(server: McpServer): void {
     "projectNext",
     {
       title: "Project Next",
-      description: "Directly list recently actionable projects for immediate agent progression",
+      description: "Rank actionable projects and return the best execution target",
       inputSchema: {
         rootPath: z.string().optional(),
         maxDepth: z.number().int().min(0).max(8).optional(),
@@ -522,7 +522,7 @@ export function registerProjectTools(server: McpServer): void {
     "projectLocate",
     {
       title: "Project Locate",
-      description: "Resolve current project governance root from an in-project path by finding the nearest .projitive marker",
+      description: "Resolve the nearest governance root from any in-project path",
       inputSchema: {
         inputPath: z.string(),
       },
@@ -554,7 +554,7 @@ export function registerProjectTools(server: McpServer): void {
     "projectContext",
     {
       title: "Project Context",
-      description: "Summarize project governance context for task execution planning",
+      description: "Get project-level summary before selecting or executing a task",
       inputSchema: {
         projectPath: z.string(),
       },

@@ -11,6 +11,7 @@ import packageJson from "../package.json" with { type: "json" }
 import { registerProjectTools } from "./projitive.js"
 import { registerTaskTools } from "./tasks.js"
 import { registerRoadmapTools } from "./roadmap.js"
+import { registerDesignContextResources, registerDesignContextPrompts } from "./design-context.js"
 
 const PROJITIVE_SPEC_VERSION = "1.0.0"
 
@@ -52,23 +53,24 @@ function renderMethodCatalogMarkdown(): string {
   return [
     "# MCP Method Catalog",
     "",
-    "## Core Pattern",
-    "- Prefer List/Context for primary discovery/detail flows.",
-    "- Use Next/Scan/Locate for acceleration and bootstrapping.",
+    "## Start Here",
+    "- Unknown project path: `projectScan` -> `projectLocate` -> `projectContext` -> `taskNext`.",
+    "- Known project path: `projectContext` -> `taskNext` (or `taskList`) -> `taskContext`.",
+    "- Need to bootstrap governance: call `projectInit` only when `.projitive` is missing.",
     "",
     "## Methods",
-    "| Group | Method | Role |",
-    "|---|---|---|",
-    "| Project | projectInit | initialize governance directory structure |",
-    "| Project | projectScan | discover governance projects by marker |",
-    "| Project | projectNext | rank actionable projects |",
-    "| Project | projectLocate | resolve nearest governance root |",
-    "| Project | projectContext | summarize project governance context |",
-    "| Task | taskList | list tasks with optional filters |",
-    "| Task | taskNext | select top actionable task |",
-    "| Task | taskContext | inspect one task with references |",
-    "| Roadmap | roadmapList | list roadmap IDs and linked tasks |",
-    "| Roadmap | roadmapContext | inspect one roadmap with references |",
+    "| Order | Group | Method | Agent Use |",
+    "|---|---|---|---|",
+    "| 1 | Project | projectScan | discover governance roots when project is unknown |",
+    "| 2 | Project | projectLocate | lock nearest governance root from any path |",
+    "| 3 | Project | projectContext | load project summary before task decisions |",
+    "| 4 | Task | taskNext | auto-pick highest-priority actionable task |",
+    "| 5 | Task | taskList | list/filter tasks for manual selection |",
+    "| 6 | Task | taskContext | inspect one task with evidence and read order |",
+    "| 7 | Roadmap | roadmapList | inspect roadmap-task linkage |",
+    "| 8 | Roadmap | roadmapContext | inspect one roadmap with references |",
+    "| 9 | Project | projectNext | rank actionable projects across workspace |",
+    "| 10 | Project | projectInit | bootstrap governance files if missing |",
   ].join("\n")
 }
 
@@ -165,7 +167,7 @@ function registerGovernancePrompts(): void {
     "executeTaskWorkflow",
     {
       title: "Execute Task Workflow",
-      description: "Guide an agent through taskNext -> taskContext -> artifact update -> verification",
+      description: "Primary execution prompt: select one task, execute, and verify evidence consistency",
       argsSchema: {
         rootPath: z.string().optional(),
         projectPath: z.string().optional(),
@@ -173,16 +175,22 @@ function registerGovernancePrompts(): void {
       },
     },
     async ({ rootPath, projectPath, taskId }) => {
+      const taskEntry = taskId && projectPath
+        ? `1) Run taskContext(projectPath=\"${projectPath}\", taskId=\"${taskId}\").`
+        : `1) Run taskNext(${rootPath ? `rootPath=\"${rootPath}\"` : ""}).`;
+
       const text = [
-        "You are executing Projitive governance workflow.",
+        "You are executing Projitive governance workflow in agent-first mode.",
         "",
-        "Execution order:",
-        taskId && projectPath
-          ? `1) Run taskContext(projectPath=\"${projectPath}\", taskId=\"${taskId}\").`
-          : `1) Run taskNext(${rootPath ? `rootPath=\"${rootPath}\"` : ""}).`,
-        "2) Read Suggested Read Order and collect blocking gaps.",
-        "3) Update markdown artifacts only (tasks/designs/reports/roadmap as needed).",
-        "4) Re-run taskContext for the selected task and verify references are consistent.",
+        "Fast path:",
+        taskEntry,
+        "2) Follow Suggested Read Order and identify execution blockers.",
+        "3) Edit governance markdown only (tasks/designs/reports/roadmap).",
+        "4) Re-run taskContext for the selected task and verify references.",
+        "",
+        "Fallbacks:",
+        "- If taskNext returns no actionable task, follow its no-task checklist and create 1-3 TODO tasks.",
+        "- If project is unknown, run projectScan -> projectLocate -> projectContext before task tools.",
         "",
         "Hard rules:",
         "- Keep TASK/ROADMAP IDs immutable.",
@@ -198,7 +206,7 @@ function registerGovernancePrompts(): void {
     "updateTaskStatusWithEvidence",
     {
       title: "Update Task Status With Evidence",
-      description: "Template for safe task status transitions and evidence alignment",
+      description: "Safe status transition playbook with mandatory evidence backfill",
       argsSchema: {
         projectPath: z.string(),
         taskId: z.string(),
@@ -207,13 +215,14 @@ function registerGovernancePrompts(): void {
     },
     async ({ projectPath, taskId, targetStatus }) => {
       const text = [
-        "Perform a safe task status update using Projitive rules.",
+        "Perform a safe task status update with evidence alignment.",
         "",
         `1) Run taskContext(projectPath=\"${projectPath}\", taskId=\"${taskId}\").`,
-        `2) Plan status transition toward ${targetStatus}.`,
+        `2) Confirm transition to ${targetStatus} is valid.`,
         "3) Update tasks.md status and updatedAt.",
         "4) Add or update a report under reports/ with concrete evidence.",
         "5) Re-run taskContext and confirm status/evidence/reference consistency.",
+        "6) If lint remains, fix and re-run taskContext once more.",
         "",
         "Checklist:",
         "- Transition is valid per status machine.",
@@ -229,21 +238,21 @@ function registerGovernancePrompts(): void {
     "triageProjectGovernance",
     {
       title: "Triage Project Governance",
-      description: "Template to inspect a project and select next actionable governance task",
+      description: "Discovery-first triage prompt to pick project and next executable task",
       argsSchema: {
         rootPath: z.string().optional(),
       },
     },
     async ({ rootPath }) => {
       const text = [
-        "Triage governance across projects and pick execution target.",
+        "Triage governance and pick one execution target quickly.",
         "",
-        `1) Run projectNext(${rootPath ? `rootPath=\"${rootPath}\"` : ""}).`,
-        "2) Select top ranked project.",
+        "1) If project path is unknown, run projectScan() and pick one discovered project.",
+        `2) Run projectNext(${rootPath ? `rootPath=\"${rootPath}\"` : ""}) to rank projects.`,
         "3) Run projectContext(projectPath=<selectedProject>).",
-        "4) Run taskList(projectPath=<selectedProject>, status=IN_PROGRESS).",
-        "5) If none, run taskNext to select TODO/IN_PROGRESS candidate.",
-        "6) Continue with taskContext for detailed evidence mapping.",
+        "4) Run taskNext(rootPath=<workspaceRootIfNeeded>) for best actionable task.",
+        "5) If manual filtering is needed, run taskList(projectPath=<selectedProject>, status=IN_PROGRESS).",
+        "6) Continue with taskContext(projectPath=<selectedProject>, taskId=<selectedTaskId>).",
       ].join("\n")
 
       return asUserPrompt(text)
@@ -251,11 +260,13 @@ function registerGovernancePrompts(): void {
   )
 }
 
-registerTaskTools(server)
 registerProjectTools(server)
+registerTaskTools(server)
 registerRoadmapTools(server)
 registerGovernanceResources()
 registerGovernancePrompts()
+registerDesignContextResources(server)
+registerDesignContextPrompts(server)
 
 async function main(): Promise<void> {
   console.error(`[projitive-mcp] starting server`)
