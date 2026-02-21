@@ -41,6 +41,28 @@ describe("projitive module", () => {
     expect(resolved).toBe(governanceDir);
   });
 
+  it("resolves nested default governance dir when input path is project root", async () => {
+    const root = await createTempDir();
+    const projectRoot = path.join(root, "repo");
+    const governanceDir = path.join(projectRoot, ".projitive");
+    await fs.mkdir(governanceDir, { recursive: true });
+    await fs.writeFile(path.join(governanceDir, ".projitive"), "", "utf-8");
+
+    const resolved = await resolveGovernanceDir(projectRoot);
+    expect(resolved).toBe(governanceDir);
+  });
+
+  it("resolves nested custom governance dir when input path is project root", async () => {
+    const root = await createTempDir();
+    const projectRoot = path.join(root, "repo");
+    const governanceDir = path.join(projectRoot, "governance");
+    await fs.mkdir(governanceDir, { recursive: true });
+    await fs.writeFile(path.join(governanceDir, ".projitive"), "", "utf-8");
+
+    const resolved = await resolveGovernanceDir(projectRoot);
+    expect(resolved).toBe(governanceDir);
+  });
+
   it("discovers projects by marker file", async () => {
     const root = await createTempDir();
     const p1 = path.join(root, "a");
@@ -53,6 +75,28 @@ describe("projitive module", () => {
     const projects = await discoverProjects(root, 4);
     expect(projects).toContain(p1);
     expect(projects).toContain(p2);
+  });
+
+  it("discovers nested default governance directory under project root", async () => {
+    const root = await createTempDir();
+    const projectRoot = path.join(root, "app");
+    const governanceDir = path.join(projectRoot, ".projitive");
+    await fs.mkdir(governanceDir, { recursive: true });
+    await fs.writeFile(path.join(governanceDir, ".projitive"), "", "utf-8");
+
+    const projects = await discoverProjects(root, 3);
+    expect(projects).toContain(governanceDir);
+  });
+
+  it("discovers nested custom governance directory under project root", async () => {
+    const root = await createTempDir();
+    const projectRoot = path.join(root, "app");
+    const governanceDir = path.join(projectRoot, "governance");
+    await fs.mkdir(governanceDir, { recursive: true });
+    await fs.writeFile(path.join(governanceDir, ".projitive"), "", "utf-8");
+
+    const projects = await discoverProjects(root, 3);
+    expect(projects).toContain(governanceDir);
   });
 
   it("initializes governance structure under default .projitive directory", async () => {

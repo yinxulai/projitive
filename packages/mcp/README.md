@@ -2,7 +2,7 @@
 
 Language: English | [简体中文](README_CN.md)
 
-**Current Spec Version: projitive-spec v1.0.0 | MCP Version: 1.0.6**
+**Current Spec Version: projitive-spec v1.0.0 | MCP Version: 1.0.7**
 
 Projitive MCP server (semantic interface edition) helps agents discover projects, select tasks, locate evidence, and execute under governance workflows.
 

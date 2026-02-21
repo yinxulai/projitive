@@ -16,7 +16,7 @@ import {
   renderToolResponseMarkdown,
   summarySection,
 } from "./helpers/response/index.js";
-import { resolveGovernanceDir } from "./projitive.js";
+import { resolveGovernanceDir, toProjectPath } from "./projitive.js";
 import { loadTasks } from "./tasks.js";
 
 export const ROADMAP_ID_REGEX = /^ROADMAP-\d{4}$/;
@@ -126,7 +126,7 @@ export function registerRoadmapTools(server: McpServer): void {
           guidanceSection(["- Pick one roadmap ID and call `roadmapContext`."]),
           lintSection(lintSuggestions),
           nextCallSection(roadmapIds[0]
-            ? `roadmapContext(projectPath=\"${governanceDir}\", roadmapId=\"${roadmapIds[0]}\")`
+            ? `roadmapContext(projectPath=\"${toProjectPath(governanceDir)}\", roadmapId=\"${roadmapIds[0]}\")`
             : undefined),
         ],
       });
@@ -200,7 +200,7 @@ export function registerRoadmapTools(server: McpServer): void {
             "- Re-run `roadmapContext` after edits to confirm references remain consistent.",
           ]),
           lintSection(lintSuggestions),
-          nextCallSection(`roadmapContext(projectPath=\"${governanceDir}\", roadmapId=\"${roadmapId}\")`),
+          nextCallSection(`roadmapContext(projectPath=\"${toProjectPath(governanceDir)}\", roadmapId=\"${roadmapId}\")`),
         ],
       });
 

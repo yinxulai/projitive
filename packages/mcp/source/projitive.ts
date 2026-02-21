@@ -165,6 +165,54 @@ function parentDir(dirPath: string): string | null {
   return parent === dirPath ? null : parent;
 }
 
+export function toProjectPath(governanceDir: string): string {
+  return path.dirname(governanceDir);
+}
+
+async function listChildGovernanceDirs(parentPath: string): Promise<string[]> {
+  const entriesResult = await catchIt(fs.readdir(parentPath, { withFileTypes: true }));
+  if (entriesResult.isError()) {
+    return [];
+  }
+
+  const folders = entriesResult.value
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => path.join(parentPath, entry.name));
+
+  const markerChecks = await Promise.all(
+    folders.map(async (folderPath) => ({
+      folderPath,
+      hasMarker: await hasProjectMarker(folderPath),
+    }))
+  );
+
+  const candidates = markerChecks
+    .filter((item) => item.hasMarker)
+    .map((item) => item.folderPath)
+    .sort((a, b) => a.localeCompare(b));
+
+  return candidates;
+}
+
+async function resolveChildGovernanceDir(parentPath: string): Promise<string | undefined> {
+  const candidates = await listChildGovernanceDirs(parentPath);
+
+  if (candidates.length === 0) {
+    return undefined;
+  }
+
+  const defaultCandidate = path.join(parentPath, DEFAULT_GOVERNANCE_DIR);
+  if (candidates.includes(defaultCandidate)) {
+    return defaultCandidate;
+  }
+
+  if (candidates.length === 1) {
+    return candidates[0];
+  }
+
+  throw new Error(`Multiple governance roots found under path: ${parentPath}. Use projectPath/governanceDir explicitly.`);
+}
+
 export async function resolveGovernanceDir(inputPath: string): Promise<string> {
   const absolutePath = path.resolve(inputPath);
   const statResult = await catchIt(fs.stat(absolutePath));
@@ -179,6 +227,12 @@ export async function resolveGovernanceDir(inputPath: string): Promise<string> {
     if (await hasProjectMarker(cursor)) {
       return cursor;
     }
+
+    const childGovernanceDir = await resolveChildGovernanceDir(cursor);
+    if (childGovernanceDir) {
+      return childGovernanceDir;
+    }
+
     cursor = parentDir(cursor);
   }
 
@@ -196,6 +250,9 @@ export async function discoverProjects(rootPath: string, maxDepth: number): Prom
     if (await hasProjectMarker(currentPath)) {
       results.push(currentPath);
     }
+
+    const childGovernanceDirs = await listChildGovernanceDirs(currentPath);
+    results.push(...childGovernanceDirs);
 
     const entriesResult = await catchIt(fs.readdir(currentPath, { withFileTypes: true }));
     if (entriesResult.isError()) {
@@ -344,7 +401,7 @@ export function registerProjectTools(server: McpServer): void {
     "projectInit",
     {
       title: "Project Init",
-      description: "Bootstrap governance files when a project has no .projitive yet",
+      description: "Bootstrap governance files when a project has no .projitive yet (requires projectPath)",
       inputSchema: {
         projectPath: z.string(),
         governanceDir: z.string().optional(),
@@ -386,7 +443,7 @@ export function registerProjectTools(server: McpServer): void {
             "- After init, fill owner/roadmapRefs/links in tasks.md before marking DONE.",
             "- Keep task source-of-truth inside marker block only.",
           ]),
-          nextCallSection(`projectContext(projectPath=\"${initialized.governanceDir}\")`),
+          nextCallSection(`projectContext(projectPath=\"${initialized.projectPath}\")`),
         ],
       });
 
@@ -502,13 +559,13 @@ export function registerProjectTools(server: McpServer): void {
             ),
           ]),
           guidanceSection([
-            "- Pick top 1 project and call `projectContext` with its governanceDir.",
+            "- Pick top 1 project and call `projectContext` with its projectPath.",
             "- Then call `taskList` and `taskContext` to continue execution.",
             "- If `tasksPath` is missing, create tasks.md using project convention before task-level operations.",
           ]),
           lintSection(ranked[0]?.lintSuggestions ?? []),
           nextCallSection(ranked[0]
-            ? `projectContext(projectPath=\"${ranked[0].governanceDir}\")`
+            ? `projectContext(projectPath=\"${toProjectPath(ranked[0].governanceDir)}\")`
             : undefined),
         ],
       });
@@ -529,6 +586,7 @@ export function registerProjectTools(server: McpServer): void {
     async ({ inputPath }) => {
       const resolvedFrom = normalizePath(inputPath);
       const governanceDir = await resolveGovernanceDir(resolvedFrom);
+      const projectPath = toProjectPath(governanceDir);
       const markerPath = path.join(governanceDir, ".projitive");
 
       const markdown = renderToolResponseMarkdown({
@@ -536,12 +594,13 @@ export function registerProjectTools(server: McpServer): void {
         sections: [
           summarySection([
             `- resolvedFrom: ${resolvedFrom}`,
+            `- projectPath: ${projectPath}`,
             `- governanceDir: ${governanceDir}`,
             `- markerPath: ${markerPath}`,
           ]),
-          guidanceSection(["- Call `projectContext` with this governanceDir to get task and roadmap summaries."]),
+          guidanceSection(["- Call `projectContext` with this projectPath to get task and roadmap summaries."]),
           lintSection(["- Run `projectContext` to get governance/module lint suggestions for this project."]),
-          nextCallSection(`projectContext(projectPath=\"${governanceDir}\")`),
+          nextCallSection(`projectContext(projectPath=\"${projectPath}\")`),
         ],
       });
 
@@ -560,6 +619,7 @@ export function registerProjectTools(server: McpServer): void {
     },
     async ({ projectPath }) => {
       const governanceDir = await resolveGovernanceDir(projectPath);
+      const normalizedProjectPath = toProjectPath(governanceDir);
       const artifacts = await discoverGovernanceArtifacts(governanceDir);
       const { tasksPath, tasks, markdown: tasksMarkdown } = await loadTasksDocument(governanceDir);
       const roadmapIds = await readRoadmapIds(governanceDir);
@@ -577,6 +637,7 @@ export function registerProjectTools(server: McpServer): void {
         toolName: "projectContext",
         sections: [
           summarySection([
+            `- projectPath: ${normalizedProjectPath}`,
             `- governanceDir: ${governanceDir}`,
             `- tasksFile: ${tasksPath}`,
             `- roadmapIds: ${roadmapIds.length}`,
@@ -597,7 +658,7 @@ export function registerProjectTools(server: McpServer): void {
             "- Then call `taskContext` with a task ID to retrieve evidence locations and reading order.",
           ]),
           lintSection(lintSuggestions),
-          nextCallSection(`taskList(projectPath=\"${governanceDir}\")`),
+          nextCallSection(`taskList(projectPath=\"${normalizedProjectPath}\")`),
         ],
       });
 

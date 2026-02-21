@@ -17,7 +17,7 @@ import {
 } from "./helpers/response/index.js";
 import { catchIt } from "./helpers/catch/index.js";
 import { TASK_LINT_CODES, renderLintSuggestions, type LintSuggestion } from "./helpers/linter/index.js";
-import { resolveGovernanceDir, resolveScanDepth, resolveScanRoot, discoverProjects } from "./projitive.js";
+import { resolveGovernanceDir, resolveScanDepth, resolveScanRoot, discoverProjects, toProjectPath } from "./projitive.js";
 import { isValidRoadmapId } from "./roadmap.js";
 
 export const TASKS_START = "<!-- PROJITIVE:TASKS:START -->";
@@ -682,7 +682,7 @@ export function registerTaskTools(server: McpServer): void {
           guidanceSection(["- Pick one task ID and call `taskContext`." ]),
           lintSection(lintSuggestions),
           nextCallSection(nextTaskId
-            ? `taskContext(projectPath=\"${governanceDir}\", taskId=\"${nextTaskId}\")`
+            ? `taskContext(projectPath=\"${toProjectPath(governanceDir)}\", taskId=\"${nextTaskId}\")`
             : undefined),
         ],
       });
@@ -768,7 +768,7 @@ export function registerTaskTools(server: McpServer): void {
               "- Ensure each new task has stable TASK-xxxx ID and at least one roadmapRefs item.",
             ]),
             nextCallSection(preferredProject
-              ? `projectContext(projectPath=\"${preferredProject.governanceDir}\")`
+              ? `projectContext(projectPath=\"${toProjectPath(preferredProject.governanceDir)}\")`
               : "projectScan()"),
           ],
         });
@@ -835,7 +835,7 @@ export function registerTaskTools(server: McpServer): void {
             "- Re-run `taskContext` for the selectedTaskId after edits to verify evidence consistency.",
           ]),
           lintSection(lintSuggestions),
-          nextCallSection(`taskContext(projectPath=\"${selected.governanceDir}\", taskId=\"${selected.task.id}\")`),
+          nextCallSection(`taskContext(projectPath=\"${toProjectPath(selected.governanceDir)}\", taskId=\"${selected.task.id}\")`),
         ],
       });
 
@@ -875,7 +875,7 @@ export function registerTaskTools(server: McpServer): void {
             "taskContext",
             `Task not found: ${taskId}`,
             ["run `taskList` to discover available IDs", "retry with an existing task ID"],
-            `taskList(projectPath=\"${governanceDir}\")`
+            `taskList(projectPath=\"${toProjectPath(governanceDir)}\")`
           )),
           isError: true,
         };
@@ -940,7 +940,7 @@ export function registerTaskTools(server: McpServer): void {
             "- After editing, re-run `taskContext` to verify references and context consistency.",
           ]),
           lintSection(lintSuggestions),
-          nextCallSection(`taskContext(projectPath=\"${governanceDir}\", taskId=\"${task.id}\")`),
+          nextCallSection(`taskContext(projectPath=\"${toProjectPath(governanceDir)}\", taskId=\"${task.id}\")`),
         ],
       });
 
