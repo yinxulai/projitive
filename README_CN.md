@@ -124,10 +124,10 @@ npx -y @projitive/mcp
 }
 ```
 
-环境变量说明：
+环境变量说明（必填）：
 
-- `PROJITIVE_SCAN_ROOT_PATH`：当工具调用未传 `rootPath` 时，作为扫描/发现类方法（如 `projectNext`、`taskNext`）的默认根目录。
-- `PROJITIVE_SCAN_MAX_DEPTH`：当工具调用未传 `maxDepth` 时使用的默认扫描深度（范围 `0-8`，默认 `3`）。
+- `PROJITIVE_SCAN_ROOT_PATH`：扫描/发现类方法（如 `projectNext`、`taskNext`）使用的根目录。
+- `PROJITIVE_SCAN_MAX_DEPTH`：扫描/发现类方法使用的深度（整数 `0-8`）。
 
 ### 3）验证并开始使用
 

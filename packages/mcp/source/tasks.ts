@@ -770,7 +770,7 @@ export function registerTaskTools(server: McpServer): void {
             ]),
             nextCallSection(preferredProject
               ? `projectContext(projectPath=\"${preferredProject.governanceDir}\")`
-              : `projectScan(rootPath=\"${root}\", maxDepth=${depth})`),
+              : "projectScan()"),
           ],
         });
         return asText(markdown);

@@ -147,10 +147,10 @@ In your MCP client config (for example `mcp.json`), register the npm package as 
 }
 ```
 
-Environment variables:
+Environment variables (required):
 
-- `PROJITIVE_SCAN_ROOT_PATH`: default root directory used by scan/discovery methods (for example `projectNext` / `taskNext`) when `rootPath` is not provided.
-- `PROJITIVE_SCAN_MAX_DEPTH`: default scan depth when `maxDepth` is not provided (range `0-8`, default `3`).
+- `PROJITIVE_SCAN_ROOT_PATH`: required scan root directory used by discovery methods (for example `projectNext` / `taskNext`).
+- `PROJITIVE_SCAN_MAX_DEPTH`: required scan depth used by discovery methods (integer `0-8`).
 
 ### 3) Verify and run the workflow
 

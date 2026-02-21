@@ -3,10 +3,10 @@
 本文件由 Projitive MCP 维护，手动编辑请保持 Markdown 结构合法。
 
 <!-- PROJITIVE:TASKS:START -->
-## TASK-0001 | IN_PROGRESS | Bootstrap repository self-management governance
+## TASK-0001 | DONE | Bootstrap repository self-management governance
 - owner: ai-copilot
 - summary: Create baseline governance artifacts in .projitive and validate one-step task execution path.
-- updatedAt: 2026-02-17T23:50:00.000Z
+- updatedAt: 2026-02-21T07:48:00.000Z
 - roadmapRefs: ROADMAP-0001
 - links:
   - ./README.md
@@ -14,6 +14,7 @@
   - ./tasks.md
   - ./designs/self-management-bootstrap.md
   - ./reports/bootstrap-2026-02-17.md
+  - ./reports/task-0001-completion-2026-02-21.md
 
 ## TASK-0002 | TODO | Stabilize default task.next workflow
 - owner: ai-copilot
@@ -35,16 +36,17 @@
   - ../design/ROADMAP.md
   - ../design/TASKS.md
 
-## TASK-0004 | IN_PROGRESS | Consolidate recommended task discovery workflow
+## TASK-0004 | DONE | Consolidate recommended task discovery workflow
 - owner: ai-copilot
 - summary: Align docs, prompts, and tool guidance on one canonical flow (`taskNext -> taskContext -> update -> verify`) with clear fallback paths.
-- updatedAt: 2026-02-20T20:51:00.000Z
+- updatedAt: 2026-02-21T04:48:00.000Z
 - roadmapRefs: ROADMAP-0004
 - links:
   - ../README.md
   - ../packages/mcp/README.md
   - ../packages/mcp/source/tasks.ts
   - ./README.md
+  - ./reports/task-0004-consolidation-2026-02-21.md
 
 ## TASK-0005 | TODO | Improve auto-discovery and task creation mechanism
 - owner: ai-copilot

@@ -2,7 +2,7 @@
 
 Language: English | [简体中文](README_CN.md)
 
-**Current Spec Version: projitive-spec v1.0.0 | MCP Version: 1.0.3**
+**Current Spec Version: projitive-spec v1.0.0 | MCP Version: 1.0.4**
 
 Projitive MCP server (semantic interface edition) helps agents discover projects, select tasks, locate evidence, and execute under governance workflows.
 
@@ -92,10 +92,10 @@ MCP client config example (`mcp.json`):
 }
 ```
 
-Environment variables:
+Environment variables (required):
 
-- `PROJITIVE_SCAN_ROOT_PATH`: fallback scan root for discovery methods when `rootPath` is omitted.
-- `PROJITIVE_SCAN_MAX_DEPTH`: fallback scan depth when `maxDepth` is omitted (`0-8`, default `3`).
+- `PROJITIVE_SCAN_ROOT_PATH`: required scan root for discovery methods.
+- `PROJITIVE_SCAN_MAX_DEPTH`: required scan depth for discovery methods (integer `0-8`).
 
 Local path startup is not the recommended usage mode in this README.
 
@@ -149,14 +149,14 @@ npm run test
 #### `projectInit`
 
 - **Purpose**: manually initialize governance directory structure for a project (default `.projitive`).
-- **Input**: `rootPath?`, `governanceDir?`, `force?`
+- **Input**: `projectPath?`, `governanceDir?`, `force?`
 - **Output Example (Markdown)**:
 
 ```markdown
 # projectInit
 
 ## Summary
-- rootPath: /workspace/proj-a
+- projectPath: /workspace/proj-a
 - governanceDir: /workspace/proj-a/.projitive
 - markerPath: /workspace/proj-a/.projitive/.projitive
 - force: false
@@ -206,7 +206,7 @@ npm run test
 #### `projectScan`
 
 - **Purpose**: scan directories and discover governable projects.
-- **Input**: `rootPath?`, `maxDepth?`
+- **Input**: `(none)`
 - **Output Example (Markdown)**:
 
 ```markdown

@@ -2,7 +2,7 @@
 
 语言：简体中文 | [English](README.md)
 
-**当前规范版本：projitive-spec v1.0.0 | MCP 版本：1.0.3**
+**当前规范版本：projitive-spec v1.0.0 | MCP 版本：1.0.4**
 
 Projitive MCP Server 是一套面向 Agent 的治理执行接口，帮助你在项目中稳定完成：发现上下文、选择任务、读取证据、持续推进。
 
@@ -94,10 +94,10 @@ MCP 客户端配置示例（`mcp.json`）：
 }
 ```
 
-环境变量说明：
+环境变量说明（必填）：
 
-- `PROJITIVE_SCAN_ROOT_PATH`：当未传 `rootPath` 时，作为扫描/发现方法的默认根目录。
-- `PROJITIVE_SCAN_MAX_DEPTH`：当未传 `maxDepth` 时使用的默认扫描深度（`0-8`，默认 `3`）。
+- `PROJITIVE_SCAN_ROOT_PATH`：扫描/发现方法使用的根目录。
+- `PROJITIVE_SCAN_MAX_DEPTH`：扫描/发现方法使用的深度（整数 `0-8`）。
 
 本 README 不建议本地路径方式启动。
 

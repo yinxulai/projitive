@@ -58,16 +58,30 @@ function parseDepthFromEnv(rawDepth: string | undefined): number | undefined {
   return Math.min(MAX_SCAN_DEPTH, Math.max(0, parsed));
 }
 
+function requireEnvVar(name: "PROJITIVE_SCAN_ROOT_PATH" | "PROJITIVE_SCAN_MAX_DEPTH"): string {
+  const value = process.env[name];
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value.trim();
+}
+
 export function resolveScanRoot(inputPath?: string): string {
-  const fallback = process.env.PROJITIVE_SCAN_ROOT_PATH;
-  return normalizePath(inputPath ?? fallback);
+  const configuredRoot = requireEnvVar("PROJITIVE_SCAN_ROOT_PATH");
+  return normalizePath(inputPath ?? configuredRoot);
 }
 
 export function resolveScanDepth(inputDepth?: number): number {
+  const configuredDepthRaw = requireEnvVar("PROJITIVE_SCAN_MAX_DEPTH");
+  const configuredDepth = parseDepthFromEnv(configuredDepthRaw);
+  if (typeof configuredDepth !== "number") {
+    throw new Error("Invalid PROJITIVE_SCAN_MAX_DEPTH: expected integer in range 0-8");
+  }
+
   if (typeof inputDepth === "number") {
     return inputDepth;
   }
-  return parseDepthFromEnv(process.env.PROJITIVE_SCAN_MAX_DEPTH) ?? DEFAULT_SCAN_DEPTH;
+  return configuredDepth;
 }
 
 function renderArtifactsMarkdown(artifacts: Awaited<ReturnType<typeof discoverGovernanceArtifacts>>): string {
@@ -205,7 +219,7 @@ type InitArtifactResult = {
 };
 
 type ProjectInitResult = {
-  rootPath: string;
+  projectPath: string;
   governanceDir: string;
   markerPath: string;
   directories: InitArtifactResult[];
@@ -286,18 +300,18 @@ function defaultNoTaskDiscoveryHookMarkdown(): string {
 }
 
 export async function initializeProjectStructure(inputPath?: string, governanceDir?: string, force = false): Promise<ProjectInitResult> {
-  const rootPath = normalizePath(inputPath);
+  const projectPath = normalizePath(inputPath);
   const governanceDirName = normalizeGovernanceDirName(governanceDir);
 
-  const rootStat = await catchIt(fs.stat(rootPath));
+  const rootStat = await catchIt(fs.stat(projectPath));
   if (rootStat.isError()) {
-    throw new Error(`Path not found: ${rootPath}`);
+    throw new Error(`Path not found: ${projectPath}`);
   }
   if (!rootStat.value.isDirectory()) {
-    throw new Error(`rootPath must be a directory: ${rootPath}`);
+    throw new Error(`projectPath must be a directory: ${projectPath}`);
   }
 
-  const governancePath = path.join(rootPath, governanceDirName);
+  const governancePath = path.join(projectPath, governanceDirName);
   const directories: InitArtifactResult[] = [];
 
   const requiredDirectories = [governancePath, path.join(governancePath, "designs"), path.join(governancePath, "reports"), path.join(governancePath, "hooks")];
@@ -317,7 +331,7 @@ export async function initializeProjectStructure(inputPath?: string, governanceD
   ]);
 
   return {
-    rootPath,
+    projectPath,
     governanceDir: governancePath,
     markerPath,
     directories,
@@ -332,13 +346,13 @@ export function registerProjectTools(server: McpServer): void {
       title: "Project Init",
       description: "Initialize Projitive governance directory structure manually (default .projitive)",
       inputSchema: {
-        rootPath: z.string().optional(),
+        projectPath: z.string().optional(),
         governanceDir: z.string().optional(),
         force: z.boolean().optional(),
       },
     },
-    async ({ rootPath, governanceDir, force }) => {
-      const initialized = await initializeProjectStructure(rootPath, governanceDir, force ?? false);
+    async ({ projectPath, governanceDir, force }) => {
+      const initialized = await initializeProjectStructure(projectPath, governanceDir, force ?? false);
 
       const filesByAction = {
         created: initialized.files.filter((item) => item.action === "created"),
@@ -350,7 +364,7 @@ export function registerProjectTools(server: McpServer): void {
         toolName: "projectInit",
         sections: [
           summarySection([
-            `- rootPath: ${initialized.rootPath}`,
+            `- projectPath: ${initialized.projectPath}`,
             `- governanceDir: ${initialized.governanceDir}`,
             `- markerPath: ${initialized.markerPath}`,
             `- force: ${force === true ? "true" : "false"}`,
@@ -385,14 +399,11 @@ export function registerProjectTools(server: McpServer): void {
     {
       title: "Project Scan",
       description: "Scan filesystem and discover project governance roots marked by .projitive",
-      inputSchema: {
-        rootPath: z.string().optional(),
-        maxDepth: z.number().int().min(0).max(8).optional(),
-      },
+      inputSchema: {},
     },
-    async ({ rootPath, maxDepth }) => {
-      const root = resolveScanRoot(rootPath);
-      const depth = resolveScanDepth(maxDepth);
+    async () => {
+      const root = resolveScanRoot();
+      const depth = resolveScanDepth();
       const projects = await discoverProjects(root, depth);
 
       const markdown = renderToolResponseMarkdown({
