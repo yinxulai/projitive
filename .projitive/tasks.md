@@ -135,4 +135,36 @@
 - links:
   - ./reports/auto-task-discovery-2026-02-22.md
   - ./reports/TASK-0012-execution-2026-02-22.md
+
+## TASK-0013 | TODO | Prepare Spec v1.1.0 Release
+- owner: ai-copilot
+- summary: Update version numbers, create release notes, and prepare documentation for Spec v1.1.0 official release.
+- updatedAt: 2026-02-22T12:48:00.000Z
+- roadmapRefs: ROADMAP-0002
+- links:
+  - ./designs/spec-v1.1-governance-change-proposal.md
+  - ../packages/mcp/package.json
+  - ../README.md
+  - ./reports/auto-task-discovery-2026-02-22-latest.md
+
+## TASK-0014 | TODO | Enhance CI/CD Pipeline with Coverage and Benchmarks
+- owner: ai-copilot
+- summary: Add test coverage reporting, performance benchmarks, and automatic release triggers to the GitHub Actions workflow.
+- updatedAt: 2026-02-22T12:48:00.000Z
+- roadmapRefs: ROADMAP-0003
+- links:
+  - ../.github/workflows/mcp-lint-test.yml
+  - ../.github/workflows/mcp-release.yml
+  - ./reports/auto-task-discovery-2026-02-22-latest.md
+
+## TASK-0015 | TODO | Create User Documentation and Best Practices
+- owner: ai-copilot
+- summary: Create comprehensive user documentation including usage examples, best practices, and migration guide from v1.0.0 to v1.1.0.
+- updatedAt: 2026-02-22T12:48:00.000Z
+- roadmapRefs: ROADMAP-0004
+- links:
+  - ../README.md
+  - ../design/README.md
+  - ./designs/spec-v1.1-governance-change-proposal.md
+  - ./reports/auto-task-discovery-2026-02-22-latest.md
 <!-- PROJITIVE:TASKS:END -->
