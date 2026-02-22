@@ -69,6 +69,64 @@ describe("tasks module", () => {
     expect(markdown.includes("## TASK-0002 | IN_PROGRESS | render")).toBe(true);
   });
 
+  it("parses task with subState metadata (Spec v1.1.0)", async () => {
+    const markdown = [
+      "# Tasks",
+      TASKS_START,
+      "## TASK-0003 | IN_PROGRESS | feature with substate",
+      "- owner: bob",
+      "- summary: implementing feature",
+      "- updatedAt: 2026-02-20T00:00:00.000Z",
+      "- roadmapRefs: ROADMAP-0001",
+      "- links:",
+      "  - ./designs/feature.md",
+      "- subState:",
+      "  - phase: implementation",
+      "  - confidence: 0.85",
+      "  - estimatedCompletion: 2026-02-25T15:00:00Z",
+      TASKS_END,
+    ].join("\n");
+
+    const tasks = await parseTasksBlock(markdown);
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0].id).toBe("TASK-0003");
+    expect(tasks[0].subState).toBeDefined();
+    expect(tasks[0].subState?.phase).toBe("implementation");
+    expect(tasks[0].subState?.confidence).toBe(0.85);
+    expect(tasks[0].subState?.estimatedCompletion).toBe("2026-02-25T15:00:00Z");
+  });
+
+  it("parses task with blocker metadata (Spec v1.1.0)", async () => {
+    const markdown = [
+      "# Tasks",
+      TASKS_START,
+      "## TASK-0004 | BLOCKED | waiting for api",
+      "- owner: charlie",
+      "- summary: Waiting for payment API v2.0",
+      "- updatedAt: 2026-02-20T00:00:00.000Z",
+      "- roadmapRefs: ROADMAP-0001",
+      "- links:",
+      "  - ./docs/api-waiting.md",
+      "- blocker:",
+      "  - type: external_dependency",
+      "  - description: Waiting for payment API v2.0",
+      "  - blockingEntity: third-party/payment-provider",
+      "  - unblockCondition: API v2.0 GA announced",
+      "  - escalationPath: contact-pm-for-workaround",
+      TASKS_END,
+    ].join("\n");
+
+    const tasks = await parseTasksBlock(markdown);
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0].id).toBe("TASK-0004");
+    expect(tasks[0].blocker).toBeDefined();
+    expect(tasks[0].blocker?.type).toBe("external_dependency");
+    expect(tasks[0].blocker?.description).toBe("Waiting for payment API v2.0");
+    expect(tasks[0].blocker?.blockingEntity).toBe("third-party/payment-provider");
+    expect(tasks[0].blocker?.unblockCondition).toBe("API v2.0 GA announced");
+    expect(tasks[0].blocker?.escalationPath).toBe("contact-pm-for-workaround");
+  });
+
   it("validates task IDs", () => {
     expect(isValidTaskId("TASK-0001")).toBe(true);
     expect(isValidTaskId("TASK-001")).toBe(false);

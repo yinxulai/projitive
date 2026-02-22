@@ -19,30 +19,34 @@ import { catchIt } from "./helpers/catch/index.js";
 import { TASK_LINT_CODES, renderLintSuggestions, type LintSuggestion } from "./helpers/linter/index.js";
 import { resolveGovernanceDir, resolveScanDepth, resolveScanRoot, discoverProjects, toProjectPath } from "./projitive.js";
 import { isValidRoadmapId } from "./roadmap.js";
+import type { 
+  Task, 
+  TaskStatus, 
+  TaskDocument, 
+  SubStateMetadata, 
+  BlockerMetadata,
+  SubStatePhase,
+  BlockerType,
+  ConfidenceFactors
+} from "./types.js";
+import { SUB_STATE_PHASES, BLOCKER_TYPES } from "./types.js";
+import { 
+  calculateConfidenceScore, 
+  calculateContextCompleteness, 
+  calculateSimilarTaskHistory, 
+  calculateSpecificationClarity,
+  getOrCreateTaskAutoCreateValidationHook,
+  runPreCreationValidation,
+  generateConfidenceReport
+} from "./validation/index.js";
+
+// Re-export types for backwards compatibility
+export type { Task, TaskStatus, TaskDocument };
 
 export const TASKS_START = "<!-- PROJITIVE:TASKS:START -->";
 export const TASKS_END = "<!-- PROJITIVE:TASKS:END -->";
 export const ALLOWED_STATUS = ["TODO", "IN_PROGRESS", "BLOCKED", "DONE"] as const;
 export const TASK_ID_REGEX = /^TASK-\d{4}$/;
-
-export type TaskStatus = (typeof ALLOWED_STATUS)[number];
-
-export type Task = {
-  id: string;
-  title: string;
-  status: TaskStatus;
-  owner: string;
-  summary: string;
-  updatedAt: string;
-  links: string[];
-  roadmapRefs: string[];
-};
-
-export type TaskDocument = {
-  tasksPath: string;
-  tasks: Task[];
-  markdown: string;
-};
 
 export type TaskLintSuggestion = LintSuggestion;
 
@@ -243,12 +247,130 @@ export function rankActionableTaskCandidates(candidates: ActionableTaskCandidate
   });
 }
 
+// Helper function to check if a line is a top-level task field
+function isTopLevelField(line: string): boolean {
+  const topLevelFields = [
+    "- owner:",
+    "- summary:",
+    "- updatedAt:",
+    "- roadmapRefs:",
+    "- links:",
+    "- hooks:",
+    "- subState:",
+    "- blocker:",
+  ];
+  return topLevelFields.some((field) => line.startsWith(field));
+}
+
+// Parse subState nested field
+function parseSubState(lines: string[], startIndex: number): { subState: SubStateMetadata; endIndex: number } {
+  const subState: SubStateMetadata = {};
+  let index = startIndex + 1;
+
+  while (index < lines.length) {
+    const line = lines[index];
+    const trimmed = line.trim();
+
+    // Check if we've reached the end of subState (new top-level field or new task)
+    if (trimmed.startsWith("- ") && isTopLevelField(trimmed)) {
+      break;
+    }
+
+    // Check if we've reached a new task
+    if (trimmed.startsWith("## TASK-")) {
+      break;
+    }
+
+    // Parse nested fields (2-space indentation expected)
+    if (trimmed.startsWith("- phase:")) {
+      const phase = trimmed.replace("- phase:", "").trim();
+      if (SUB_STATE_PHASES.includes(phase as SubStatePhase)) {
+        subState.phase = phase as SubStatePhase;
+      }
+    } else if (trimmed.startsWith("- confidence:")) {
+      const confidenceStr = trimmed.replace("- confidence:", "").trim();
+      const confidence = Number.parseFloat(confidenceStr);
+      if (!Number.isNaN(confidence) && confidence >= 0 && confidence <= 1) {
+        subState.confidence = confidence;
+      }
+    } else if (trimmed.startsWith("- estimatedCompletion:")) {
+      const estimatedCompletion = trimmed.replace("- estimatedCompletion:", "").trim();
+      if (estimatedCompletion && estimatedCompletion !== "(none)") {
+        subState.estimatedCompletion = estimatedCompletion;
+      }
+    }
+
+    index++;
+  }
+
+  return { subState, endIndex: index - 1 };
+}
+
+// Parse blocker nested field
+function parseBlocker(lines: string[], startIndex: number): { blocker: BlockerMetadata; endIndex: number } {
+  const blocker: Partial<BlockerMetadata> = {};
+  let index = startIndex + 1;
+
+  while (index < lines.length) {
+    const line = lines[index];
+    const trimmed = line.trim();
+
+    // Check if we've reached the end of blocker (new top-level field or new task)
+    if (trimmed.startsWith("- ") && isTopLevelField(trimmed)) {
+      break;
+    }
+
+    // Check if we've reached a new task
+    if (trimmed.startsWith("## TASK-")) {
+      break;
+    }
+
+    // Parse nested fields (2-space indentation expected)
+    if (trimmed.startsWith("- type:")) {
+      const type = trimmed.replace("- type:", "").trim();
+      if (BLOCKER_TYPES.includes(type as BlockerType)) {
+        blocker.type = type as BlockerType;
+      }
+    } else if (trimmed.startsWith("- description:")) {
+      const description = trimmed.replace("- description:", "").trim();
+      if (description && description !== "(none)") {
+        blocker.description = description;
+      }
+    } else if (trimmed.startsWith("- blockingEntity:")) {
+      const blockingEntity = trimmed.replace("- blockingEntity:", "").trim();
+      if (blockingEntity && blockingEntity !== "(none)") {
+        blocker.blockingEntity = blockingEntity;
+      }
+    } else if (trimmed.startsWith("- unblockCondition:")) {
+      const unblockCondition = trimmed.replace("- unblockCondition:", "").trim();
+      if (unblockCondition && unblockCondition !== "(none)") {
+        blocker.unblockCondition = unblockCondition;
+      }
+    } else if (trimmed.startsWith("- escalationPath:")) {
+      const escalationPath = trimmed.replace("- escalationPath:", "").trim();
+      if (escalationPath && escalationPath !== "(none)") {
+        blocker.escalationPath = escalationPath;
+      }
+    }
+
+    index++;
+  }
+
+  // Validate required fields
+  if (!blocker.type || !blocker.description) {
+    // Return empty blocker if required fields are missing
+    return { blocker: { type: "external_dependency", description: "Unknown blocker" }, endIndex: index - 1 };
+  }
+
+  return { blocker: blocker as BlockerMetadata, endIndex: index - 1 };
+}
+
 export function normalizeTask(task: Partial<Task> & { id: string; title: string }): Task {
   const normalizedRoadmapRefs = Array.isArray(task.roadmapRefs)
     ? task.roadmapRefs.map(String).filter((value) => isValidRoadmapId(value))
     : [];
 
-  return {
+  const normalized: Task = {
     id: String(task.id),
     title: String(task.title),
     status: ALLOWED_STATUS.includes(task.status as TaskStatus) ? (task.status as TaskStatus) : "TODO",
@@ -258,6 +380,16 @@ export function normalizeTask(task: Partial<Task> & { id: string; title: string 
     links: Array.isArray(task.links) ? task.links.map(String) : [],
     roadmapRefs: Array.from(new Set(normalizedRoadmapRefs)),
   };
+
+  // Include optional v1.1.0 fields if present
+  if (task.subState) {
+    normalized.subState = task.subState;
+  }
+  if (task.blocker) {
+    normalized.blocker = task.blocker;
+  }
+
+  return normalized;
 }
 
 export async function parseTasksBlock(markdown: string): Promise<Task[]> {
@@ -304,7 +436,10 @@ export async function parseTasksBlock(markdown: string): Promise<Task[]> {
     let inLinks = false;
     let inHooks = false;
 
-    for (const line of lines.slice(1)) {
+    // Convert to indexed for loop to allow skipping lines when parsing subState/blocker
+    const sectionLines = lines.slice(1);
+    for (let lineIndex = 0; lineIndex < sectionLines.length; lineIndex++) {
+      const line = sectionLines[lineIndex];
       const trimmed = line.trim();
       if (!trimmed) {
         continue;
@@ -354,6 +489,32 @@ export async function parseTasksBlock(markdown: string): Promise<Task[]> {
       if (trimmed === "- hooks:") {
         inLinks = false;
         inHooks = true;
+        continue;
+      }
+
+      // Handle subState nested field (Spec v1.1.0)
+      if (trimmed.startsWith("- subState:")) {
+        const { subState, endIndex } = parseSubState(sectionLines, lineIndex);
+        if (Object.keys(subState).length > 0) {
+          taskDraft.subState = subState;
+        }
+        // Skip to the end of subState parsing
+        lineIndex = endIndex;
+        inLinks = false;
+        inHooks = false;
+        continue;
+      }
+
+      // Handle blocker nested field (Spec v1.1.0)
+      if (trimmed.startsWith("- blocker:")) {
+        const { blocker, endIndex } = parseBlocker(sectionLines, lineIndex);
+        if (blocker.type && blocker.description) {
+          taskDraft.blocker = blocker;
+        }
+        // Skip to the end of blocker parsing
+        lineIndex = endIndex;
+        inLinks = false;
+        inHooks = false;
         continue;
       }
 
@@ -479,6 +640,72 @@ function collectTaskLintSuggestionItems(tasks: Task[], options: CollectTaskLintO
     }
   }
 
+  // ============================================================================
+  // Spec v1.1.0 - Blocker Categorization Validation
+  // ============================================================================
+
+  const blockedWithoutBlocker = tasks.filter((task) => task.status === "BLOCKED" && !task.blocker);
+  if (blockedWithoutBlocker.length > 0) {
+    suggestions.push({
+      code: TASK_LINT_CODES.BLOCKED_WITHOUT_BLOCKER,
+      message: `${blockedWithoutBlocker.length} BLOCKED task(s) have no blocker metadata.`,
+      fixHint: "Add structured blocker metadata with type and description.",
+    });
+  }
+
+  const blockerTypeInvalid = tasks.filter((task) => task.blocker && !BLOCKER_TYPES.includes(task.blocker.type));
+  if (blockerTypeInvalid.length > 0) {
+    suggestions.push({
+      code: TASK_LINT_CODES.BLOCKER_TYPE_INVALID,
+      message: `${blockerTypeInvalid.length} task(s) have invalid blocker type.`,
+      fixHint: `Use one of: ${BLOCKER_TYPES.join(", ")}.`,
+    });
+  }
+
+  const blockerDescriptionEmpty = tasks.filter((task) => task.blocker && !task.blocker.description?.trim());
+  if (blockerDescriptionEmpty.length > 0) {
+    suggestions.push({
+      code: TASK_LINT_CODES.BLOCKER_DESCRIPTION_EMPTY,
+      message: `${blockerDescriptionEmpty.length} task(s) have empty blocker description.`,
+      fixHint: "Provide a clear description of why the task is blocked.",
+    });
+  }
+
+  // ============================================================================
+  // Spec v1.1.0 - Sub-state Metadata Validation (Optional but Recommended)
+  // ============================================================================
+
+  const inProgressWithoutSubState = tasks.filter((task) => task.status === "IN_PROGRESS" && !task.subState);
+  if (inProgressWithoutSubState.length > 0) {
+    suggestions.push({
+      code: TASK_LINT_CODES.IN_PROGRESS_WITHOUT_SUBSTATE,
+      message: `${inProgressWithoutSubState.length} IN_PROGRESS task(s) have no subState metadata.`,
+      fixHint: "Add optional subState metadata for better progress tracking.",
+    });
+  }
+
+  const subStatePhaseInvalid = tasks.filter(
+    (task) => task.subState?.phase && !SUB_STATE_PHASES.includes(task.subState.phase)
+  );
+  if (subStatePhaseInvalid.length > 0) {
+    suggestions.push({
+      code: TASK_LINT_CODES.SUBSTATE_PHASE_INVALID,
+      message: `${subStatePhaseInvalid.length} task(s) have invalid subState phase.`,
+      fixHint: `Use one of: ${SUB_STATE_PHASES.join(", ")}.`,
+    });
+  }
+
+  const subStateConfidenceInvalid = tasks.filter(
+    (task) => typeof task.subState?.confidence === "number" && (task.subState.confidence < 0 || task.subState.confidence > 1)
+  );
+  if (subStateConfidenceInvalid.length > 0) {
+    suggestions.push({
+      code: TASK_LINT_CODES.SUBSTATE_CONFIDENCE_INVALID,
+      message: `${subStateConfidenceInvalid.length} task(s) have invalid confidence score.`,
+      fixHint: "Confidence must be between 0.0 and 1.0.",
+    });
+  }
+
   return suggestions;
 }
 
@@ -529,6 +756,62 @@ function collectSingleTaskLintSuggestions(task: Task): string[] {
     });
   }
 
+  // ============================================================================
+  // Spec v1.1.0 - Blocker Categorization Validation (Single Task)
+  // ============================================================================
+
+  if (task.status === "BLOCKED" && !task.blocker) {
+    suggestions.push({
+      code: TASK_LINT_CODES.BLOCKED_WITHOUT_BLOCKER,
+      message: "Current task is BLOCKED but has no blocker metadata.",
+      fixHint: "Add structured blocker metadata with type and description.",
+    });
+  }
+
+  if (task.blocker && !BLOCKER_TYPES.includes(task.blocker.type)) {
+    suggestions.push({
+      code: TASK_LINT_CODES.BLOCKER_TYPE_INVALID,
+      message: `Current task has invalid blocker type: ${task.blocker.type}.`,
+      fixHint: `Use one of: ${BLOCKER_TYPES.join(", ")}.`,
+    });
+  }
+
+  if (task.blocker && !task.blocker.description?.trim()) {
+    suggestions.push({
+      code: TASK_LINT_CODES.BLOCKER_DESCRIPTION_EMPTY,
+      message: "Current task has empty blocker description.",
+      fixHint: "Provide a clear description of why the task is blocked.",
+    });
+  }
+
+  // ============================================================================
+  // Spec v1.1.0 - Sub-state Metadata Validation (Single Task, Optional)
+  // ============================================================================
+
+  if (task.status === "IN_PROGRESS" && !task.subState) {
+    suggestions.push({
+      code: TASK_LINT_CODES.IN_PROGRESS_WITHOUT_SUBSTATE,
+      message: "Current task is IN_PROGRESS but has no subState metadata.",
+      fixHint: "Add optional subState metadata for better progress tracking.",
+    });
+  }
+
+  if (task.subState?.phase && !SUB_STATE_PHASES.includes(task.subState.phase)) {
+    suggestions.push({
+      code: TASK_LINT_CODES.SUBSTATE_PHASE_INVALID,
+      message: `Current task has invalid subState phase: ${task.subState.phase}.`,
+      fixHint: `Use one of: ${SUB_STATE_PHASES.join(", ")}.`,
+    });
+  }
+
+  if (typeof task.subState?.confidence === "number" && (task.subState.confidence < 0 || task.subState.confidence > 1)) {
+    suggestions.push({
+      code: TASK_LINT_CODES.SUBSTATE_CONFIDENCE_INVALID,
+      message: `Current task has invalid confidence score: ${task.subState.confidence}.`,
+      fixHint: "Confidence must be between 0.0 and 1.0.",
+    });
+  }
+
   return renderLintSuggestions(suggestions);
 }
 
@@ -565,14 +848,46 @@ export function renderTasksMarkdown(tasks: Task[]): string {
       ? ["- links:", ...task.links.map((link) => `  - ${link}`)]
       : ["- links:", "  - (none)"];
 
-    return [
+    const lines = [
       `## ${task.id} | ${task.status} | ${task.title}`,
       `- owner: ${task.owner || "(none)"}`,
       `- summary: ${task.summary || "(none)"}`,
       `- updatedAt: ${task.updatedAt}`,
       `- roadmapRefs: ${roadmapRefs}`,
       ...links,
-    ].join("\n");
+    ];
+
+    // Add subState for IN_PROGRESS tasks (Spec v1.1.0)
+    if (task.subState && task.status === "IN_PROGRESS") {
+      lines.push(`- subState:`);
+      if (task.subState.phase) {
+        lines.push(`  - phase: ${task.subState.phase}`);
+      }
+      if (typeof task.subState.confidence === "number") {
+        lines.push(`  - confidence: ${task.subState.confidence}`);
+      }
+      if (task.subState.estimatedCompletion) {
+        lines.push(`  - estimatedCompletion: ${task.subState.estimatedCompletion}`);
+      }
+    }
+
+    // Add blocker for BLOCKED tasks (Spec v1.1.0)
+    if (task.blocker && task.status === "BLOCKED") {
+      lines.push(`- blocker:`);
+      lines.push(`  - type: ${task.blocker.type}`);
+      lines.push(`  - description: ${task.blocker.description}`);
+      if (task.blocker.blockingEntity) {
+        lines.push(`  - blockingEntity: ${task.blocker.blockingEntity}`);
+      }
+      if (task.blocker.unblockCondition) {
+        lines.push(`  - unblockCondition: ${task.blocker.unblockCondition}`);
+      }
+      if (task.blocker.escalationPath) {
+        lines.push(`  - escalationPath: ${task.blocker.escalationPath}`);
+      }
+    }
+
+    return lines.join("\n");
   });
 
   return [
@@ -906,19 +1221,52 @@ export function registerTaskTools(server: McpServer): void {
       const relatedArtifacts = Array.from(new Set(referenceLocations.map((item) => item.filePath)));
       const suggestedReadOrder = [tasksPath, ...relatedArtifacts.filter((item) => item !== tasksPath)];
 
+      // Build summary with subState and blocker info (v1.1.0)
+      const summaryLines = [
+        `- governanceDir: ${governanceDir}`,
+        `- taskId: ${task.id}`,
+        `- title: ${task.title}`,
+        `- status: ${task.status}`,
+        `- owner: ${task.owner}`,
+        `- updatedAt: ${task.updatedAt}`,
+        `- roadmapRefs: ${task.roadmapRefs.join(", ") || "(none)"}`,
+        `- taskLocation: ${taskLocation ? `${taskLocation.filePath}#L${taskLocation.line}` : tasksPath}`,
+      ];
+
+      // Add subState info for IN_PROGRESS tasks (v1.1.0)
+      if (task.subState && task.status === "IN_PROGRESS") {
+        summaryLines.push(`- subState:`);
+        if (task.subState.phase) {
+          summaryLines.push(`  - phase: ${task.subState.phase}`);
+        }
+        if (typeof task.subState.confidence === "number") {
+          summaryLines.push(`  - confidence: ${task.subState.confidence}`);
+        }
+        if (task.subState.estimatedCompletion) {
+          summaryLines.push(`  - estimatedCompletion: ${task.subState.estimatedCompletion}`);
+        }
+      }
+
+      // Add blocker info for BLOCKED tasks (v1.1.0)
+      if (task.blocker && task.status === "BLOCKED") {
+        summaryLines.push(`- blocker:`);
+        summaryLines.push(`  - type: ${task.blocker.type}`);
+        summaryLines.push(`  - description: ${task.blocker.description}`);
+        if (task.blocker.blockingEntity) {
+          summaryLines.push(`  - blockingEntity: ${task.blocker.blockingEntity}`);
+        }
+        if (task.blocker.unblockCondition) {
+          summaryLines.push(`  - unblockCondition: ${task.blocker.unblockCondition}`);
+        }
+        if (task.blocker.escalationPath) {
+          summaryLines.push(`  - escalationPath: ${task.blocker.escalationPath}`);
+        }
+      }
+
       const coreMarkdown = renderToolResponseMarkdown({
         toolName: "taskContext",
         sections: [
-          summarySection([
-            `- governanceDir: ${governanceDir}`,
-            `- taskId: ${task.id}`,
-            `- title: ${task.title}`,
-            `- status: ${task.status}`,
-            `- owner: ${task.owner}`,
-            `- updatedAt: ${task.updatedAt}`,
-            `- roadmapRefs: ${task.roadmapRefs.join(", ") || "(none)"}`,
-            `- taskLocation: ${taskLocation ? `${taskLocation.filePath}#L${taskLocation.line}` : tasksPath}`,
-          ]),
+          summarySection(summaryLines),
           evidenceSection([
             "### Related Artifacts",
             ...(relatedArtifacts.length > 0 ? relatedArtifacts.map((file) => `- ${file}`) : ["- (none)"]),
@@ -944,6 +1292,297 @@ export function registerTaskTools(server: McpServer): void {
       });
 
       return asText(coreMarkdown);
+    }
+  );
+
+  // taskUpdate tool - Update task fields including subState and blocker (Spec v1.1.0)
+  server.registerTool(
+    "taskUpdate",
+    {
+      title: "Task Update",
+      description: "Update task fields including status, owner, summary, subState, and blocker metadata",
+      inputSchema: {
+        projectPath: z.string(),
+        taskId: z.string(),
+        updates: z.object({
+          status: z.enum(["TODO", "IN_PROGRESS", "BLOCKED", "DONE"]).optional(),
+          owner: z.string().optional(),
+          summary: z.string().optional(),
+          roadmapRefs: z.array(z.string()).optional(),
+          links: z.array(z.string()).optional(),
+          subState: z.object({
+            phase: z.enum(["discovery", "design", "implementation", "testing"]).optional(),
+            confidence: z.number().min(0).max(1).optional(),
+            estimatedCompletion: z.string().optional(),
+          }).optional(),
+          blocker: z.object({
+            type: z.enum(["internal_dependency", "external_dependency", "resource", "approval"]),
+            description: z.string(),
+            blockingEntity: z.string().optional(),
+            unblockCondition: z.string().optional(),
+            escalationPath: z.string().optional(),
+          }).optional(),
+        }),
+      },
+    },
+    async ({ projectPath, taskId, updates }) => {
+      if (!isValidTaskId(taskId)) {
+        return {
+          ...asText(renderErrorMarkdown(
+            "taskUpdate",
+            `Invalid task ID format: ${taskId}`,
+            ["expected format: TASK-0001", "retry with a valid task ID"],
+            `taskUpdate(projectPath=\"${projectPath}\", taskId=\"TASK-0001\", updates={...})`
+          )),
+          isError: true,
+        };
+      }
+
+      const governanceDir = await resolveGovernanceDir(projectPath);
+      const { tasksPath, tasks, markdown: tasksMarkdown } = await loadTasksDocument(governanceDir);
+      const taskIndex = tasks.findIndex((item) => item.id === taskId);
+      
+      if (taskIndex === -1) {
+        return {
+          ...asText(renderErrorMarkdown(
+            "taskUpdate",
+            `Task not found: ${taskId}`,
+            ["run `taskList` to discover available IDs", "retry with an existing task ID"],
+            `taskList(projectPath=\"${toProjectPath(governanceDir)}\")`
+          )),
+          isError: true,
+        };
+      }
+
+      const task = tasks[taskIndex];
+      const originalStatus = task.status;
+
+      // Validate status transition
+      if (updates.status && !validateTransition(originalStatus, updates.status)) {
+        return {
+          ...asText(renderErrorMarkdown(
+            "taskUpdate",
+            `Invalid status transition: ${originalStatus} -> ${updates.status}`,
+            ["use `validateTransition` to check allowed transitions", "provide evidence when transitioning to DONE"],
+            `taskContext(projectPath=\"${toProjectPath(governanceDir)}\", taskId=\"${taskId}\")`
+          )),
+          isError: true,
+        };
+      }
+
+      // Apply updates
+      if (updates.status) task.status = updates.status;
+      if (updates.owner !== undefined) task.owner = updates.owner;
+      if (updates.summary !== undefined) task.summary = updates.summary;
+      if (updates.roadmapRefs) task.roadmapRefs = updates.roadmapRefs;
+      if (updates.links) task.links = updates.links;
+      
+      // Handle subState (Spec v1.1.0)
+      if (updates.subState !== undefined) {
+        if (updates.subState === null) {
+          delete task.subState;
+        } else {
+          task.subState = {
+            ...(task.subState || {}),
+            ...updates.subState,
+          };
+        }
+      }
+      
+      // Handle blocker (Spec v1.1.0)
+      if (updates.blocker !== undefined) {
+        if (updates.blocker === null) {
+          delete task.blocker;
+        } else {
+          task.blocker = updates.blocker;
+        }
+      }
+
+      // Update updatedAt
+      task.updatedAt = nowIso();
+
+      // Save tasks
+      await saveTasks(tasksPath, tasks);
+
+      // Build response
+      const updateSummary = [
+        `- taskId: ${taskId}`,
+        `- originalStatus: ${originalStatus}`,
+        `- newStatus: ${task.status}`,
+        `- updatedAt: ${task.updatedAt}`,
+      ];
+
+      if (task.subState) {
+        updateSummary.push(`- subState:`);
+        if (task.subState.phase) updateSummary.push(`  - phase: ${task.subState.phase}`);
+        if (typeof task.subState.confidence === "number") updateSummary.push(`  - confidence: ${task.subState.confidence}`);
+        if (task.subState.estimatedCompletion) updateSummary.push(`  - estimatedCompletion: ${task.subState.estimatedCompletion}`);
+      }
+
+      if (task.blocker) {
+        updateSummary.push(`- blocker:`);
+        updateSummary.push(`  - type: ${task.blocker.type}`);
+        updateSummary.push(`  - description: ${task.blocker.description}`);
+        if (task.blocker.blockingEntity) updateSummary.push(`  - blockingEntity: ${task.blocker.blockingEntity}`);
+        if (task.blocker.unblockCondition) updateSummary.push(`  - unblockCondition: ${task.blocker.unblockCondition}`);
+        if (task.blocker.escalationPath) updateSummary.push(`  - escalationPath: ${task.blocker.escalationPath}`);
+      }
+
+      const markdown = renderToolResponseMarkdown({
+        toolName: "taskUpdate",
+        sections: [
+          summarySection(updateSummary),
+          evidenceSection([
+            "### Updated Task",
+            `- ${task.id} | ${task.status} | ${task.title}`,
+            `- owner: ${task.owner || "(none)"}`,
+            `- summary: ${task.summary || "(none)"}`,
+            "",
+            "### Update Details",
+            ...(updates.status ? [`- status: ${originalStatus} → ${updates.status}`] : []),
+            ...(updates.owner !== undefined ? [`- owner: ${updates.owner}`] : []),
+            ...(updates.summary !== undefined ? [`- summary: ${updates.summary}`] : []),
+            ...(updates.roadmapRefs ? [`- roadmapRefs: ${updates.roadmapRefs.join(", ")}`] : []),
+            ...(updates.links ? [`- links: ${updates.links.join(", ")}`] : []),
+            ...(updates.subState ? [`- subState: ${JSON.stringify(updates.subState)}`] : []),
+            ...(updates.blocker ? [`- blocker: ${JSON.stringify(updates.blocker)}`] : []),
+          ]),
+          guidanceSection([
+            "Task updated successfully. Run `taskContext` to verify the changes.",
+            "If status changed to DONE, ensure evidence links are added.",
+            "If subState or blocker were updated, verify the metadata is correct.",
+          ]),
+          lintSection([]),
+          nextCallSection(`taskContext(projectPath=\"${toProjectPath(governanceDir)}\", taskId=\"${taskId}\")`),
+        ],
+      });
+
+      return asText(markdown);
+    }
+  );
+
+  // ============================================================================
+  // Spec v1.1.0 - Confidence Scoring Tools
+  // ============================================================================
+
+  server.registerTool(
+    "taskCalculateConfidence",
+    {
+      title: "Calculate Task Confidence",
+      description: "Calculate confidence score for auto-creating a new task (Spec v1.1.0)",
+      inputSchema: {
+        projectPath: z.string(),
+        candidateTaskSummary: z.string(),
+        contextCompleteness: z.number().min(0).max(1).optional(),
+        similarTaskHistory: z.number().min(0).max(1).optional(),
+        specificationClarity: z.number().min(0).max(1).optional(),
+      },
+    },
+    async ({ projectPath, candidateTaskSummary, contextCompleteness, similarTaskHistory, specificationClarity }) => {
+      const governanceDir = await resolveGovernanceDir(projectPath);
+      const { tasks } = await loadTasks(governanceDir);
+
+      // Calculate factors if not provided
+      const calculatedContextCompleteness = contextCompleteness ?? await calculateContextCompleteness(governanceDir);
+      const calculatedSimilarTaskHistory = similarTaskHistory ?? calculateSimilarTaskHistory(tasks, candidateTaskSummary);
+      const calculatedSpecificationClarity = specificationClarity ?? calculateSpecificationClarity({
+        hasRoadmap: true, // Assume roadmap exists for simplicity
+        hasDesignDocs: true,
+        hasClearAcceptanceCriteria: candidateTaskSummary.length > 50,
+      });
+
+      const factors: ConfidenceFactors = {
+        contextCompleteness: calculatedContextCompleteness,
+        similarTaskHistory: calculatedSimilarTaskHistory,
+        specificationClarity: calculatedSpecificationClarity,
+      };
+
+      const confidenceScore = calculateConfidenceScore(factors);
+      const validationResult = await runPreCreationValidation(governanceDir, confidenceScore);
+      const hookContent = await getOrCreateTaskAutoCreateValidationHook(governanceDir);
+
+      const markdown = renderToolResponseMarkdown({
+        toolName: "taskCalculateConfidence",
+        sections: [
+          summarySection([
+            `- governanceDir: ${governanceDir}`,
+            `- confidenceScore: ${(confidenceScore.score * 100).toFixed(0)}%`,
+            `- recommendation: ${confidenceScore.recommendation}`,
+            `- validationPassed: ${validationResult.passed}`,
+          ]),
+          evidenceSection([
+            "### Confidence Report",
+            ...generateConfidenceReport(confidenceScore).split("\n"),
+            "",
+            "### Validation Issues",
+            ...(validationResult.issues.length > 0 
+              ? validationResult.issues.map(issue => `- ${issue}`)
+              : ["- (none)"]),
+            "",
+            "### Validation Hook",
+            "- hook created/verified at: hooks/task_auto_create_validation.md",
+          ]),
+          guidanceSection([
+            confidenceScore.recommendation === "auto_create" 
+              ? "✅ Confidence is high - you can auto-create this task."
+              : confidenceScore.recommendation === "review_required"
+              ? "⚠️ Confidence is medium - review recommended before creating."
+              : "❌ Confidence is low - do not auto-create this task.",
+            "",
+            "### Next Steps",
+            "- If recommendation is auto_create: use taskUpdate or manually add the task",
+            "- If review_required: review the factors and improve context before creating",
+            "- If do_not_create: gather more requirements or context before attempting",
+          ]),
+          lintSection([]),
+          nextCallSection(confidenceScore.recommendation !== "do_not_create"
+            ? `projectContext(projectPath=\"${toProjectPath(governanceDir)}\")`
+            : undefined),
+        ],
+      });
+
+      return asText(markdown);
+    }
+  );
+
+  server.registerTool(
+    "taskCreateValidationHook",
+    {
+      title: "Create Validation Hook",
+      description: "Create or update the task auto-create validation hook (Spec v1.1.0)",
+      inputSchema: {
+        projectPath: z.string(),
+      },
+    },
+    async ({ projectPath }) => {
+      const governanceDir = await resolveGovernanceDir(projectPath);
+      const hookContent = await getOrCreateTaskAutoCreateValidationHook(governanceDir);
+
+      const markdown = renderToolResponseMarkdown({
+        toolName: "taskCreateValidationHook",
+        sections: [
+          summarySection([
+            `- governanceDir: ${governanceDir}`,
+            `- hookPath: ${governanceDir}/hooks/task_auto_create_validation.md`,
+            `- status: created/verified`,
+          ]),
+          evidenceSection([
+            "### Hook Content",
+            "```markdown",
+            ...hookContent.split("\n"),
+            "```",
+          ]),
+          guidanceSection([
+            "Validation hook created successfully.",
+            "Edit the hook file to customize pre-creation and post-creation actions.",
+            "The hook will be used by taskCalculateConfidence for validation.",
+          ]),
+          lintSection([]),
+          nextCallSection(`taskCalculateConfidence(projectPath=\"${toProjectPath(governanceDir)}\", candidateTaskSummary=\"Your task summary here\")`),
+        ],
+      });
+
+      return asText(markdown);
     }
   );
 }

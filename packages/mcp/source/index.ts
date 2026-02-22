@@ -13,7 +13,7 @@ import { registerTaskTools } from "./tasks.js"
 import { registerRoadmapTools } from "./roadmap.js"
 import { registerDesignContextResources, registerDesignContextPrompts } from "./design-context.js"
 
-const PROJITIVE_SPEC_VERSION = "1.0.0"
+const PROJITIVE_SPEC_VERSION = "1.1.0"
 
 const currentFilePath = fileURLToPath(import.meta.url)
 const sourceDir = path.dirname(currentFilePath)
@@ -57,6 +57,7 @@ function renderMethodCatalogMarkdown(): string {
     "- Unknown project path: `projectScan` -> `projectLocate` -> `projectContext` -> `taskNext`.",
     "- Known project path: `projectContext` -> `taskNext` (or `taskList`) -> `taskContext`.",
     "- Need to bootstrap governance: call `projectInit(projectPath=\"<project-dir>\")` only when `.projitive` is missing.",
+    "- Auto-creating tasks: use `taskCalculateConfidence` first to validate safety (Spec v1.1.0)",
     "",
     "## Methods",
     "| Order | Group | Method | Agent Use |",
@@ -67,10 +68,13 @@ function renderMethodCatalogMarkdown(): string {
     "| 4 | Task | taskNext | auto-pick highest-priority actionable task |",
     "| 5 | Task | taskList | list/filter tasks for manual selection |",
     "| 6 | Task | taskContext | inspect one task with evidence and read order |",
-    "| 7 | Roadmap | roadmapList | inspect roadmap-task linkage |",
-    "| 8 | Roadmap | roadmapContext | inspect one roadmap with references |",
-    "| 9 | Project | projectNext | rank actionable projects across workspace |",
-    "| 10 | Project | projectInit | bootstrap governance files if missing |"
+    "| 7 | Task | taskUpdate | update task status and metadata (supports Spec v1.1.0 subState/blocker) |",
+    "| 8 | Task | taskCalculateConfidence | calculate confidence score for auto-creating tasks (Spec v1.1.0) |",
+    "| 9 | Task | taskCreateValidationHook | create/update task auto-create validation hook (Spec v1.1.0) |",
+    "| 10 | Roadmap | roadmapList | inspect roadmap-task linkage |",
+    "| 11 | Roadmap | roadmapContext | inspect one roadmap with references |",
+    "| 12 | Project | projectNext | rank actionable projects across workspace |",
+    "| 13 | Project | projectInit | bootstrap governance files if missing |"
     ].join("\n")
 }
 

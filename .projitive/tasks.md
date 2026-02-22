@@ -84,4 +84,55 @@
 - links:
   - ./designs/spec-v1.1-governance-change-proposal.md
   - ./reports/task-0007-kickoff-spec-v1.1-2026-02-21.md
+
+## TASK-0008 | DONE | Implement Spec v1.1 - Phase 1: Sub-state Metadata Support
+- owner: ai-copilot
+- summary: Successfully implemented Phase 1 of Spec v1.1 by adding sub-state metadata support. Created the taskUpdate MCP tool with full support for subState and blocker fields, enhanced taskContext to display v1.1.0 metadata, updated renderTasksMarkdown to persist subState/blocker in tasks.md, and ensured full backward compatibility with v1.0.0 tasks. All TypeScript interfaces were already defined in types.ts.
+- updatedAt: 2026-02-22T10:35:00.000Z
+- roadmapRefs: ROADMAP-0002
+- links:
+  - ./designs/spec-v1.1-governance-change-proposal.md
+  - ./reports/TASK-0008-execution-2026-02-22.md
+  - ../packages/mcp/source/types.ts
+  - ../packages/mcp/source/tasks.ts
+
+## TASK-0009 | DONE | Implement Spec v1.1 - Phase 2: Blocker Categorization
+- owner: ai-copilot
+- summary: Successfully implemented Phase 2 of Spec v1.1 by adding structured blocker categorization validation rules. Added 6 new lint codes for blocker and sub-state validation, enhanced linter logic in tasks.ts, and ensured full backward compatibility with v1.0.0 projects.
+- updatedAt: 2026-02-22T10:50:00.000Z
+- roadmapRefs: ROADMAP-0002
+- links:
+  - ./designs/spec-v1.1-governance-change-proposal.md
+  - ./reports/TASK-0009-execution-2026-02-22.md
+  - ../packages/mcp/source/helpers/linter/codes.ts
+  - ../packages/mcp/source/tasks.md
+
+## TASK-0010 | DONE | Implement Spec v1.1 - Phase 3: Confidence Scoring and Validation Hooks
+- owner: ai-copilot
+- summary: Successfully implemented Phase 3 of Spec v1.1 by adding comprehensive confidence scoring for auto-discovery and validation hooks. Created the confidence scoring algorithm module with three-factor calculation (context_completeness * 0.4 + similar_task_history * 0.3 + specification_clarity * 0.3), added the task_auto_create_validation.md hook template with pre-creation and post-creation validation steps, integrated confidence thresholds (>=0.85 auto-create, 0.60-0.85 requires review, <0.60 must not create), and added two new MCP tools (taskCalculateConfidence and taskCreateValidationHook).
+- updatedAt: 2026-02-22T11:15:00.000Z
+- roadmapRefs: ROADMAP-0002
+- links:
+  - ./designs/spec-v1.1-governance-change-proposal.md
+  - ./reports/TASK-0010-execution-2026-02-22.md
+  - ../packages/mcp/source/validation/confidence.ts
+  - ../packages/mcp/source/tasks.ts
+
+## TASK-0011 | DONE | Enhance MCP Test Coverage - Add Unit and Integration Tests
+- owner: ai-copilot
+- summary: Successfully enhanced the test coverage of the MCP package by adding comprehensive unit and integration tests. Created 6 new test files: confidence.test.ts, design-context.test.ts, reports.test.ts, designs.test.ts, readme.test.ts, and mcp-workflow.test.ts. Added coverage for Spec v1.1 features (sub-state metadata, blocker categorization, confidence scoring). Total test files now: 17. Build and lint pass successfully.
+- updatedAt: 2026-02-22T11:45:00.000Z
+- roadmapRefs: ROADMAP-0004
+- links:
+  - ./reports/auto-task-discovery-2026-02-22.md
+  - ./reports/TASK-0011-execution-2026-02-22.md
+
+## TASK-0012 | DONE | Dependency Audit and Security Update
+- owner: ai-copilot
+- summary: Perform a comprehensive audit of project dependencies and update them to the latest secure versions. This includes: running npm audit to identify security vulnerabilities; checking for outdated dependencies in packages/mcp and other packages; updating @modelcontextprotocol/sdk, zod, typescript, and other dependencies to their latest stable versions; reviewing and updating devDependencies (vitest, tsx, @types/node); running the full test suite after updates to ensure compatibility; and documenting any breaking changes and migration steps required.
+- updatedAt: 2026-02-22T11:52:00.000Z
+- roadmapRefs: ROADMAP-0003
+- links:
+  - ./reports/auto-task-discovery-2026-02-22.md
+  - ./reports/TASK-0012-execution-2026-02-22.md
 <!-- PROJITIVE:TASKS:END -->
