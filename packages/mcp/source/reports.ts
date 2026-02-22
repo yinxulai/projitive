@@ -13,7 +13,9 @@ export function parseReportMetadata(markdown: string): ReportMetadata {
   const metadata: ReportMetadata = {};
 
   for (const line of lines) {
-    const [rawKey, ...rawValue] = line.split(":");
+    // Remove markdown bold markers (**)
+    const cleanLine = line.replace(/\*\*/g, "");
+    const [rawKey, ...rawValue] = cleanLine.split(":");
     if (!rawKey || rawValue.length === 0) {
       continue;
     }

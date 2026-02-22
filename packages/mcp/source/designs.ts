@@ -14,7 +14,9 @@ export function parseDesignMetadata(markdown: string): DesignMetadata {
   const metadata: DesignMetadata = {};
 
   for (const line of lines) {
-    const [rawKey, ...rawValue] = line.split(":");
+    // Remove markdown bold markers (**)
+    const cleanLine = line.replace(/\*\*/g, "");
+    const [rawKey, ...rawValue] = cleanLine.split(":");
     if (!rawKey || rawValue.length === 0) {
       continue;
     }
