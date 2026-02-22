@@ -2,10 +2,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { candidateFilesFromArtifacts } from "./helpers/artifacts/index.js";
-import { discoverGovernanceArtifacts } from "./helpers/files/index.js";
-import { ROADMAP_LINT_CODES, renderLintSuggestions, type LintSuggestion } from "./helpers/linter/index.js";
-import { findTextReferences } from "./helpers/markdown/index.js";
+import { candidateFilesFromArtifacts } from "../helpers/artifacts/index.js";
+import { discoverGovernanceArtifacts } from "../helpers/files/index.js";
+import { ROADMAP_LINT_CODES, renderLintSuggestions, type LintSuggestion } from "../helpers/linter/index.js";
+import { findTextReferences } from "../helpers/markdown/index.js";
 import {
   asText,
   evidenceSection,
@@ -15,9 +15,9 @@ import {
   renderErrorMarkdown,
   renderToolResponseMarkdown,
   summarySection,
-} from "./helpers/response/index.js";
-import { resolveGovernanceDir, toProjectPath } from "./projitive.js";
-import { loadTasks } from "./tasks.js";
+} from "../helpers/response/index.js";
+import { resolveGovernanceDir, toProjectPath } from "./project.js";
+import { loadTasks } from "./task.js";
 
 export const ROADMAP_ID_REGEX = /^ROADMAP-\d{4}$/;
 

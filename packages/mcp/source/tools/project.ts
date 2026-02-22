@@ -3,9 +3,9 @@ import path from "node:path";
 import process from "node:process";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { discoverGovernanceArtifacts } from "./helpers/files/index.js";
-import { catchIt } from "./helpers/catch/index.js";
-import { PROJECT_LINT_CODES, renderLintSuggestions } from "./helpers/linter/index.js";
+import { discoverGovernanceArtifacts } from "../helpers/files/index.js";
+import { catchIt } from "../helpers/catch/index.js";
+import { PROJECT_LINT_CODES, renderLintSuggestions } from "../helpers/linter/index.js";
 import {
   asText,
   evidenceSection,
@@ -14,8 +14,8 @@ import {
   nextCallSection,
   renderToolResponseMarkdown,
   summarySection,
-} from "./helpers/response/index.js";
-import { collectTaskLintSuggestions, loadTasks, loadTasksDocument, type Task } from "./tasks.js";
+} from "../helpers/response/index.js";
+import { collectTaskLintSuggestions, loadTasks, loadTasksDocument, type Task } from "./task.js";
 
 export const PROJECT_MARKER = ".projitive";
 const DEFAULT_GOVERNANCE_DIR = ".projitive";
@@ -118,7 +118,7 @@ async function readTasksSnapshot(governanceDir: string): Promise<{ tasksPath: st
     };
   }
 
-  const { parseTasksBlock } = await import("./tasks.js");
+  const { parseTasksBlock } = await import("./task.js");
   const tasks = await parseTasksBlock(markdown);
   return { tasksPath, exists: true, tasks, lintSuggestions: collectTaskLintSuggestions(tasks, markdown) };
 }

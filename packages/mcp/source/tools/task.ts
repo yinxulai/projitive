@@ -2,9 +2,9 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { candidateFilesFromArtifacts } from "./helpers/artifacts/index.js";
-import { discoverGovernanceArtifacts } from "./helpers/files/index.js";
-import { findTextReferences } from "./helpers/markdown/index.js";
+import { candidateFilesFromArtifacts } from "../helpers/artifacts/index.js";
+import { discoverGovernanceArtifacts } from "../helpers/files/index.js";
+import { findTextReferences } from "../helpers/markdown/index.js";
 import {
   asText,
   evidenceSection,
@@ -14,10 +14,10 @@ import {
   renderErrorMarkdown,
   renderToolResponseMarkdown,
   summarySection,
-} from "./helpers/response/index.js";
-import { catchIt } from "./helpers/catch/index.js";
-import { TASK_LINT_CODES, renderLintSuggestions, type LintSuggestion } from "./helpers/linter/index.js";
-import { resolveGovernanceDir, resolveScanDepth, resolveScanRoot, discoverProjects, toProjectPath } from "./projitive.js";
+} from "../helpers/response/index.js";
+import { catchIt } from "../helpers/catch/index.js";
+import { TASK_LINT_CODES, renderLintSuggestions, type LintSuggestion } from "../helpers/linter/index.js";
+import { resolveGovernanceDir, resolveScanDepth, resolveScanRoot, discoverProjects, toProjectPath } from "./project.js";
 import { isValidRoadmapId } from "./roadmap.js";
 import type { 
   Task, 
@@ -28,17 +28,17 @@ import type {
   SubStatePhase,
   BlockerType,
   ConfidenceFactors
-} from "./types.js";
-import { SUB_STATE_PHASES, BLOCKER_TYPES } from "./types.js";
-import { 
-  calculateConfidenceScore, 
-  calculateContextCompleteness, 
-  calculateSimilarTaskHistory, 
+} from "../types.js";
+import { SUB_STATE_PHASES, BLOCKER_TYPES } from "../types.js";
+import {
+  calculateConfidenceScore,
+  calculateContextCompleteness,
+  calculateSimilarTaskHistory,
   calculateSpecificationClarity,
   getOrCreateTaskAutoCreateValidationHook,
   runPreCreationValidation,
   generateConfidenceReport
-} from "./validation/index.js";
+} from "../validation/index.js";
 
 // Re-export types for backwards compatibility
 export type { Task, TaskStatus, TaskDocument };

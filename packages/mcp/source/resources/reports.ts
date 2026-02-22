@@ -1,5 +1,5 @@
-import { isValidRoadmapId } from "./roadmap.js";
-import { isValidTaskId } from "./tasks.js";
+import { isValidRoadmapId } from "../tools/roadmap.js";
+import { isValidTaskId } from "../tools/task.js";
 
 export type ReportMetadata = {
   task?: string;

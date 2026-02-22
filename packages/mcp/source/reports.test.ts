@@ -3,7 +3,7 @@ import {
   parseReportMetadata,
   validateReportMetadata,
   type ReportMetadata,
-} from "./reports.js";
+} from "./resources/reports.js";
 
 describe("reports module", () => {
   describe("parseReportMetadata", () => {

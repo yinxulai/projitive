@@ -14,7 +14,7 @@ import {
   toTaskUpdatedAtMs,
   validateTransition,
   type ActionableTaskCandidate,
-} from "./tasks.js";
+} from "./tools/task.js";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";

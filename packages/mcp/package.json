@@ -18,8 +18,7 @@
     "lint": "tsc -p tsconfig.json --noEmit",
     "build": "rm -rf output && tsc -p tsconfig.json",
     "prepublishOnly": "npm run build",
-    "dev": "tsc -p tsconfig.json --watch",
-    "benchmark": "vitest bench --run"
+    "dev": "tsc -p tsconfig.json --watch"
   },
   "files": [
     "output"
