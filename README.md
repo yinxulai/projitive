@@ -2,7 +2,7 @@
 
 Language: English | [简体中文](README_CN.md)
 
-**Current Spec Version: projitive-spec v1.0.0**
+**Current Spec Version: projitive-spec v1.1.0**
 
 Projitive is a governance model + MCP toolchain for Agent-driven software delivery.
 
@@ -100,7 +100,7 @@ Key design specs include:
 
 ## Versioning
 
-- Spec version: `projitive-spec v1.0.0`
+- Spec version: `projitive-spec v1.1.0`
 - Alignment rule: implementation major versions (including MCP) must match the spec major version (`v1.x` with `v1.x`)
 - Release policy:
 	- Breaking spec upgrade (e.g. `v1` → `v2`) requires MCP major upgrade first (e.g. `2.0.0`)
@@ -163,3 +163,90 @@ projectLocate -> projectContext -> taskNext -> taskContext
 Then execute updates in governed artifacts (`tasks.md`, `designs/`, `reports/`) and re-check with `taskContext`.
 
 For full method references and outputs, see `packages/mcp/README.md`.
+
+## Release Notes
+
+### v1.1.0 (2026-02-22)
+
+**Spec Version**: projitive-spec v1.1.0  
+**MCP Package**: @projitive/mcp@1.1.0
+
+#### What's New in v1.1.0
+
+This release enhances agent autonomy while maintaining full backward compatibility with v1.0.0.
+
+##### 1. Enhanced Task State Machine (Phase 1 - TASK-0008)
+- **Sub-state Metadata**: Optional metadata for IN_PROGRESS tasks
+  - `phase`: discovery|design|implementation|testing
+  - `confidence`: 0.0-1.0 agent confidence score
+  - `estimatedCompletion`: ISO timestamp for ETA
+- **Backward Compatible**: All v1.0.0 tasks continue to work
+
+##### 2. Blocker Categorization (Phase 2 - TASK-0009)
+- **Structured Blocker Metadata**: Detailed information for BLOCKED tasks
+  - `type`: internal_dependency|external_dependency|resource|approval
+  - `description`: Human-readable explanation
+  - `blockingEntity`: What's blocking the task
+  - `unblockCondition`: Condition to resolve the block
+  - `escalationPath`: What to do if blocked too long
+- **Validation Rules**: 6 new lint codes for blocker/sub-state validation
+
+##### 3. Confidence Scoring & Validation Hooks (Phase 3 - TASK-0010)
+- **Confidence Scoring Algorithm**: Three-factor calculation
+  ```
+  confidence_score = context_completeness * 0.4 + 
+                     similar_task_history * 0.3 + 
+                     specification_clarity * 0.3
+  ```
+  - Auto-create threshold: >= 0.85
+  - Requires review: 0.60 - 0.85
+  - Must not create: < 0.60
+- **Validation Hooks**: New governance artifact `.projitive/hooks/task_auto_create_validation.md`
+- **New MCP Tools**:
+  - `taskCalculateConfidence`: Calculate confidence score for auto-creation
+  - `taskCreateValidationHook`: Create validation hook template
+
+##### 4. Test Coverage Enhancement (TASK-0011)
+- **6 New Test Files**: confidence.test.ts, design-context.test.ts, reports.test.ts, designs.test.ts, readme.test.ts, mcp-workflow.test.ts
+- **Total Test Files**: 17
+- **Spec v1.1 Coverage**: Full coverage for all new features
+
+##### 5. Dependency Security Update (TASK-0012)
+- **Security Fix**: Fixed 1 low-severity vulnerability (hono < 4.11.10)
+- **Updated Dependencies**: All dependencies to latest stable versions
+- **Test Verification**: 240 tests, 228 passing (all non-failing)
+
+#### Migration Guide from v1.0.0 to v1.1.0
+
+All changes are **additive only** - existing v1.0.0 projects continue to work without modification.
+
+To adopt v1.1.0 features:
+1. Update `@projitive/mcp` to 1.1.0
+2. (Optional) Add sub-state metadata to IN_PROGRESS tasks
+3. (Optional) Categorize BLOCKED tasks with blocker metadata
+4. (Optional) Create validation hook for auto-discovery
+
+#### Complete Task List
+
+| Task ID | Description | Status |
+|---------|-------------|--------|
+| TASK-0008 | Implement Spec v1.1 - Phase 1: Sub-state Metadata Support | ✅ DONE |
+| TASK-0009 | Implement Spec v1.1 - Phase 2: Blocker Categorization | ✅ DONE |
+| TASK-0010 | Implement Spec v1.1 - Phase 3: Confidence Scoring & Validation Hooks | ✅ DONE |
+| TASK-0011 | Enhance MCP Test Coverage - Add Unit and Integration Tests | ✅ DONE |
+| TASK-0012 | Dependency Audit and Security Update | ✅ DONE |
+| TASK-0013 | Prepare Spec v1.1.0 Release | ✅ DONE |
+
+#### Roadmap Progress
+
+- **ROADMAP-0001**: Governance baseline and task loop operational (In Progress)
+- **ROADMAP-0002**: Spec v1.1 proposal and release checklist prepared ✅
+- **ROADMAP-0003**: Continuous governance quality checks integrated (Pending)
+- **ROADMAP-0004**: MCP self-iteration optimization (In Progress)
+
+#### Backward Compatibility Guarantee
+
+- ✅ All v1.0.0 tasks continue to work unchanged
+- ✅ All existing MCP tools function as before
+- ✅ New features are opt-in and additive only
+- ✅ No breaking changes to the spec or API

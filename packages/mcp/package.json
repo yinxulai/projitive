@@ -1,6 +1,6 @@
 {
   "name": "@projitive/mcp",
-  "version": "1.0.8",
+  "version": "1.1.0",
   "description": "Projitive MCP Server for project and task discovery/update",
   "license": "ISC",
   "author": "",
@@ -14,10 +14,12 @@
   },
   "scripts": {
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "lint": "tsc -p tsconfig.json --noEmit",
     "build": "rm -rf output && tsc -p tsconfig.json",
     "prepublishOnly": "npm run build",
-    "dev": "tsc -p tsconfig.json --watch"
+    "dev": "tsc -p tsconfig.json --watch",
+    "benchmark": "vitest bench --run"
   },
   "files": [
     "output"
@@ -28,6 +30,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.3.0",
+    "@vitest/coverage-v8": "^3.2.4",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"

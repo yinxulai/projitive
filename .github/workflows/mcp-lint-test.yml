@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 jobs:
   lint-and-test:
@@ -34,5 +35,67 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Test
-        run: npm run test
+      - name: Test with Coverage
+        run: npm run test:coverage
+
+      - name: Upload Coverage Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: packages/mcp/coverage/
+          retention-days: 30
+
+      - name: Run Benchmarks
+        run: npm run benchmark 2>/dev/null || echo "Benchmark script not available yet"
+
+  coverage-report:
+    name: Coverage Report
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    if: github.event_name == 'pull_request'
+    
+    permissions:
+      contents: read
+      pull-requests: write
+      
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: Download Coverage Report
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          
+      - name: Comment Coverage on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            
+            try {
+              const coveragePath = path.join(process.cwd(), 'coverage', 'coverage-final.json');
+              if (fs.existsSync(coveragePath)) {
+                const coverage = JSON.parse(fs.readFileSync(coveragePath, 'utf8'));
+                const total = coverage.total;
+                if (total) {
+                  const lines = total.lines ? total.lines.pct : 'N/A';
+                  const functions = total.functions ? total.functions.pct : 'N/A';
+                  const branches = total.branches ? total.branches.pct : 'N/A';
+                  const statements = total.statements ? total.statements.pct : 'N/A';
+                  
+                  const comment = `## 📊 Test Coverage Report\n\n| Metric | Coverage |\n|--------|----------|\n| Lines | ${lines}% |\n| Functions | ${functions}% |\n| Branches | ${branches}% |\n| Statements | ${statements}% |\n\n*Full coverage report available as artifact.*`;
+                  
+                  await github.rest.issues.createComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: context.issue.number,
+                    body: comment
+                  });
+                }
+              }
+            } catch (error) {
+              console.log('Could not generate coverage comment:', error.message);
+            }

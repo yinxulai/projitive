@@ -1,190 +1,246 @@
-# Projitive Auto Task Discovery Report
+# Auto Task Discovery Report
 
-**Report ID**: REPORT-AUTO-001  
-**Generated**: 2026-02-22 07:48 AM (Asia/Shanghai)  
-**Executor**: ai-copilot (Cron Task)  
-**Project**: projitive  
+**Date:** 2026-02-22
 
----
+**Project:** projitive
 
-## 1. Executive Summary
-
-This report documents the automated task discovery process for the projitive project. All 7 existing tasks (TASK-0001 through TASK-0007) have been completed, leaving the project in a state with no actionable TODO or IN_PROGRESS tasks.
-
-Following the `task_no_actionable.md` discovery checklist, this report identifies 4 new executable tasks to advance the project toward its roadmap milestones.
+**Current Time:** 21:10 Asia/Shanghai
 
 ---
 
-## 2. Current State Analysis
+## Summary
 
-### 2.1 Task Inventory
+This report documents the automated task discovery process for the projitive project when no actionable TODO or IN_PROGRESS tasks are available.
 
-| Task ID | Status | Title | Roadmap Ref |
-|---------|--------|-------|-------------|
-| TASK-0001 | DONE | Bootstrap repository self-management governance | ROADMAP-0001 |
-| TASK-0002 | DONE | Stabilize default task.next workflow | ROADMAP-0001 |
-| TASK-0003 | DONE | Prepare spec v1.1 governance change proposal | ROADMAP-0002 |
-| TASK-0004 | DONE | Consolidate recommended task discovery workflow | ROADMAP-0004 |
-| TASK-0005 | DONE | Improve auto-discovery and task creation mechanism | ROADMAP-0004 |
-| TASK-0006 | DONE | Enhance MCP design onboarding context | ROADMAP-0004 |
-| TASK-0007 | DONE | Kickoff Spec v1.1 Implementation - Phase 1 Planning | ROADMAP-0002 |
-
-**Summary**: 7 tasks total, 7 DONE, 0 TODO, 0 IN_PROGRESS, 0 BLOCKED
-
-### 2.2 Roadmap Milestone Status
-
-| Milestone ID | Title | Status | Target |
-|--------------|-------|--------|--------|
-| ROADMAP-0001 | Governance baseline and task loop operational | Not Completed | 2026-Q1 |
-| ROADMAP-0002 | Spec v1.1 proposal and release checklist prepared | Not Completed | 2026-Q1 |
-| ROADMAP-0003 | Continuous governance quality checks integrated | Not Completed | 2026-Q2 |
-| ROADMAP-0004 | MCP self-iteration optimization for discovery, task creation, and design onboarding | Not Completed | 2026-Q1 |
-
-### 2.3 Codebase Metrics
-
-| Metric | Value |
-|--------|-------|
-| Total TypeScript/JavaScript files | 3,013 |
-| Test files (.test.ts) | 149 |
-| MCP package source files | 22 |
-| MCP package version | 1.0.8 |
-| TODO/FIXME/HACK comments | 0 |
+**Current State:**
+- Total tasks: 18
+- DONE: 18
+- TODO: 0
+- IN_PROGRESS: 0
+- BLOCKED: 0
 
 ---
 
-## 3. Discovery Checklist Analysis
+## Discovery Checklist
 
-### 3.1 Code-Project Guide Consistency Check
+### 1. Code vs Project Guide/Spec Consistency Check
 
-**Finding**: The spec v1.1 proposal (TASK-0003) has been fully drafted but not yet implemented.
+**Finding:** ✅ Code matches spec v1.1.0
 
-**Gap Identified**:
-- Spec v1.1 introduces new features: sub-state metadata, blocker categorization, confidence scoring, validation hooks
-- Current MCP codebase (v1.0.8) implements v1.0.0 spec only
-- No migration path implementation exists yet
+**Details:**
+- Spec version: projitive-spec v1.1.0
+- MCP package version: @projitive/mcp@1.1.0
+- All Spec v1.1.0 features implemented and tested
 
-**Proposed Tasks**:
-1. **TASK-0008**: Implement Spec v1.1 - Phase 1: Sub-state Metadata Support
-2. **TASK-0009**: Implement Spec v1.1 - Phase 2: Blocker Categorization
-3. **TASK-0010**: Implement Spec v1.1 - Phase 3: Confidence Scoring & Validation Hooks
+### 2. Test Coverage Check
 
-### 3.2 Test Coverage Gap Analysis
+**Finding:** ⚠️ Coverage gaps still exist
 
-**Finding**: 149 test files for 3,013 source files = 1 test per ~20 source files
+**Coverage Report:**
+- Overall: 52.54% (improved from 51.08%)
+- Statements: 52.54%
+- Branches: 82.57%
+- Functions: 77.47%
+- Lines: 52.54%
 
-**Gap Identified**:
-- MCP package has 22 source files but only a few test files (roadmap.test.ts, tasks.test.ts)
-- No integration tests for the full MCP workflow
-- Missing tests for: projectContext, design-context, validation hooks
+**Major gaps:**
+- `source/index.ts: 0% coverage (lines 3-284) - MCP server registration
+- `source/projitive.ts: 36.92% coverage - project discovery
+- `source/roadmap.ts: 35.35% coverage - roadmap management
+- `source/tasks.ts: 35.42% coverage - task management
+- `source/helpers/index.ts: 0% coverage
 
-**Proposed Task**:
-4. **TASK-0011**: Enhance MCP Test Coverage - Add Unit and Integration Tests
+### 3. Development/Testing Workflow Check
 
-### 3.3 TODO/FIXME/HACK Comment Check
+**Finding:** ✅ Workflow is stable
 
-**Finding**: No TODO/FIXME/HACK comments found in codebase.
+**Details:**
+- Build passes: `npm run build`
+- Lint passes: `npm run lint`
+- Test passes: `npm run test` (140 tests all passing)
+- Benchmarks available: `npm run benchmark`
 
-**Status**: ✓ Clean - No action needed
+### 4. TODO/FIXME/HACK Comment Check
 
-### 3.4 Dependency and Security Check
+**Finding:** ✅ No actionable comments in project code
 
-**Finding**: Need to verify npm dependencies are up-to-date.
+**Details:**
+- No TODO/FIXME/HACK comments found in `packages/mcp/source/`
 
-**Gap Identified**:
-- @modelcontextprotocol/sdk at ^1.17.5 (check for updates)
-- zod at ^3.23.8 (check for updates)
-- TypeScript at ^5.9.2 (check for updates)
+### 5. Dependency & Security Audit Check
 
-**Proposed Task**:
-5. **TASK-0012**: Dependency Audit and Security Update
+**Finding:** ✅ Dependencies up to date
 
-### 3.5 Manual Step Automation Check
+**Details:**
+- All dependencies updated to latest stable versions
+- No security vulnerabilities identified
+- npm audit shows no issues
 
-**Finding**: The task discovery and creation process could be more automated.
+### 6. Documentation Completeness Check
 
-**Gap Identified**:
-- No automated cron job for periodic task discovery
-- No automated report generation when tasks are completed
-- Manual process needed to run discovery checklist
+**Finding:** ✅ Documentation is comprehensive
 
-**Proposed Task**:
-6. **TASK-0013**: Automate Task Discovery and Reporting Workflow
+**Details:**
+- User guide: `.projitive/designs/user-guide-examples.md`
+- Best practices: `.projitive/designs/best-practices.md`
+- Migration guide: `.projitive/designs/migration-guide-v1.1.0.md`
+- README in both English and Chinese
+- Design specifications in `design/` directory
 
----
+### 7. CI/CD Pipeline Check
 
-## 4. Proposed New Tasks Summary
+**Finding:** ✅ CI/CD is fully functional
 
-| Task ID | Title | Priority | Roadmap Ref | Estimate |
-|---------|-------|----------|-------------|----------|
-| TASK-0008 | Implement Spec v1.1 - Phase 1: Sub-state Metadata Support | HIGH | ROADMAP-0002 | 1 week |
-| TASK-0009 | Implement Spec v1.1 - Phase 2: Blocker Categorization | HIGH | ROADMAP-0002 | 1 week |
-| TASK-0010 | Implement Spec v1.1 - Phase 3: Confidence Scoring & Validation Hooks | HIGH | ROADMAP-0002 | 1 week |
-| TASK-0011 | Enhance MCP Test Coverage - Add Unit and Integration Tests | MEDIUM | ROADMAP-0004 | 1 week |
-| TASK-0012 | Dependency Audit and Security Update | MEDIUM | ROADMAP-0003 | 3 days |
-| TASK-0013 | Automate Task Discovery and Reporting Workflow | LOW | ROADMAP-0004 | 1 week |
-
----
-
-## 5. Immediate Recommendations
-
-### 5.1 Next Task to Execute
-
-**TASK-0008**: Implement Spec v1.1 - Phase 1: Sub-state Metadata Support
-
-**Rationale**:
-- Spec v1.1 proposal has been completed (TASK-0003, TASK-0007)
-- Implementation is the natural next step
-- Phase 1 (sub-state metadata) is foundational for Phase 2 and 3
-- Advances ROADMAP-0002 which is a Q1 2026 target
-
-### 5.2 Task Execution Plan (for TASK-0008)
-
-1. **Schema Definition** (1 day)
-   - Define TypeScript interfaces for sub-state metadata
-   - Update task state machine types
-   - Add validation rules
-
-2. **MCP Tool Updates** (3 days)
-   - Update `taskContext` to support sub-state field
-   - Update `taskUpdate` to handle sub-state transitions
-   - Update `taskNext` to consider sub-state in ranking
-
-3. **Documentation Updates** (1 day)
-   - Update spec documentation
-   - Add migration guide for v1.0.0 → v1.1.0
-   - Update README with new features
-
-4. **Testing** (2 days)
-   - Add unit tests for sub-state logic
-   - Add integration tests for MCP tools
-   - Validate backward compatibility
+**Details:**
+- GitHub Actions workflows for lint/test and release
+- Test coverage reporting integrated
+- Benchmark suite available
+- Release automation configured
 
 ---
 
-## 6. Conclusion
+## Proposed Tasks
 
-This automated task discovery has successfully identified 6 new executable tasks that advance the projitive project toward its roadmap milestones. The project is transitioning from the "planning and foundation" phase to the "implementation and enhancement" phase.
+Based on the discovery checklist, the following TODO tasks are proposed:
 
-With the completion of TASK-0007 (kickoff of Spec v1.1), the next logical step is TASK-0008 (implementation of Spec v1.1 Phase 1). This continues the momentum and advances ROADMAP-0002 toward its Q1 2026 target.
+### TASK-0019 | TODO | Improve Test Coverage for MCP Server (index.ts)
 
----
+**Owner:** ai-copilot
 
-## Appendix A: Methodology
+**Summary:** Add comprehensive test coverage for the MCP server registration module:
+- Test server initialization and tool registration
+- Test all MCP tool handlers
+- Mock stdio server for integration testing
+- Achieve at least 80% coverage for index.ts
 
-This report was generated following the `task_no_actionable.md` discovery checklist:
+**Roadmap Refs:** ROADMAP-0004
 
-1. ✓ Checked code-project guide consistency
-2. ✓ Analyzed test coverage gaps
-3. ✓ Verified no TODO/FIXME/HACK comments exist
-4. ✓ Identified dependency update needs
-5. ✓ Assessed automation opportunities
-
-Each finding was validated against:
-- Current roadmap status
-- Spec v1.1 proposal document
-- Existing task completion state
-- Codebase metrics
+**Links:**
+- ./reports/auto-task-discovery-2026-02-22.md
+- ../packages/mcp/source/index.ts
+- ../packages/mcp/source/index.test.ts
 
 ---
 
-**End of Report**
+### TASK-0020 | TODO | Improve Test Coverage for Project Discovery (projitive.ts)
+
+**Owner:** ai-copilot
+
+**Summary:** Increase test coverage for project discovery module:
+- Add tests for project scanning at different depths
+- Test project locate functionality
+- Test hasProjectMarker and isGovernanceDirectory
+- Add edge case tests (empty directories, permission issues)
+- Achieve at least 70% coverage for projitive.ts
+
+**Roadmap Refs:** ROADMAP-0004
+
+**Links:**
+- ./reports/auto-task-discovery-2026-02-22.md
+- ../packages/mcp/source/projitive.ts
+- ../packages/mcp/source/projitive.test.ts
+
+---
+
+### TASK-0021 | TODO | Improve Test Coverage for Task Management (tasks.ts)
+
+**Owner:** ai-copilot
+
+**Summary:** Increase test coverage for task management module:
+- Add tests for task parsing and rendering
+- Test taskUpdate functionality with subState and blocker
+- Test linter validation rules
+- Add edge case tests (invalid markdown, missing fields)
+- Achieve at least 70% coverage for tasks.ts
+
+**Roadmap Refs:** ROADMAP-0004
+
+**Links:**
+- ./reports/auto-task-discovery-2026-02-22.md
+- ../packages/mcp/source/tasks.ts
+- ../packages/mcp/source/tasks.test.ts
+
+---
+
+### TASK-0022 | TODO | Create Usage Examples and Demo Projects
+
+**Owner:** ai-copilot
+
+**Summary:** Create practical usage examples and demo projects:
+- Create a simple demo project showing basic Projitive usage
+- Create example tasks.md, roadmap.md, and README.md templates
+- Add step-by-step tutorial for setting up a new project
+- Create video walkthrough script (text version)
+
+**Roadmap Refs:** ROADMAP-0001
+
+**Links:**
+- ./reports/auto-task-discovery-2026-02-22.md
+- ./designs/user-guide-examples.md
+- ../examples/ (create if needed)
+
+---
+
+### TASK-0023 | TODO | Performance Optimization and Benchmark Enhancement
+
+**Owner:** ai-copilot
+
+**Summary:** Optimize performance and enhance benchmark suite:
+- Analyze current benchmark results
+- Optimize hot paths in markdown parsing and task rendering
+- Add more benchmark scenarios (large projects, many tasks)
+- Set performance baselines and regression thresholds
+- Document performance optimization findings
+
+**Roadmap Refs:** ROADMAP-0003
+
+**Links:**
+- ./reports/auto-task-discovery-2026-02-22.md
+- ../packages/mcp/source/benchmark/
+- ../.github/workflows/mcp-lint-test.yml
+
+---
+
+### TASK-0024 | TODO | Plan Spec v1.2.0 Features
+
+**Owner:** ai-copilot
+
+**Summary:** Plan and document Spec v1.2.0 features:
+- Collect user feedback and usage patterns
+- Identify pain points and improvement opportunities
+- Brainstorm new features (e.g., project templates, plugin system)
+- Create feature proposals with design rationale
+- Prioritize features for v1.2.0
+- Create roadmap for v1.2.0 implementation
+
+**Roadmap Refs:** ROADMAP-0002
+
+**Links:**
+- ./reports/auto-task-discovery-2026-02-22.md
+- ./designs/spec-v1.1-governance-change-proposal.md
+- ./roadmap.md
+
+---
+
+## Priority Rationale
+
+1. **High Priority:**
+- TASK-0019, TASK-0020, TASK-0021: Test coverage improvement directly impacts reliability and maintainability
+- TASK-0024: Planning next version ensures continuous evolution
+
+2. **Medium Priority:**
+- TASK-0022: Usage examples improve adoption
+- TASK-0023: Performance optimization enhances user experience
+
+---
+
+## Next Steps
+
+1. Add these tasks to `tasks.md`
+2. Execute them one by one starting with TASK-0019
+3. Monitor CI/CD pipeline to ensure tests continue to pass
+4. Gather feedback for Spec v1.2.0 planning
+
+---
+
+*Report generated by ai-copilot on 2026-02-22*

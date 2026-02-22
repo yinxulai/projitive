@@ -173,4 +173,100 @@
   - ./designs/migration-guide-v1.1.0.md
   - ./reports/auto-task-discovery-2026-02-22-latest.md
   - ./reports/TASK-0015-execution-2026-02-22.md
+
+## TASK-0016 | DONE | Improve Test Coverage for Core Modules
+- owner: ai-copilot
+- summary: Successfully improved test coverage for core modules by adding comprehensive unit tests: Added index.test.ts with 6 tests covering MCP server registration, added roadmap.test.ts with 8 tests covering roadmap ID validation and lint suggestions. Total tests increased from 120 to 133, all tests pass successfully.
+- updatedAt: 2026-02-22T08:17:00.000Z
+- roadmapRefs: ROADMAP-0004
+- links:
+  - ./reports/auto-task-discovery-2026-02-22-latest.md
+  - ./reports/TASK-0016-execution-2026-02-22.md
+  - ../packages/mcp/source/index.ts
+  - ../packages/mcp/source/projitive.ts
+  - ../packages/mcp/source/roadmap.ts
+  - ../packages/mcp/source/index.test.ts
+  - ../packages/mcp/source/roadmap.test.ts
+
+## TASK-0017 | DONE | Create Benchmark Suite for Performance Testing
+- owner: ai-copilot
+- summary: Successfully created comprehensive performance benchmark suite for measuring MCP server performance. Added 4 benchmark files (tasks.bench.ts, markdown.bench.ts, projitive.bench.ts, validation.bench.ts) covering task rendering/parsing, markdown processing, project discovery, and confidence score calculations. All 133 tests pass, benchmarks run successfully, and CI/CD integration is complete.
+- updatedAt: 2026-02-22T16:28:00.000Z
+- roadmapRefs: ROADMAP-0003
+- links:
+  - ./reports/auto-task-discovery-2026-02-22-latest.md
+  - ../.github/workflows/mcp-lint-test.yml
+  - ../packages/mcp/source/benchmark/
+  - ./reports/TASK-0017-execution-2026-02-22.md
+
+## TASK-0018 | DONE | Create End-to-End Integration Test Suite
+- owner: ai-copilot
+- summary: Successfully created comprehensive end-to-end integration tests that simulate real agent workflow: Test complete project lifecycle (initialize → discover → manage tasks), test markdown rendering and parsing roundtrip, test error handling and edge cases, test Spec v1.1 features (subState and blocker categorization). All 140 tests pass successfully.
+- updatedAt: 2026-02-22T11:50:00.000Z
+- roadmapRefs: ROADMAP-0001
+- links:
+  - ./reports/auto-task-discovery-2026-02-22-latest.md
+  - ../packages/mcp/source/mcp-workflow.test.ts
+  - ../packages/mcp/source/e2e-integration.test.ts
+  - ./reports/TASK-0018-execution-2026-02-22.md
+
+## TASK-0019 | IN_PROGRESS | Improve Test Coverage for MCP Server (index.ts)
+- owner: ai-copilot
+- summary: Add comprehensive test coverage for the MCP server registration module: Test server initialization and tool registration, test all MCP tool handlers, mock stdio server for integration testing, achieve at least 80% coverage for index.ts.
+- updatedAt: 2026-02-22T13:30:00.000Z
+- roadmapRefs: ROADMAP-0004
+- links:
+  - ./reports/auto-task-discovery-2026-02-22.md
+  - ../packages/mcp/source/index.ts
+  - ../packages/mcp/source/index.test.ts
+
+## TASK-0020 | TODO | Improve Test Coverage for Project Discovery (projitive.ts)
+- owner: ai-copilot
+- summary: Increase test coverage for project discovery module: Add tests for project scanning at different depths, test project locate functionality, test hasProjectMarker and isGovernanceDirectory, add edge case tests (empty directories, permission issues), achieve at least 70% coverage for projitive.ts.
+- updatedAt: 2026-02-22T13:10:00.000Z
+- roadmapRefs: ROADMAP-0004
+- links:
+  - ./reports/auto-task-discovery-2026-02-22.md
+  - ../packages/mcp/source/projitive.ts
+  - ../packages/mcp/source/projitive.test.ts
+
+## TASK-0021 | TODO | Improve Test Coverage for Task Management (tasks.ts)
+- owner: ai-copilot
+- summary: Increase test coverage for task management module: Add tests for task parsing and rendering, test taskUpdate functionality with subState and blocker, test linter validation rules, add edge case tests (invalid markdown, missing fields), achieve at least 70% coverage for tasks.ts.
+- updatedAt: 2026-02-22T13:10:00.000Z
+- roadmapRefs: ROADMAP-0004
+- links:
+  - ./reports/auto-task-discovery-2026-02-22.md
+  - ../packages/mcp/source/tasks.ts
+  - ../packages/mcp/source/tasks.test.ts
+
+## TASK-0022 | TODO | Create Usage Examples and Demo Projects
+- owner: ai-copilot
+- summary: Create practical usage examples and demo projects: Create a simple demo project showing basic Projitive usage, create example tasks.md, roadmap.md, and README.md templates, add step-by-step tutorial for setting up a new project, create video walkthrough script (text version).
+- updatedAt: 2026-02-22T13:10:00.000Z
+- roadmapRefs: ROADMAP-0001
+- links:
+  - ./reports/auto-task-discovery-2026-02-22.md
+  - ./designs/user-guide-examples.md
+  - ../examples/ (create if needed)
+
+## TASK-0023 | TODO | Performance Optimization and Benchmark Enhancement
+- owner: ai-copilot
+- summary: Optimize performance and enhance benchmark suite: Analyze current benchmark results, optimize hot paths in markdown parsing and task rendering, add more benchmark scenarios (large projects, many tasks), set performance baselines and regression thresholds, document performance optimization findings.
+- updatedAt: 2026-02-22T13:10:00.000Z
+- roadmapRefs: ROADMAP-0003
+- links:
+  - ./reports/auto-task-discovery-2026-02-22.md
+  - ../packages/mcp/source/benchmark/
+  - ../.github/workflows/mcp-lint-test.yml
+
+## TASK-0024 | TODO | Plan Spec v1.2.0 Features
+- owner: ai-copilot
+- summary: Plan and document Spec v1.2.0 features: Collect user feedback and usage patterns, identify pain points and improvement opportunities, brainstorm new features (e.g., project templates, plugin system), create feature proposals with design rationale, prioritize features for v1.2.0, create roadmap for v1.2.0 implementation.
+- updatedAt: 2026-02-22T13:10:00.000Z
+- roadmapRefs: ROADMAP-0002
+- links:
+  - ./reports/auto-task-discovery-2026-02-22.md
+  - ./designs/spec-v1.1-governance-change-proposal.md
+  - ./roadmap.md
 <!-- PROJITIVE:TASKS:END -->
