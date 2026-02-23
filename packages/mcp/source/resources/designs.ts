@@ -51,6 +51,28 @@ export function validateDesignMetadata(metadata: DesignMetadata): { ok: boolean;
   return { ok: errors.length === 0, errors };
 }
 
+async function findAllMarkdownFiles(dir: string): Promise<{ filePath: string; relativePath: string }[]> {
+  const result: { filePath: string; relativePath: string }[] = [];
+
+  async function walk(currentDir: string, relativeBase: string) {
+    const entries = await fs.readdir(currentDir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        await walk(fullPath, path.join(relativeBase, entry.name));
+      } else if (entry.isFile() && entry.name.endsWith(".md")) {
+        result.push({
+          filePath: fullPath,
+          relativePath: path.join(relativeBase, entry.name),
+        });
+      }
+    }
+  }
+
+  await walk(dir, "");
+  return result;
+}
+
 export async function registerDesignFilesResources(server: McpServer, repoRoot: string): Promise<void> {
   const designsDir = path.join(repoRoot, ".projitive", "designs");
 
@@ -58,18 +80,15 @@ export async function registerDesignFilesResources(server: McpServer, repoRoot: 
     // 检查设计文件目录是否存在
     await fs.access(designsDir);
 
-    // 读取设计文件目录
-    const designFiles = await fs.readdir(designsDir);
-
-    // 过滤出 .md 文件
-    const markdownFiles = designFiles.filter(file => file.endsWith(".md"));
+    // 递归读取所有 .md 文件（包括子目录）
+    const markdownFiles = await findAllMarkdownFiles(designsDir);
 
     // 注册每个设计文件作为资源
-    for (const fileName of markdownFiles) {
-      const designId = path.basename(fileName, ".md");
-      const filePath = path.join(designsDir, fileName);
-
-      // 读取文件内容
+    for (const { filePath, relativePath } of markdownFiles) {
+      // 用相对路径生成 designId，将路径分隔符替换为 '-'
+      const designId = relativePath
+        .slice(0, -3) // 移除 .md 后缀
+        .replace(/[\\/]/g, "-"); // 替换路径分隔符为 '-'
       const content = await fs.readFile(filePath, "utf-8");
 
       // 注册资源
@@ -78,7 +97,7 @@ export async function registerDesignFilesResources(server: McpServer, repoRoot: 
         `projitive://designs/${designId}`,
         {
           title: designId,
-          description: `Design document: ${designId}`,
+          description: `Design document: ${relativePath}`,
           mimeType: "text/markdown",
         },
         async () => ({
