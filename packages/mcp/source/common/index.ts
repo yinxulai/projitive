@@ -4,7 +4,6 @@ export * from "./utils.js";
 export * from "./markdown.js";
 export * from "./files.js";
 export * from "./response.js";
-export * from "./confidence.js";
 export * from "./catch.js";
 export * from "./artifacts.js";
 export * from "./linter.js";

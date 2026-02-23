@@ -33,10 +33,6 @@ vi.mock("./tools/roadmap.js", () => ({
   registerRoadmapTools: vi.fn(),
 }))
 
-vi.mock("./design-context.js", () => ({
-  registerDesignContextResources: vi.fn(),
-  registerDesignContextPrompts: vi.fn(),
-}))
 
 vi.mock("./resources/governance.js", () => ({
   registerGovernanceResources: vi.fn(),
@@ -110,8 +106,6 @@ describe("index module", () => {
     expect(content).toContain("registerTools(server)")
     expect(content).toContain("registerResources(server, repoRoot)")
     expect(content).toContain("registerPrompts(server)")
-    expect(content).toContain("registerDesignContextResources(server)")
-    expect(content).toContain("registerDesignContextPrompts(server)")
   })
 
   it("should have proper error handling in main", async () => {

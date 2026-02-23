@@ -96,40 +96,6 @@ export interface ValidationIssue {
   fixHint?: string;
 }
 
-// ============================================================================
-// Confidence Scoring (Spec v1.1.0)
-// ============================================================================
-
-export interface ConfidenceFactors {
-  /** Context completeness (0.0 - 1.0) */
-  contextCompleteness: number;
-  /** Similar task history success rate (0.0 - 1.0) */
-  similarTaskHistory: number;
-  /** Specification clarity (0.0 - 1.0) */
-  specificationClarity: number;
-}
-
-export interface ConfidenceScore {
-  /** Final score (0.0 - 1.0) */
-  score: number;
-  /** Individual factors */
-  factors: ConfidenceFactors;
-  /** Recommended action */
-  recommendation: "auto_create" | "review_required" | "do_not_create";
-}
-
-// Weight factors for confidence calculation
-export const CONFIDENCE_WEIGHTS = {
-  contextCompleteness: 0.4,
-  similarTaskHistory: 0.3,
-  specificationClarity: 0.3,
-} as const;
-
-// Confidence thresholds
-export const CONFIDENCE_THRESHOLDS = {
-  autoCreate: 0.85,
-  reviewRequired: 0.6,
-} as const;
 
 // ============================================================================
 // Task Document Types
