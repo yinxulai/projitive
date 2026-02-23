@@ -9,9 +9,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod"
 import packageJson from "../package.json" with { type: "json" }
 import { registerTools } from "./tools/index.js"
-import { registerResources } from "./resources/index.js"
 import { registerPrompts } from "./prompts/index.js"
-import { registerDesignContextResources, registerDesignContextPrompts } from "./design-context.js"
+import { registerResources } from "./resources/index.js"
 
 const PROJITIVE_SPEC_VERSION = "1.1.0"
 
@@ -29,12 +28,10 @@ const server = new McpServer({
   description: "Semantic Projitive MCP for project/task discovery and agent guidance with markdown-first outputs",
 })
 
-// Register all modules
+// 注册所有模块
 registerTools(server)
-registerResources(server, repoRoot)
 registerPrompts(server)
-registerDesignContextResources(server)
-registerDesignContextPrompts(server)
+registerResources(server, repoRoot)
 
 async function main(): Promise<void> {
   console.error(`[projitive-mcp] starting server`)

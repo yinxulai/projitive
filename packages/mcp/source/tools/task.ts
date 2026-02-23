@@ -16,26 +16,16 @@ import {
 import { catchIt, TASK_LINT_CODES, renderLintSuggestions, type LintSuggestion } from "../common/index.js";
 import { resolveGovernanceDir, resolveScanDepth, resolveScanRoot, discoverProjects, toProjectPath } from "./project.js";
 import { isValidRoadmapId } from "./roadmap.js";
-import type { 
-  Task, 
-  TaskStatus, 
-  TaskDocument, 
-  SubStateMetadata, 
+import type {
+  Task,
+  TaskStatus,
+  TaskDocument,
+  SubStateMetadata,
   BlockerMetadata,
   SubStatePhase,
   BlockerType,
-  ConfidenceFactors
 } from "../types.js";
 import { SUB_STATE_PHASES, BLOCKER_TYPES } from "../types.js";
-import {
-  calculateConfidenceScore,
-  calculateContextCompleteness,
-  calculateSimilarTaskHistory,
-  calculateSpecificationClarity,
-  getOrCreateTaskAutoCreateValidationHook,
-  runPreCreationValidation,
-  generateConfidenceReport
-} from "../common/index.js";
 
 // Re-export types for backwards compatibility
 export type { Task, TaskStatus, TaskDocument };
@@ -103,7 +93,7 @@ const NO_TASK_DISCOVERY_HOOK_FILE = "task_no_actionable.md";
 const DEFAULT_NO_TASK_DISCOVERY_GUIDANCE = [
   "- Check whether current code violates project guide/spec conventions; create TODO tasks for each actionable gap.",
   "- Check unit/integration test coverage and identify high-value missing tests; create TODO tasks for meaningful coverage improvements.",
-  "- Check development/testing workflow for bottlenecks (slow feedback, fragile scripts, unclear runbooks); create TODO tasks to improve reliability.",
+  "- Check development/testing workflow for bottlenecks (slow feedback, fragile scripts, unclear runbooks); create tasks to improve reliability.",
   "- Scan for TODO/FIXME/HACK comments and convert feasible items into governed TODO tasks with evidence links.",
   "- Check dependency freshness and security advisories; create tasks for safe upgrades when needed.",
   "- Check repeated manual operations that can be automated (lint/test/release checks); create tasks to reduce operational toil.",
@@ -1338,7 +1328,7 @@ export function registerTaskTools(server: McpServer): void {
       const governanceDir = await resolveGovernanceDir(projectPath);
       const { tasksPath, tasks, markdown: tasksMarkdown } = await loadTasksDocument(governanceDir);
       const taskIndex = tasks.findIndex((item) => item.id === taskId);
-      
+
       if (taskIndex === -1) {
         return {
           ...asText(renderErrorMarkdown(
@@ -1373,7 +1363,7 @@ export function registerTaskTools(server: McpServer): void {
       if (updates.summary !== undefined) task.summary = updates.summary;
       if (updates.roadmapRefs) task.roadmapRefs = updates.roadmapRefs;
       if (updates.links) task.links = updates.links;
-      
+
       // Handle subState (Spec v1.1.0)
       if (updates.subState !== undefined) {
         if (updates.subState === null) {
@@ -1385,7 +1375,7 @@ export function registerTaskTools(server: McpServer): void {
           };
         }
       }
-      
+
       // Handle blocker (Spec v1.1.0)
       if (updates.blocker !== undefined) {
         if (updates.blocker === null) {
@@ -1451,131 +1441,6 @@ export function registerTaskTools(server: McpServer): void {
           ]),
           lintSection([]),
           nextCallSection(`taskContext(projectPath=\"${toProjectPath(governanceDir)}\", taskId=\"${taskId}\")`),
-        ],
-      });
-
-      return asText(markdown);
-    }
-  );
-
-  // ============================================================================
-  // Spec v1.1.0 - Confidence Scoring Tools
-  // ============================================================================
-
-  server.registerTool(
-    "taskCalculateConfidence",
-    {
-      title: "Calculate Task Confidence",
-      description: "Calculate confidence score for auto-creating a new task (Spec v1.1.0)",
-      inputSchema: {
-        projectPath: z.string(),
-        candidateTaskSummary: z.string(),
-        contextCompleteness: z.number().min(0).max(1).optional(),
-        similarTaskHistory: z.number().min(0).max(1).optional(),
-        specificationClarity: z.number().min(0).max(1).optional(),
-      },
-    },
-    async ({ projectPath, candidateTaskSummary, contextCompleteness, similarTaskHistory, specificationClarity }) => {
-      const governanceDir = await resolveGovernanceDir(projectPath);
-      const { tasks } = await loadTasks(governanceDir);
-
-      // Calculate factors if not provided
-      const calculatedContextCompleteness = contextCompleteness ?? await calculateContextCompleteness(governanceDir);
-      const calculatedSimilarTaskHistory = similarTaskHistory ?? calculateSimilarTaskHistory(tasks, candidateTaskSummary);
-      const calculatedSpecificationClarity = specificationClarity ?? calculateSpecificationClarity({
-        hasRoadmap: true, // Assume roadmap exists for simplicity
-        hasDesignDocs: true,
-        hasClearAcceptanceCriteria: candidateTaskSummary.length > 50,
-      });
-
-      const factors: ConfidenceFactors = {
-        contextCompleteness: calculatedContextCompleteness,
-        similarTaskHistory: calculatedSimilarTaskHistory,
-        specificationClarity: calculatedSpecificationClarity,
-      };
-
-      const confidenceScore = calculateConfidenceScore(factors);
-      const validationResult = await runPreCreationValidation(governanceDir, confidenceScore);
-      const hookContent = await getOrCreateTaskAutoCreateValidationHook(governanceDir);
-
-      const markdown = renderToolResponseMarkdown({
-        toolName: "taskCalculateConfidence",
-        sections: [
-          summarySection([
-            `- governanceDir: ${governanceDir}`,
-            `- confidenceScore: ${(confidenceScore.score * 100).toFixed(0)}%`,
-            `- recommendation: ${confidenceScore.recommendation}`,
-            `- validationPassed: ${validationResult.passed}`,
-          ]),
-          evidenceSection([
-            "### Confidence Report",
-            ...generateConfidenceReport(confidenceScore).split("\n"),
-            "",
-            "### Validation Issues",
-            ...(validationResult.issues.length > 0 
-              ? validationResult.issues.map(issue => `- ${issue}`)
-              : ["- (none)"]),
-            "",
-            "### Validation Hook",
-            "- hook created/verified at: hooks/task_auto_create_validation.md",
-          ]),
-          guidanceSection([
-            confidenceScore.recommendation === "auto_create" 
-              ? "✅ Confidence is high - you can auto-create this task."
-              : confidenceScore.recommendation === "review_required"
-              ? "⚠️ Confidence is medium - review recommended before creating."
-              : "❌ Confidence is low - do not auto-create this task.",
-            "",
-            "### Next Steps",
-            "- If recommendation is auto_create: use taskUpdate or manually add the task",
-            "- If review_required: review the factors and improve context before creating",
-            "- If do_not_create: gather more requirements or context before attempting",
-          ]),
-          lintSection([]),
-          nextCallSection(confidenceScore.recommendation !== "do_not_create"
-            ? `projectContext(projectPath=\"${toProjectPath(governanceDir)}\")`
-            : undefined),
-        ],
-      });
-
-      return asText(markdown);
-    }
-  );
-
-  server.registerTool(
-    "taskCreateValidationHook",
-    {
-      title: "Create Validation Hook",
-      description: "Create or update the task auto-create validation hook (Spec v1.1.0)",
-      inputSchema: {
-        projectPath: z.string(),
-      },
-    },
-    async ({ projectPath }) => {
-      const governanceDir = await resolveGovernanceDir(projectPath);
-      const hookContent = await getOrCreateTaskAutoCreateValidationHook(governanceDir);
-
-      const markdown = renderToolResponseMarkdown({
-        toolName: "taskCreateValidationHook",
-        sections: [
-          summarySection([
-            `- governanceDir: ${governanceDir}`,
-            `- hookPath: ${governanceDir}/hooks/task_auto_create_validation.md`,
-            `- status: created/verified`,
-          ]),
-          evidenceSection([
-            "### Hook Content",
-            "```markdown",
-            ...hookContent.split("\n"),
-            "```",
-          ]),
-          guidanceSection([
-            "Validation hook created successfully.",
-            "Edit the hook file to customize pre-creation and post-creation actions.",
-            "The hook will be used by taskCalculateConfidence for validation.",
-          ]),
-          lintSection([]),
-          nextCallSection(`taskCalculateConfidence(projectPath=\"${toProjectPath(governanceDir)}\", candidateTaskSummary=\"Your task summary here\")`),
         ],
       });
 
