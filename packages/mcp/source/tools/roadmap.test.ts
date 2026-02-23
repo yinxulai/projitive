@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest"
 import fs from "node:fs/promises"
 import path from "node:path"
 import os from "node:os"
-import { isValidRoadmapId, collectRoadmapLintSuggestions } from "./tools/roadmap.js"
+import { isValidRoadmapId, collectRoadmapLintSuggestions } from "./roadmap.js"
 
 describe("roadmap module", () => {
   let tempDir: string

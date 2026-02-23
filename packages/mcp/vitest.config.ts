@@ -9,8 +9,7 @@ export default defineConfig({
       exclude: [
         'source/**/*.test.ts',
         'source/**/*.spec.ts',
-        'source/tests/**/*',
-        'source/benchmark/**/*'
+        'source/tests/**/*'
       ]
       // Thresholds are disabled for now - will enable gradually as coverage improves
       // thresholds: {
@@ -21,7 +20,7 @@ export default defineConfig({
       // }
     },
     include: ['source/**/*.test.ts'],
-    exclude: ['node_modules', 'output', 'source/benchmark/**/*'],
+    exclude: ['node_modules', 'output'],
     testTimeout: 30000
   }
 });

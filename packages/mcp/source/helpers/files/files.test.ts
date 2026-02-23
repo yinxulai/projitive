@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { discoverGovernanceArtifacts } from "./files.js";
+import { discoverGovernanceArtifacts } from '../../common/files.js';
 
 const tempPaths: string[] = [];
 

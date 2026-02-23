@@ -11,7 +11,7 @@ import {
   resolveScanDepth,
   toProjectPath,
   registerProjectTools
-} from "./tools/project.js";
+} from "./project.js";
 
 const tempPaths: string[] = [];
 

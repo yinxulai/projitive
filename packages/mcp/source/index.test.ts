@@ -81,9 +81,9 @@ describe("index module", () => {
     expect(content.startsWith("#!/usr/bin/env node")).toBe(true)
     expect(content).toContain("McpServer")
     expect(content).toContain("StdioServerTransport")
-    expect(content).toContain("registerProjectTools")
-    expect(content).toContain("registerTaskTools")
-    expect(content).toContain("registerRoadmapTools")
+    expect(content).toContain("registerTools")
+    expect(content).toContain("registerResources")
+    expect(content).toContain("registerPrompts")
   })
 
   it("should define PROJITIVE_SPEC_VERSION as 1.1.0", async () => {
@@ -107,12 +107,9 @@ describe("index module", () => {
     const indexPath = path.join(sourceDir, "index.ts")
     const content = await fs.readFile(indexPath, "utf-8")
 
-    expect(content).toContain("registerProjectTools(server)")
-    expect(content).toContain("registerTaskTools(server)")
-    expect(content).toContain("registerRoadmapTools(server)")
-    expect(content).toContain("registerGovernanceResources(server, repoRoot)")
-    expect(content).toContain("registerDesignFilesResources(server, repoRoot)")
-    expect(content).toContain("registerGovernancePrompts(server)")
+    expect(content).toContain("registerTools(server)")
+    expect(content).toContain("registerResources(server, repoRoot)")
+    expect(content).toContain("registerPrompts(server)")
     expect(content).toContain("registerDesignContextResources(server)")
     expect(content).toContain("registerDesignContextPrompts(server)")
   })

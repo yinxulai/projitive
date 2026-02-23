@@ -5,4 +5,4 @@
  * including confidence scoring and validation hooks.
  */
 
-export * from "./confidence.js";
+export * from "../common/confidence.js";

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { catchIt } from './catch.js'
+import { catchIt } from '../../common/catch.js'
 
 describe('catchIt', () => {
   it('同步函数返回值应为 value，error 为 undefined，isError 为 false', async () => {

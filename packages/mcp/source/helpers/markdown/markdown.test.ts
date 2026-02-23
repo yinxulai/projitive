@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { findTextReferences, readMarkdownSections } from "./markdown.js";
+import { findTextReferences, readMarkdownSections } from '../../common/markdown.js';
 
 const tempPaths: string[] = [];
 

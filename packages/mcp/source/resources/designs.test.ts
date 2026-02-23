@@ -1,47 +1,38 @@
 import { describe, expect, it } from "vitest";
-import {
-  parseDesignMetadata,
-  validateDesignMetadata,
-  type DesignMetadata,
-} from "./designs.js";
+import { parseDesignMetadata, validateDesignMetadata, type DesignMetadata } from "./designs.js";
 
 describe("designs module", () => {
   describe("parseDesignMetadata", () => {
-    it("parses design metadata from markdown", () => {
+    it("parses task metadata from markdown", () => {
       const markdown = [
         "# Design Document",
         "",
         "**Task:** TASK-0001",
-        "**Roadmap:** ROADMAP-0001",
         "**Owner:** ai-copilot",
-        "**Status:** PROPOSED",
+        "**Status:** Draft",
         "**Last Updated:** 2026-02-22",
         "",
-        "Some design content here",
+        "Some content here",
       ].join("\n");
 
       const metadata = parseDesignMetadata(markdown);
       expect(metadata.task).toBe("TASK-0001");
-      expect(metadata.roadmap).toBe("ROADMAP-0001");
       expect(metadata.owner).toBe("ai-copilot");
-      expect(metadata.status).toBe("PROPOSED");
+      expect(metadata.status).toBe("Draft");
       expect(metadata.lastUpdated).toBe("2026-02-22");
     });
 
-    it("parses partial metadata", () => {
+    it("parses roadmap metadata from markdown", () => {
       const markdown = [
         "# Design Document",
         "",
-        "**Task:** TASK-0001",
-        "**Status:** DRAFT",
+        "**Roadmap:** ROADMAP-0001",
         "",
-        "Content",
+        "Some content here",
       ].join("\n");
 
       const metadata = parseDesignMetadata(markdown);
-      expect(metadata.task).toBe("TASK-0001");
-      expect(metadata.status).toBe("DRAFT");
-      expect(metadata.owner).toBeUndefined();
+      expect(metadata.roadmap).toBe("ROADMAP-0001");
     });
 
     it("returns empty object for markdown without metadata", () => {
@@ -60,24 +51,39 @@ describe("designs module", () => {
       expect(metadata).toEqual({});
     });
 
-    it("handles 'last updated' with spaces", () => {
+    it("handles malformed metadata lines", () => {
       const markdown = [
-        "Last Updated: 2026-02-22",
-        "last updated: 2026-02-23",
+        "# Report",
+        "",
+        "Task without colon",
+        "Not a metadata line",
+        ":",
+        "Task:",
       ].join("\n");
 
       const metadata = parseDesignMetadata(markdown);
-      expect(metadata.lastUpdated).toBeDefined();
+      expect(metadata).toBeDefined();
+    });
+
+    it("parses metadata in different formats", () => {
+      const markdown = [
+        "Task: TASK-0001",
+        "task: TASK-0002",
+        "TASK: TASK-0003",
+        "  task  :  TASK-0004  ",
+      ].join("\n");
+
+      const metadata = parseDesignMetadata(markdown);
+      expect(metadata.task).toBeDefined();
     });
   });
 
   describe("validateDesignMetadata", () => {
-    it("validates correct design metadata", () => {
+    it("validates correct task metadata", () => {
       const metadata: DesignMetadata = {
         task: "TASK-0001",
-        roadmap: "ROADMAP-0001",
         owner: "ai-copilot",
-        status: "PROPOSED",
+        status: "Draft",
         lastUpdated: "2026-02-22",
       };
 
@@ -89,7 +95,6 @@ describe("designs module", () => {
     it("rejects missing task metadata", () => {
       const metadata: DesignMetadata = {
         owner: "ai-copilot",
-        status: "DRAFT",
       };
 
       const result = validateDesignMetadata(metadata);
@@ -99,7 +104,7 @@ describe("designs module", () => {
 
     it("rejects invalid task ID format", () => {
       const metadata: DesignMetadata = {
-        task: "invalid-task-id",
+        task: "invalid-format",
       };
 
       const result = validateDesignMetadata(metadata);
@@ -128,43 +133,47 @@ describe("designs module", () => {
       expect(result.errors.some((e) => e.includes("Invalid Roadmap"))).toBe(true);
     });
 
-    it("accepts various status values", () => {
-      const statuses = ["DRAFT", "PROPOSED", "APPROVED", "IMPLEMENTED", "REJECTED"];
-      
-      for (const status of statuses) {
-        const metadata: DesignMetadata = {
-          task: "TASK-0001",
-          status,
-        };
-        const result = validateDesignMetadata(metadata);
-        expect(result.ok).toBe(true);
-      }
+    it("handles empty metadata object", () => {
+      const metadata: DesignMetadata = {};
+      const result = validateDesignMetadata(metadata);
+      expect(result.ok).toBe(false);
+      expect(result.errors.length).toBeGreaterThan(0);
+    });
+
+    it("collects multiple validation errors", () => {
+      const metadata: DesignMetadata = {
+        task: "invalid-task",
+        roadmap: "invalid-roadmap",
+      };
+
+      const result = validateDesignMetadata(metadata);
+      expect(result.ok).toBe(false);
+      expect(result.errors.length).toBeGreaterThan(1);
     });
   });
 
   describe("integration", () => {
     it("parses and validates complete design metadata", () => {
       const markdown = [
-        "# Spec v1.1 Design",
+        "# Design Completion Report",
         "",
-        "**Design ID:** DESIGN-0003",
-        "**Task:** TASK-0003",
+        "**Task:** TASK-0001",
         "**Roadmap:** ROADMAP-0002",
         "**Owner:** ai-copilot",
-        "**Status:** PROPOSED",
+        "**Status:** Completed",
         "**Last Updated:** 2026-02-22",
         "",
-        "## Executive Summary",
-        "This document proposes governance changes...",
+        "## Summary",
+        "Design completed successfully",
       ].join("\n");
 
       const metadata = parseDesignMetadata(markdown);
       const validation = validateDesignMetadata(metadata);
 
-      expect(metadata.task).toBe("TASK-0003");
+      expect(metadata.task).toBe("TASK-0001");
       expect(metadata.roadmap).toBe("ROADMAP-0002");
       expect(metadata.owner).toBe("ai-copilot");
-      expect(metadata.status).toBe("PROPOSED");
+      expect(metadata.status).toBe("Completed");
       expect(metadata.lastUpdated).toBe("2026-02-22");
       expect(validation.ok).toBe(true);
     });

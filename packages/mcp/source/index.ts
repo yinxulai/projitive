@@ -8,13 +8,10 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod"
 import packageJson from "../package.json" with { type: "json" }
-import { registerProjectTools } from "./tools/project.js"
-import { registerTaskTools } from "./tools/task.js"
-import { registerRoadmapTools } from "./tools/roadmap.js"
+import { registerTools } from "./tools/index.js"
+import { registerResources } from "./resources/index.js"
+import { registerPrompts } from "./prompts/index.js"
 import { registerDesignContextResources, registerDesignContextPrompts } from "./design-context.js"
-import { registerGovernanceResources } from "./resources/governance.js"
-import { registerDesignFilesResources } from "./resources/designs.js"
-import { registerGovernancePrompts } from "./prompts/governance.js"
 
 const PROJITIVE_SPEC_VERSION = "1.1.0"
 
@@ -33,12 +30,9 @@ const server = new McpServer({
 })
 
 // 注册所有模块
-registerProjectTools(server)
-registerTaskTools(server)
-registerRoadmapTools(server)
-registerGovernanceResources(server, repoRoot)
-registerDesignFilesResources(server, repoRoot)
-registerGovernancePrompts(server)
+registerTools(server)
+registerResources(server, repoRoot)
+registerPrompts(server)
 registerDesignContextResources(server)
 registerDesignContextPrompts(server)
 

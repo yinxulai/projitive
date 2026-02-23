@@ -15,6 +15,7 @@
   "scripts": {
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "benchmark": "vitest bench --run",
     "lint": "tsc -p tsconfig.json --noEmit",
     "build": "rm -rf output && tsc -p tsconfig.json",
     "prepublishOnly": "npm run build",

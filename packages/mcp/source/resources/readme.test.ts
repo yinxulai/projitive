@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   parseRequiredReading,
   type RequiredReadingItem,
-} from "./resources/readme.js";
+} from "./readme.js";
 
 describe("readme module", () => {
   describe("parseRequiredReading", () => {
