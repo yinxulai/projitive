@@ -16,7 +16,7 @@ function asUserPrompt(text: string) {
 }
 
 export function registerDesignContextResources(server: McpServer): void {
-  // 注册设计上下文资源
+  // Register design context resources
   server.registerResource(
     "designContext",
     "projitive://design-context/designs",
@@ -37,7 +37,7 @@ export function registerDesignContextResources(server: McpServer): void {
 }
 
 export function registerDesignContextPrompts(server: McpServer): void {
-  // 注册设计上下文提示
+  // Register design context prompts
   server.registerPrompt(
     "designContext",
     {

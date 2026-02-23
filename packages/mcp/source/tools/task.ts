@@ -890,7 +890,7 @@ export function renderTasksMarkdown(tasks: Task[]): string {
   return [
     "# Tasks",
     "",
-    "本文件由 Projitive MCP 维护，手动编辑请保持 Markdown 结构合法。",
+    "This file is maintained by Projitive MCP. If editing manually, please keep the Markdown structure valid.",
     "",
     TASKS_START,
     ...(sections.length > 0 ? sections : ["(no tasks)"]),

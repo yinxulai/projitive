@@ -1,4 +1,4 @@
-// 治理工作流程提示
+// Governance workflow prompts
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { registerQuickStartPrompt } from "./quickStart.js"

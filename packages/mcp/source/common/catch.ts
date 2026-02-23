@@ -1,48 +1,48 @@
-// 辅助函数：检查是否为 PromiseLike
+// Helper function: check if value is PromiseLike
 function isPromiseLike<T>(value: unknown): value is PromiseLike<T> {
   return value != null && typeof value === 'object' && 'then' in value && typeof value.then === 'function'
 }
 
-// 用于类型推断函数返回值类型
+// For type inference of function return types
 type CatchType<F extends () => unknown> = F extends () => PromiseLike<infer R> ? R : F extends () => infer R ? R : never
 
 /**
- * 成功结果类型
- * 只包含 value 字段，error 字段为 undefined
+ * Success result type
+ * Only contains value field, error field is undefined
  */
 export interface CatchSuccess<T> {
   value: T
 }
 
 /**
- * 失败结果类型
- * error 字段类型永远为 unknown（或用户自定义），这样最安全，防止误用。
- * 推荐在 error 分支内用 instanceof/typeof 等类型守卫自行收窄类型。
+ * Failure result type
+ * error field type is always unknown (or user-defined), which is safest to prevent misuse.
+ * Recommended to use instanceof/typeof type guards in the error branch to narrow types.
  */
 export interface CatchFailure<E> {
   error: E
 }
 
 /**
- * 捕获结果联合类型，使用判别联合类型以支持类型守卫
+ * Catch result union type, using discriminated union to support type guards
  *
- * 设计说明：
- * - 通过 isError 方法进行类型守卫，推荐始终用 result.isError() 判断是否为错误分支。
- * - isError 方法为 function 写法（而非箭头函数），以支持类型谓词，且 this 不会被转移。
- * - 不建议直接用 error !== undefined 判断错误分支，该方式依赖 error 的值，推荐统一用 isError()。
+ * Design notes:
+ * - Use isError method for type guarding, recommend always using result.isError() to check for error branch.
+ * - isError method is written as a function (not arrow function) to support type predicates, and this won't be bound.
+ * - Not recommended to directly use error !== undefined to check error branch, as it depends on error value, recommend using isError() uniformly.
  */
 export type CatchResult<T, E = unknown> = (CatchSuccess<T> | CatchFailure<E>) & {
   /**
-   * 类型守卫方法，判断当前对象是否为 CatchFailure。
-   * function 写法，返回类型谓词，保证类型收窄。
-   * 推荐用法：if (result.isError()) { ... }
+   * Type guard method to check if current object is CatchFailure.
+   * Written as a function, returns type predicate to ensure type narrowing.
+   * Recommended usage: if (result.isError()) { ... }
    */
   isError: (this: unknown) => this is CatchFailure<E>
 }
 
 /**
- * 构造成功结果对象
- * isError 始终返回 false
+ * Construct success result object
+ * isError always returns false
  */
 function createSuccess<T>(value: T): CatchResult<T, unknown> {
   return {
@@ -53,8 +53,8 @@ function createSuccess<T>(value: T): CatchResult<T, unknown> {
 }
 
 /**
- * 构造失败结果对象
- * isError 始终返回 true
+ * Construct failure result object
+ * isError always returns true
  */
 function createFailure<E>(error: E): CatchResult<unknown, E> {
   return {
@@ -65,13 +65,13 @@ function createFailure<E>(error: E): CatchResult<unknown, E> {
 }
 
 /**
- * 通用错误捕获函数，支持 PromiseLike 和函数执行
- * 返回 { value, error } 的对象格式，便于类型判断
+ * Generic error catch function, supports PromiseLike and function execution
+ * Returns { value, error } object format for easy type checking
  *
- * 设计说明：
- * - 支持同步/异步/thenable 场景
- * - 推荐通过 isError() 进行类型守卫
- * - error 字段类型为 unknown，需用户自行收窄
+ * Design notes:
+ * - Supports sync/async/thenable scenarios
+ * - Recommended to use isError() for type guarding
+ * - error field type is unknown, user needs to narrow it
  */
 export async function catchIt<T, E = unknown>(input: PromiseLike<T>): Promise<CatchResult<T, E>>
 export async function catchIt<F extends () => unknown, E = unknown>(input: F): Promise<CatchResult<CatchType<F>, E>>
@@ -93,6 +93,6 @@ export async function catchIt<T, F extends () => unknown, E = unknown>(
   } catch (error) {
     return createFailure(error as E) as CatchResult<T | CatchType<F>, E>
   }
-  // 理论上不会到达这里，兜底类型安全
+  // Theoretically shouldn't reach here, fallback for type safety
   return createFailure(new Error('Unexpected input type') as E) as CatchResult<T | CatchType<F>, E>
 }

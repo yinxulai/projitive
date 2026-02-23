@@ -1,4 +1,4 @@
-// 治理资源管理
+// Governance resource management
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { readMarkdownOrFallback } from "../common/utils.js"

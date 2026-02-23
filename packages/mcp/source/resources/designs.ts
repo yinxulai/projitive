@@ -77,21 +77,21 @@ export async function registerDesignFilesResources(server: McpServer, repoRoot: 
   const designsDir = path.join(repoRoot, ".projitive", "designs");
 
   try {
-    // 检查设计文件目录是否存在
+    // Check if design documents directory exists
     await fs.access(designsDir);
 
-    // 递归读取所有 .md 文件（包括子目录）
+    // Recursively read all .md files (including subdirectories)
     const markdownFiles = await findAllMarkdownFiles(designsDir);
 
-    // 注册每个设计文件作为资源
+    // Register each design file as a resource
     for (const { filePath, relativePath } of markdownFiles) {
-      // 用相对路径生成 designId，将路径分隔符替换为 '-'
+      // Generate designId from relative path, replace path separators with '-'
       const designId = relativePath
-        .slice(0, -3) // 移除 .md 后缀
-        .replace(/[\\/]/g, "-"); // 替换路径分隔符为 '-'
+        .slice(0, -3) // Remove .md suffix
+        .replace(/[\\/]/g, "-"); // Replace path separators with '-'
       const content = await fs.readFile(filePath, "utf-8");
 
-      // 注册资源
+      // Register resource
       server.registerResource(
         `design-${designId}`,
         `projitive://designs/${designId}`,
@@ -111,7 +111,7 @@ export async function registerDesignFilesResources(server: McpServer, repoRoot: 
       );
     }
   } catch (error) {
-    // 如果设计文件目录不存在，注册一个默认的资源
+    // If design documents directory doesn't exist, register a default resource
     console.warn(`Designs directory not found at ${designsDir}, registering default design resource`);
     server.registerResource(
       "designs",

@@ -1,4 +1,4 @@
-// Projitive 统一错误类型定义
+// Projitive unified error type definitions
 
 export class ProjitiveError extends Error {
   constructor(
@@ -11,7 +11,7 @@ export class ProjitiveError extends Error {
   }
 }
 
-// 项目相关错误
+// Project related errors
 export class ProjectError extends ProjitiveError {
   constructor(
     message: string,
@@ -41,7 +41,7 @@ export class GovernanceRootNotFoundError extends ProjectError {
   }
 }
 
-// 任务相关错误
+// Task related errors
 export class TaskError extends ProjitiveError {
   constructor(
     message: string,
@@ -78,7 +78,7 @@ export class TaskValidationError extends TaskError {
   }
 }
 
-// 文件操作错误
+// File operation errors
 export class FileError extends ProjitiveError {
   constructor(
     message: string,
@@ -113,7 +113,7 @@ export class FileWriteError extends FileError {
   }
 }
 
-// 验证错误
+// Validation errors
 export class ValidationError extends ProjitiveError {
   constructor(
     message: string,
@@ -136,7 +136,7 @@ export class ConfidenceScoreError extends ValidationError {
   }
 }
 
-// MCP 相关错误
+// MCP related errors
 export class MCPError extends ProjitiveError {
   constructor(
     message: string,

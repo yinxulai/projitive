@@ -29,7 +29,7 @@ const server = new McpServer({
   description: "Semantic Projitive MCP for project/task discovery and agent guidance with markdown-first outputs",
 })
 
-// 注册所有模块
+// Register all modules
 registerTools(server)
 registerResources(server, repoRoot)
 registerPrompts(server)

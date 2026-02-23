@@ -1,4 +1,4 @@
-// 公共类型定义（简化版）
+// Common type definitions (simplified)
 
 export type TaskStatus = "TODO" | "IN_PROGRESS" | "BLOCKED" | "DONE"
 

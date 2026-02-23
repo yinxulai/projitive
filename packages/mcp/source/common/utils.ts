@@ -1,11 +1,11 @@
-// 公共工具函数
+// Common utility functions
 
 import fs from "node:fs/promises"
 import path from "node:path"
 import { FileNotFoundError, FileReadError } from "./errors.js"
 
 /**
- * 安全地读取 Markdown 文件内容，如果文件不存在或为空则返回 fallback
+ * Safely read Markdown file content, return fallback if file doesn't exist or is empty
  */
 export async function readMarkdownOrFallback(
   relativePath: string,
@@ -35,7 +35,7 @@ export async function readMarkdownOrFallback(
 }
 
 /**
- * 首字母大写
+ * Capitalize first letter
  */
 export function capitalizeFirstLetter(str: string): string {
   return str.split(/[-_]/).map(part =>
@@ -44,7 +44,7 @@ export function capitalizeFirstLetter(str: string): string {
 }
 
 /**
- * 格式化标题
+ * Format title
  */
 export function formatTitle(str: string): string {
   return str.split(/[-_]/).map(part =>
