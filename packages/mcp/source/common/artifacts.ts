@@ -1,4 +1,4 @@
-import type { GovernanceFileEntry } from "../../common/files.js";
+import type { GovernanceFileEntry } from "./files.js";
 
 export function candidateFilesFromArtifacts(artifacts: GovernanceFileEntry[]): string[] {
   return artifacts

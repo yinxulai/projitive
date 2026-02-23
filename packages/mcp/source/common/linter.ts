@@ -1,3 +1,16 @@
+export type LintSuggestion = {
+  code: string;
+  message: string;
+  fixHint?: string;
+};
+
+export function renderLintSuggestions(suggestions: LintSuggestion[]): string[] {
+  return suggestions.map((item) => {
+    const suffix = item.fixHint ? ` ${item.fixHint}` : "";
+    return `- [${item.code}] ${item.message}${suffix}`;
+  });
+}
+
 export const TASK_LINT_CODES = {
   DUPLICATE_ID: "TASK_DUPLICATE_ID",
   IN_PROGRESS_OWNER_EMPTY: "TASK_IN_PROGRESS_OWNER_EMPTY",

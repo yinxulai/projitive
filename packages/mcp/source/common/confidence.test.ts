@@ -11,7 +11,7 @@ import {
   getOrCreateTaskAutoCreateValidationHook,
   runPreCreationValidation,
   generateConfidenceReport,
-} from "../common/confidence.js";
+} from "./confidence.js";
 import type { Task } from "../types.js";
 
 const tempPaths: string[] = [];

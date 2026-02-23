@@ -3,9 +3,7 @@ import path from "node:path";
 import process from "node:process";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { discoverGovernanceArtifacts } from "../common/files.js";
-import { catchIt } from "../common/catch.js";
-import { PROJECT_LINT_CODES, renderLintSuggestions } from "../helpers/linter/index.js";
+import { discoverGovernanceArtifacts, catchIt, PROJECT_LINT_CODES, renderLintSuggestions } from "../common/index.js";
 import {
   asText,
   evidenceSection,
@@ -14,7 +12,7 @@ import {
   nextCallSection,
   renderToolResponseMarkdown,
   summarySection,
-} from "../common/response.js";
+} from "../common/index.js";
 import { collectTaskLintSuggestions, loadTasks, loadTasksDocument, type Task } from "./task.js";
 
 export const PROJECT_MARKER = ".projitive";

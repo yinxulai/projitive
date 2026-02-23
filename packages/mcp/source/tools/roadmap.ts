@@ -2,10 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { candidateFilesFromArtifacts } from "../helpers/artifacts/index.js";
-import { discoverGovernanceArtifacts } from "../common/files.js";
-import { ROADMAP_LINT_CODES, renderLintSuggestions, type LintSuggestion } from "../helpers/linter/index.js";
-import { findTextReferences } from "../common/markdown.js";
+import { candidateFilesFromArtifacts, discoverGovernanceArtifacts, ROADMAP_LINT_CODES, renderLintSuggestions, type LintSuggestion, findTextReferences } from "../common/index.js";
 import {
   asText,
   evidenceSection,
@@ -15,7 +12,7 @@ import {
   renderErrorMarkdown,
   renderToolResponseMarkdown,
   summarySection,
-} from "../common/response.js";
+} from "../common/index.js";
 import { resolveGovernanceDir, toProjectPath } from "./project.js";
 import { loadTasks } from "./task.js";
 

@@ -5,7 +5,7 @@ import {
   renderErrorMarkdown,
   renderToolResponseMarkdown,
   summarySection,
-} from '../../common/response.js';
+} from './response.js';
 
 describe("response helpers", () => {
   it("wraps markdown text as MCP text content", () => {
