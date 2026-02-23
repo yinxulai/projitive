@@ -15,11 +15,11 @@ function asUserPrompt(text: string) {
   }
 }
 
-export function registerDiscoverAndStartGovernancePrompt(server: McpServer): void {
+export function registerQuickStartPrompt(server: McpServer): void {
   server.registerPrompt(
-    "discoverAndStartGovernance",
+    "quickStart",
     {
-      title: "Discover and Start Governance",
+      title: "Quick Start",
       description: "Complete workflow to discover project, load context, and start task execution",
       argsSchema: {
         projectPath: z.string().optional(),

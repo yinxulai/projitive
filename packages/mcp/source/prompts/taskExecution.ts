@@ -15,11 +15,11 @@ function asUserPrompt(text: string) {
   }
 }
 
-export function registerExecuteTaskWorkflowPrompt(server: McpServer): void {
+export function registerTaskExecutionPrompt(server: McpServer): void {
   server.registerPrompt(
-    "executeTaskWorkflow",
+    "taskExecution",
     {
-      title: "Execute Task Workflow",
+      title: "Task Execution",
       description: "Primary execution prompt: select one task, execute, and verify evidence consistency",
       argsSchema: {
         projectPath: z.string().optional(),

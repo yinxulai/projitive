@@ -15,11 +15,11 @@ function asUserPrompt(text: string) {
   }
 }
 
-export function registerFindAndExecuteFirstTaskPrompt(server: McpServer): void {
+export function registerTaskDiscoveryPrompt(server: McpServer): void {
   server.registerPrompt(
-    "findAndExecuteFirstTask",
+    "taskDiscovery",
     {
-      title: "Find and Execute First Task",
+      title: "Task Discovery",
       description: "Minimal steps to find, context, and execute the first actionable task",
       argsSchema: {
         projectPath: z.string().optional(),
