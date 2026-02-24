@@ -1094,7 +1094,8 @@ export function registerTaskTools(server: McpServer): void {
         toolName: "taskNext",
         sections: [
           summarySection([
-            `- rootPath: ${root}`,
+            `- rootPaths: ${roots.join(", ")}`,
+            `- rootCount: ${roots.length}`,
             `- maxDepth: ${depth}`,
             `- matchedProjects: ${projects.length}`,
             `- actionableTasks: ${rankedCandidates.length}`,
