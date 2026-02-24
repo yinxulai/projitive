@@ -84,7 +84,7 @@ MCP client config example (`mcp.json`):
       "command": "npx",
       "args": ["-y", "@projitive/mcp"],
       "env": {
-        "PROJITIVE_SCAN_ROOT_PATH": "/absolute/path/to/your/workspace",
+        "PROJITIVE_SCAN_ROOT_PATHS": "/workspace/a:/workspace/b",
         "PROJITIVE_SCAN_MAX_DEPTH": "3"
       }
     }
@@ -94,7 +94,9 @@ MCP client config example (`mcp.json`):
 
 Environment variables (required):
 
-- `PROJITIVE_SCAN_ROOT_PATH`: required scan root for discovery methods.
+- `PROJITIVE_SCAN_ROOT_PATHS`: required scan roots for discovery methods.
+  - Use platform-delimiter string (`:` on Linux/macOS, `;` on Windows), e.g. `/workspace/a:/workspace/b`.
+  - Fallback: if not set, legacy `PROJITIVE_SCAN_ROOT_PATH` is used.
 - `PROJITIVE_SCAN_MAX_DEPTH`: required scan depth for discovery methods (integer `0-8`).
 
 Local path startup is not the recommended usage mode in this README.

@@ -14,7 +14,7 @@ import {
   summarySection,
 } from "../common/index.js";
 import { catchIt, TASK_LINT_CODES, renderLintSuggestions, type LintSuggestion } from "../common/index.js";
-import { resolveGovernanceDir, resolveScanDepth, resolveScanRoot, discoverProjects, toProjectPath } from "./project.js";
+import { resolveGovernanceDir, resolveScanDepth, resolveScanRoots, discoverProjectsAcrossRoots, toProjectPath } from "./project.js";
 import { isValidRoadmapId } from "./roadmap.js";
 import type {
   Task,
@@ -1003,9 +1003,9 @@ export function registerTaskTools(server: McpServer): void {
       },
     },
     async ({ limit }) => {
-      const root = resolveScanRoot();
+      const roots = resolveScanRoots();
       const depth = resolveScanDepth();
-      const projects = await discoverProjects(root, depth);
+      const projects = await discoverProjectsAcrossRoots(roots, depth);
       const rankedCandidates = rankActionableTaskCandidates(await readActionableTaskCandidates(projects));
 
       if (rankedCandidates.length === 0) {
@@ -1037,7 +1037,8 @@ export function registerTaskTools(server: McpServer): void {
           toolName: "taskNext",
           sections: [
             summarySection([
-              `- rootPath: ${root}`,
+              `- rootPaths: ${roots.join(", ")}`,
+              `- rootCount: ${roots.length}`,
               `- maxDepth: ${depth}`,
               `- matchedProjects: ${projects.length}`,
               "- actionableTasks: 0",

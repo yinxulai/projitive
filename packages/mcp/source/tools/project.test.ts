@@ -4,10 +4,11 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   discoverProjects,
+  discoverProjectsAcrossRoots,
   hasProjectMarker,
   initializeProjectStructure,
   resolveGovernanceDir,
-  resolveScanRoot,
+  resolveScanRoots,
   resolveScanDepth,
   toProjectPath,
   registerProjectTools
@@ -236,6 +237,17 @@ describe("projitive module", () => {
       const projects = await discoverProjects(root, 3);
       expect(projects).toEqual([]);
     });
+
+    it("ignores non-existent roots when scanning across multiple roots", async () => {
+      const validRoot = await createTempDir();
+      const validProject = path.join(validRoot, "project-a");
+      const missingRoot = path.join(validRoot, "__missing_root__");
+      await fs.mkdir(validProject, { recursive: true });
+      await fs.writeFile(path.join(validProject, ".projitive"), "", "utf-8");
+
+      const projects = await discoverProjectsAcrossRoots([missingRoot, validRoot], 3);
+      expect(projects).toContain(validProject);
+    });
   });
 
   describe("initializeProjectStructure", () => {
@@ -342,22 +354,34 @@ describe("projitive module", () => {
       });
     });
 
-    describe("resolveScanRoot", () => {
-      it("uses environment variable when no input path", () => {
+    describe("resolveScanRoots", () => {
+      it("uses legacy environment variable when no multi-root env is provided", () => {
         vi.stubEnv("PROJITIVE_SCAN_ROOT_PATH", "/test/root");
-        expect(resolveScanRoot()).toBe("/test/root");
+        expect(resolveScanRoots()).toEqual(["/test/root"]);
         vi.unstubAllEnvs();
       });
 
-      it("uses input path when provided", () => {
+      it("uses input paths when provided", () => {
         vi.stubEnv("PROJITIVE_SCAN_ROOT_PATH", "/test/root");
-        expect(resolveScanRoot("/custom/path")).toBe("/custom/path");
+        expect(resolveScanRoots(["/custom/path", " /custom/path ", "/second/path"])).toEqual(["/custom/path", "/second/path"]);
         vi.unstubAllEnvs();
       });
 
-      it("throws error when required environment variable missing", () => {
+      it("uses PROJITIVE_SCAN_ROOT_PATHS with platform delimiter", () => {
+        vi.stubEnv("PROJITIVE_SCAN_ROOT_PATHS", ["/root/a", "/root/b", "", " /root/c "].join(path.delimiter));
+        expect(resolveScanRoots()).toEqual(["/root/a", "/root/b", "/root/c"]);
         vi.unstubAllEnvs();
-        expect(() => resolveScanRoot()).toThrow("Missing required environment variable: PROJITIVE_SCAN_ROOT_PATH");
+      });
+
+      it("treats JSON-like string as plain delimiter input", () => {
+        vi.stubEnv("PROJITIVE_SCAN_ROOT_PATHS", JSON.stringify(["/json/a", "/json/b"]));
+        expect(resolveScanRoots()).toHaveLength(1);
+        vi.unstubAllEnvs();
+      });
+
+      it("throws error when no root environment variables are configured", () => {
+        vi.unstubAllEnvs();
+        expect(() => resolveScanRoots()).toThrow("Missing required environment variable: PROJITIVE_SCAN_ROOT_PATHS");
       });
     });
 

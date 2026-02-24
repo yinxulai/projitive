@@ -51,7 +51,7 @@ my-project/
       "command": "npx",
       "args": ["-y", "@projitive/mcp"],
       "env": {
-        "PROJITIVE_SCAN_ROOT_PATH": "/path/to/your/workspace",
+        "PROJITIVE_SCAN_ROOT_PATHS": "/path/to/workspace-a:/path/to/workspace-b",
         "PROJITIVE_SCAN_MAX_DEPTH": "3"
       }
     }
@@ -413,7 +413,7 @@ taskUpdate(
 
 **Check:**
 - Is there a `.projitive` marker file?
-- Is `PROJITIVE_SCAN_ROOT_PATH` set correctly?
+- Is `PROJITIVE_SCAN_ROOT_PATHS` set correctly?
 - Is the scan depth sufficient?
 
 **Fix:**
@@ -422,7 +422,7 @@ taskUpdate(
 touch .projitive
 
 # Verify scan path is correct
-echo $PROJITIVE_SCAN_ROOT_PATH
+echo $PROJITIVE_SCAN_ROOT_PATHS
 ```
 
 ### 2. Tasks not showing up in taskNext

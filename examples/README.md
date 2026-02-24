@@ -167,13 +167,15 @@ mkdir -p .projitive/hooks
       "command": "npx",
       "args": ["-y", "@projitive/mcp"],
       "env": {
-        "PROJITIVE_SCAN_ROOT_PATH": "/path/to/your/workspace",
+        "PROJITIVE_SCAN_ROOT_PATHS": "/path/to/workspace-a:/path/to/workspace-b",
         "PROJITIVE_SCAN_MAX_DEPTH": "3"
       }
     }
   }
 }
 ```
+
+说明：`PROJITIVE_SCAN_ROOT_PATHS` 使用系统分隔符拼接多个目录（Linux/macOS 用 `:`，Windows 用 `;`）。
 
 #### 第 4 步：开始使用！
 

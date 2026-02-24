@@ -96,7 +96,7 @@ Create `mcp.json` in your OpenClaw config:
       "command": "npx",
       "args": ["-y", "@projitive/mcp"],
       "env": {
-        "PROJITIVE_SCAN_ROOT_PATH": "/path/to/your/workspace",
+        "PROJITIVE_SCAN_ROOT_PATHS": "/path/to/workspace-a:/path/to/workspace-b",
         "PROJITIVE_SCAN_MAX_DEPTH": "3"
       }
     }

@@ -86,7 +86,7 @@ MCP 客户端配置示例（`mcp.json`）：
       "command": "npx",
       "args": ["-y", "@projitive/mcp"],
       "env": {
-        "PROJITIVE_SCAN_ROOT_PATH": "/你的工作区绝对路径",
+        "PROJITIVE_SCAN_ROOT_PATHS": "/workspace/a:/workspace/b",
         "PROJITIVE_SCAN_MAX_DEPTH": "3"
       }
     }
@@ -96,7 +96,9 @@ MCP 客户端配置示例（`mcp.json`）：
 
 环境变量说明（必填）：
 
-- `PROJITIVE_SCAN_ROOT_PATH`：扫描/发现方法使用的根目录。
+- `PROJITIVE_SCAN_ROOT_PATHS`：扫描/发现方法使用的根目录列表。
+  - 使用按平台分隔符拼接（Linux/macOS 用 `:`，Windows 用 `;`），例如 `/workspace/a:/workspace/b`。
+  - 回退策略：若未设置该变量，会回退使用旧变量 `PROJITIVE_SCAN_ROOT_PATH`。
 - `PROJITIVE_SCAN_MAX_DEPTH`：扫描/发现方法使用的深度（整数 `0-8`）。
 
 本 README 不建议本地路径方式启动。
@@ -147,7 +149,7 @@ npm run test
 参数约束（重要）：
 
 - `projectInit` 必须显式传入 `projectPath`，避免误在工作区根目录初始化。
-- `projectNext` 与 `taskNext` 不再支持 `rootPath` 入参，扫描根目录统一由 `PROJITIVE_SCAN_ROOT_PATH` 控制。
+- `projectNext` 与 `taskNext` 不再支持 `rootPath` 入参，扫描根目录统一由 `PROJITIVE_SCAN_ROOT_PATHS`（或旧变量 `PROJITIVE_SCAN_ROOT_PATH`）控制。
 
 ## 语言切换
 

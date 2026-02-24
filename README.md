@@ -139,7 +139,7 @@ In your MCP client config (for example `mcp.json`), register the npm package as 
       "command": "npx",
       "args": ["-y", "@projitive/mcp"],
       "env": {
-        "PROJITIVE_SCAN_ROOT_PATH": "/absolute/path/to/your/workspace",
+        "PROJITIVE_SCAN_ROOT_PATHS": "/workspace/a:/workspace/b",
         "PROJITIVE_SCAN_MAX_DEPTH": "3"
       }
     }
@@ -149,7 +149,9 @@ In your MCP client config (for example `mcp.json`), register the npm package as 
 
 Environment variables (required):
 
-- `PROJITIVE_SCAN_ROOT_PATH`: required scan root directory used by discovery methods (for example `projectNext` / `taskNext`).
+- `PROJITIVE_SCAN_ROOT_PATHS`: required scan root directories used by discovery methods (for example `projectNext` / `taskNext`).
+  - Use platform delimiter string (`:` on Linux/macOS, `;` on Windows)
+  - Fallback: legacy `PROJITIVE_SCAN_ROOT_PATH` is still supported when `PROJITIVE_SCAN_ROOT_PATHS` is unset
 - `PROJITIVE_SCAN_MAX_DEPTH`: required scan depth used by discovery methods (integer `0-8`).
 
 ### 3) Verify and run the workflow

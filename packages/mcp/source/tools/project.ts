@@ -56,7 +56,7 @@ function parseDepthFromEnv(rawDepth: string | undefined): number | undefined {
   return Math.min(MAX_SCAN_DEPTH, Math.max(0, parsed));
 }
 
-function requireEnvVar(name: "PROJITIVE_SCAN_ROOT_PATH" | "PROJITIVE_SCAN_MAX_DEPTH"): string {
+function requireEnvVar(name: "PROJITIVE_SCAN_ROOT_PATH" | "PROJITIVE_SCAN_ROOT_PATHS" | "PROJITIVE_SCAN_MAX_DEPTH"): string {
   const value = process.env[name];
   if (typeof value !== "string" || value.trim().length === 0) {
     throw new Error(`Missing required environment variable: ${name}`);
@@ -64,9 +64,50 @@ function requireEnvVar(name: "PROJITIVE_SCAN_ROOT_PATH" | "PROJITIVE_SCAN_MAX_DE
   return value.trim();
 }
 
+function normalizeScanRoots(rootPaths: string[]): string[] {
+  const normalized = rootPaths
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+    .map((entry) => normalizePath(entry));
+
+  return Array.from(new Set(normalized));
+}
+
+function parseScanRoots(rawValue: string): string[] {
+  const trimmed = rawValue.trim();
+  if (trimmed.length === 0) {
+    return [];
+  }
+  return trimmed.split(path.delimiter);
+}
+
+export function resolveScanRoots(inputPaths?: string[]): string[] {
+  const normalizedInputPaths = normalizeScanRoots(inputPaths ?? []);
+  if (normalizedInputPaths.length > 0) {
+    return normalizedInputPaths;
+  }
+
+  const configuredRoots = process.env.PROJITIVE_SCAN_ROOT_PATHS;
+  const rootsFromMultiEnv = typeof configuredRoots === "string"
+    ? normalizeScanRoots(parseScanRoots(configuredRoots))
+    : [];
+  if (rootsFromMultiEnv.length > 0) {
+    return rootsFromMultiEnv;
+  }
+
+  const legacyRoot = process.env.PROJITIVE_SCAN_ROOT_PATH;
+  const rootsFromLegacyEnv = typeof legacyRoot === "string"
+    ? normalizeScanRoots([legacyRoot])
+    : [];
+  if (rootsFromLegacyEnv.length > 0) {
+    return rootsFromLegacyEnv;
+  }
+
+  throw new Error("Missing required environment variable: PROJITIVE_SCAN_ROOT_PATHS (or legacy PROJITIVE_SCAN_ROOT_PATH)");
+}
+
 export function resolveScanRoot(inputPath?: string): string {
-  const configuredRoot = requireEnvVar("PROJITIVE_SCAN_ROOT_PATH");
-  return normalizePath(inputPath ?? configuredRoot);
+  return resolveScanRoots(inputPath ? [inputPath] : undefined)[0];
 }
 
 export function resolveScanDepth(inputDepth?: number): number {
@@ -268,6 +309,14 @@ export async function discoverProjects(rootPath: string, maxDepth: number): Prom
   return Array.from(new Set(results)).sort();
 }
 
+export async function discoverProjectsAcrossRoots(rootPaths: string[], maxDepth: number): Promise<string[]> {
+  const perRootResults = await Promise.all(
+    rootPaths.map((rootPath) => discoverProjects(rootPath, maxDepth))
+  );
+
+  return Array.from(new Set(perRootResults.flat())).sort();
+}
+
 type InitArtifactResult = {
   path: string;
   action: "created" | "updated" | "skipped";
@@ -457,15 +506,16 @@ export function registerProjectTools(server: McpServer): void {
       inputSchema: {},
     },
     async () => {
-      const root = resolveScanRoot();
+      const roots = resolveScanRoots();
       const depth = resolveScanDepth();
-      const projects = await discoverProjects(root, depth);
+      const projects = await discoverProjectsAcrossRoots(roots, depth);
 
       const markdown = renderToolResponseMarkdown({
         toolName: "projectScan",
         sections: [
           summarySection([
-            `- rootPath: ${root}`,
+            `- rootPaths: ${roots.join(", ")}`,
+            `- rootCount: ${roots.length}`,
             `- maxDepth: ${depth}`,
             `- discoveredCount: ${projects.length}`,
           ]),
@@ -500,9 +550,9 @@ export function registerProjectTools(server: McpServer): void {
       },
     },
     async ({ limit }) => {
-      const root = resolveScanRoot();
+      const roots = resolveScanRoots();
       const depth = resolveScanDepth();
-      const projects = await discoverProjects(root, depth);
+      const projects = await discoverProjectsAcrossRoots(roots, depth);
       const snapshots = await Promise.all(
         projects.map(async (governanceDir) => {
           const snapshot = await readTasksSnapshot(governanceDir);
@@ -542,7 +592,8 @@ export function registerProjectTools(server: McpServer): void {
         toolName: "projectNext",
         sections: [
           summarySection([
-            `- rootPath: ${root}`,
+            `- rootPaths: ${roots.join(", ")}`,
+            `- rootCount: ${roots.length}`,
             `- maxDepth: ${depth}`,
             `- matchedProjects: ${projects.length}`,
             `- actionableProjects: ${ranked.length}`,
