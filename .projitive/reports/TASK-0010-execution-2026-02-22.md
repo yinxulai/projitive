@@ -120,7 +120,7 @@
 
 ### Phase 1: Sub-state Metadata Support ✅ DONE (TASK-0008)
 - subState 字段支持
-- phase 元数据（discovery/design/implementation/testing）
+- phase 元数据（discovery/designs/implementation/testing）
 - confidence 评分（0.0-1.0）
 - estimatedCompletion 时间戳
 

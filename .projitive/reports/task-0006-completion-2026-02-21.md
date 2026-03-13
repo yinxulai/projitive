@@ -21,9 +21,9 @@ Successfully implemented enhanced MCP design onboarding context as specified in 
 
 This module provides:
 - **3 New Resources** for design context:
-  - `projitive://design/quick-start` - Fast-start guide with overview, goals, constraints
-  - `projitive://design/principles` - Core design principles (Agent-First, Markdown-First, Evidence-First, Immutable IDs, Discoverable)
-  - `projitive://design/execution-rules` - Mandatory execution rules and verification checklist
+  - `projitive://designs/quick-start` - Fast-start guide with overview, goals, constraints
+  - `projitive://designs/principles` - Core design principles (Agent-First, Markdown-First, Evidence-First, Immutable IDs, Discoverable)
+  - `projitive://designs/execution-rules` - Mandatory execution rules and verification checklist
 
 - **2 New Prompts** for agent guidance:
   - `understandDesignContext` - Loads design goals, constraints, and rules

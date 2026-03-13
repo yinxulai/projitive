@@ -142,6 +142,34 @@ describe("tasks module", () => {
     expect(lint.some((line) => line.includes("IN_PROGRESS_WITHOUT_SUBSTATE"))).toBe(true);
   });
 
+  it("normalizes links to project-root-relative format without leading slash", () => {
+    const task = normalizeTask({
+      id: "TASK-0003",
+      title: "link normalize",
+      status: "TODO",
+      links: ["/reports/a.md", "./designs/b.md", "reports/c.md", "https://example.com/evidence"],
+    });
+
+    expect(task.links).toContain("reports/a.md");
+    expect(task.links).toContain("designs/b.md");
+    expect(task.links).toContain("reports/c.md");
+    expect(task.links).toContain("https://example.com/evidence");
+    expect(task.links.some((item) => item.startsWith("/"))).toBe(false);
+  });
+
+  it("lints invalid links path format", () => {
+    const task = normalizeTask({
+      id: "TASK-0004",
+      title: "invalid link",
+      status: "TODO",
+      links: ["../outside.md"],
+      roadmapRefs: ["ROADMAP-0001"],
+    });
+
+    const lint = collectTaskLintSuggestions([task]);
+    expect(lint.some((line) => line.includes("TASK_LINK_PATH_FORMAT_INVALID"))).toBe(true);
+  });
+
   it("renders seed task template with provided roadmap ref", () => {
     const lines = renderTaskSeedTemplate("ROADMAP-0099");
     const markdown = lines.join("\n");

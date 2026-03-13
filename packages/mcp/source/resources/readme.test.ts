@@ -14,7 +14,7 @@ describe("readme module", () => {
         "",
         "## Required Reading for Agents",
         "",
-        "- Local: ./design/README.md",
+        "- Local: ./designs/README.md",
         "- Local: .projitive/tasks.md",
         "- External: https://example.com/docs",
         "",
@@ -27,7 +27,7 @@ describe("readme module", () => {
       expect(result.length).toBe(3);
       expect(result[0]).toEqual({
         source: "Local",
-        value: "./design/README.md",
+        value: "./designs/README.md",
       });
       expect(result[1]).toEqual({
         source: "Local",

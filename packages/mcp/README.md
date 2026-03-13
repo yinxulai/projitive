@@ -5,7 +5,7 @@ Language: English | [简体中文](README_CN.md)
 ## Version
 
 - Current Spec Version: projitive-spec v1.0.0
-- MCP Version: 2.0.0
+- MCP Version: 2.0.1
 
 ## 60-Second Start
 
@@ -157,7 +157,7 @@ sequenceDiagram
 
 ### 3. Evidence-First Execution
 
-- State changes should be backed by report/design/readme evidence.
+- State changes should be backed by report/designs/readme evidence.
 - Tool output format is agent-friendly markdown for chained execution.
 
 ### 4. Deterministic Multi-Agent Workflow

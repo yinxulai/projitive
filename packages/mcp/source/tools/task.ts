@@ -86,7 +86,7 @@ const DEFAULT_NO_TASK_DISCOVERY_GUIDANCE = [
   "- If all remaining tasks are BLOCKED, create one unblock task with explicit unblock condition and dependency owner.",
   "- Start from active roadmap milestones and split into the smallest executable slices with a single done condition each.",
   "- Prefer slices that unlock multiple downstream tasks before isolated refactors or low-impact cleanups.",
-  "- Create TODO tasks only when evidence is clear: each new task must produce at least one report/design/readme artifact update.",
+  "- Create TODO tasks only when evidence is clear: each new task must produce at least one report/designs/readme artifact update.",
   "- Skip duplicate scope: do not create tasks that overlap existing TODO/IN_PROGRESS/BLOCKED task intent.",
   "- Use quality gates for discovery candidates: user value, delivery risk reduction, or measurable throughput improvement.",
   "- Keep each discovery round small (1-3 tasks), then rerun taskNext immediately for re-ranking and execution.",
@@ -133,10 +133,37 @@ export function renderTaskSeedTemplate(roadmapRef: string): string[] {
     "- updatedAt: 2026-01-01T00:00:00.000Z",
     `- roadmapRefs: ${roadmapRef}`,
     "- links:",
-    "  - ./README.md",
-    "  - ./roadmap.md",
+    "  - README.md",
+    "  - .projitive/roadmap.md",
     "```",
   ];
+}
+
+function isHttpUrl(value: string): boolean {
+  return /^https?:\/\//i.test(value);
+}
+
+function isProjectRootRelativePath(value: string): boolean {
+  return value.length > 0
+    && !value.startsWith("/")
+    && !value.startsWith("./")
+    && !value.startsWith("../")
+    && !/^[A-Za-z]:\//.test(value);
+}
+
+function normalizeTaskLink(link: string): string {
+  const trimmed = link.trim();
+  if (trimmed.length === 0 || isHttpUrl(trimmed)) {
+    return trimmed;
+  }
+
+  const slashNormalized = trimmed.replace(/\\/g, "/");
+  const withoutDotPrefix = slashNormalized.replace(/^\.\//, "");
+  return withoutDotPrefix.replace(/^\/+/, "");
+}
+
+function resolveTaskLinkPath(projectPath: string, link: string): string {
+  return path.join(projectPath, link);
 }
 
 async function readActionableTaskCandidates(governanceDirs: string[]): Promise<ActionableTaskCandidate[]> {
@@ -275,7 +302,16 @@ export function normalizeTask(task: Partial<Task> & { id: string; title: string 
     owner: task.owner ? String(task.owner) : "",
     summary: task.summary ? String(task.summary) : "",
     updatedAt: task.updatedAt ? String(task.updatedAt) : nowIso(),
-    links: Array.isArray(task.links) ? task.links.map(String) : [],
+    links: Array.isArray(task.links)
+      ? Array.from(
+          new Set(
+            task.links
+              .map(String)
+              .map((value) => normalizeTaskLink(value))
+              .filter((value) => value.length > 0)
+          )
+        )
+      : [],
     roadmapRefs: Array.from(new Set(normalizedRoadmapRefs)),
   };
 
@@ -353,6 +389,18 @@ function collectTaskLintSuggestionItems(tasks: Task[]): TaskLintSuggestion[] {
       code: TASK_LINT_CODES.ROADMAP_REFS_EMPTY,
       message: `${missingRoadmapRefs.length} task(s) have empty roadmapRefs.`,
       fixHint: "Bind at least one ROADMAP-xxxx when applicable.",
+    });
+  }
+
+  const invalidLinkPathFormat = tasks.filter((task) => task.links.some((link) => {
+    const normalized = link.trim();
+    return normalized.length > 0 && !isHttpUrl(normalized) && !isProjectRootRelativePath(normalized);
+  }));
+  if (invalidLinkPathFormat.length > 0) {
+    suggestions.push({
+      code: TASK_LINT_CODES.LINK_PATH_FORMAT_INVALID,
+      message: `${invalidLinkPathFormat.length} task(s) contain invalid links path format.`,
+      fixHint: "Use project-root-relative paths without leading slash (for example reports/task-0001.md) or http(s) URL.",
     });
   }
 
@@ -448,6 +496,18 @@ function collectSingleTaskLintSuggestions(task: Task): string[] {
     });
   }
 
+  const invalidLinkPathFormat = task.links.some((link) => {
+    const normalized = link.trim();
+    return normalized.length > 0 && !isHttpUrl(normalized) && !isProjectRootRelativePath(normalized);
+  });
+  if (invalidLinkPathFormat) {
+    suggestions.push({
+      code: TASK_LINT_CODES.LINK_PATH_FORMAT_INVALID,
+      message: "Current task has invalid links path format.",
+      fixHint: "Use project-root-relative paths without leading slash (for example reports/task-0001.md) or http(s) URL.",
+    });
+  }
+
   if (task.status === "BLOCKED" && task.summary.trim().length === 0) {
     suggestions.push({
       code: TASK_LINT_CODES.BLOCKED_SUMMARY_EMPTY,
@@ -533,6 +593,7 @@ function collectSingleTaskLintSuggestions(task: Task): string[] {
 
 async function collectTaskFileLintSuggestions(governanceDir: string, task: Task): Promise<string[]> {
   const suggestions: TaskLintSuggestion[] = [];
+  const projectPath = toProjectPath(governanceDir);
 
   for (const link of task.links) {
     const normalized = link.trim();
@@ -544,7 +605,16 @@ async function collectTaskFileLintSuggestions(governanceDir: string, task: Task)
       continue;
     }
 
-    const resolvedPath = path.resolve(governanceDir, normalized);
+    if (!isProjectRootRelativePath(normalized)) {
+      suggestions.push({
+        code: TASK_LINT_CODES.LINK_PATH_FORMAT_INVALID,
+        message: `Link path should be project-root-relative without leading slash: ${normalized}.`,
+        fixHint: "Use path/from/project/root format.",
+      });
+      continue;
+    }
+
+    const resolvedPath = resolveTaskLinkPath(projectPath, normalized);
     const exists = await fs.access(resolvedPath).then(() => true).catch(() => false);
     if (!exists) {
       suggestions.push({

@@ -121,8 +121,8 @@ blocker:
 ## 8. References
 
 - [Projitive README](../../README.md)
-- [ROADMAP Design Spec](../../design/ROADMAP.md)
-- [TASKS Design Spec](../../design/TASKS.md)
+- [ROADMAP Design Spec](../../designs/ROADMAP.md)
+- [TASKS Design Spec](../../designs/TASKS.md)
 - [Current Roadmap](../roadmap.md)
 - [Current Tasks](../tasks.md)
 

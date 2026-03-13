@@ -2,112 +2,69 @@
 
 语言：简体中文 | [English](README.md)
 
-**当前规范版本：projitive-spec v1.0.0**
+Projitive 是一套面向 Agent 交付的治理模型与 MCP 工具链。
 
-Projitive 是一套面向 Agent 协作的抽象治理规则与执行工具集，而非某个具体业务任务系统。
+它帮助团队把“AI 会写代码”变成“AI 可以持续推进并且可追溯交付”。
 
-## 它如何辅助 Agent 管理并推进项目（设计思路）
+## 版本信息
 
-Projitive 要解决的核心问题是：Agent 会改代码，但往往无法长期、稳定地管理项目推进状态。
+- 当前规范：projitive-spec v1.0.0
+- MCP 包：@projitive/mcp（2.x 版本线）
 
-为此它采用四个约束来提高执行稳定性：
+## 60 秒上手
 
-- **状态机优先**：任务状态（`TODO`、`IN_PROGRESS`、`BLOCKED`、`DONE`）有明确推进语义。
-- **证据优先**：状态变化必须有 `designs/`、`reports/` 等工件作为证明。
-- **上下文优先**：执行前先定位治理根并读取标准治理文档。
-- **闭环优先**：不是一次性执行，而是持续循环（发现 -> 决策 -> 执行 -> 验证 -> 下一轮）。
+如果你只看一段，请看这里：
 
-落地到执行层，Agent 会按这个路径推进：
+1. 启动 MCP：`npx -y @projitive/mcp`
+2. 在客户端配置扫描根目录和深度
+3. 按闭环调用：taskNext -> taskContext -> taskUpdate -> taskContext -> taskNext
 
-1. 先发现下一步目标（`taskNext` / `projectNext`）
-2. 再构建可执行上下文（`taskContext` / `projectContext`）
-3. 在治理工件中执行更新
-4. 回查一致性后进入下一轮
+你会立刻得到：
 
-核心价值是：**把零散的“会写代码”能力，变成可审计、可复用、可持续推进的项目执行能力**。
+- 更快的下一任务选择
+- 更清晰的证据链
+- 更稳定的多 Agent 推进流程
 
-它定义三层能力：
-- 规则层：统一项目、任务、状态与证据语义
-- 流程层：统一 Discover → Plan → Execute → Validate → Sync 闭环
-- 工具层：通过 MCP Server 提供发现与更新能力
+## 它解决什么问题
 
-## 设计目标
+多数 Agent 流程的问题不在“不会编码”，而在“无法长期稳定推进项目状态”。
 
-- 不绑定业务域：规则适用于任意项目类型
-- 不绑定仓库结构：不依赖固定目录结构
-- 不绑定执行主体：支持 Agent 与人工协同
-- 可追溯优先：任何状态变化都要有证据
+Projitive 用 4 个约束解决这个问题：
 
-## 设计理念
+- 状态优先：任务状态清晰（`TODO`、`IN_PROGRESS`、`BLOCKED`、`DONE`）
+- 证据优先：状态变化应有 designs/report/readme 等证据
+- 上下文优先：执行前先定位治理根
+- 闭环优先：发现 -> 执行 -> 验证 -> 重新排序
 
-- 面向长期演进：不是一次性任务工具，而是可持续推进的项目治理机制
-- 适配多类 Agent：可用于 Claude Code、Copilot 以及其他 AI 执行工具
-- 通用治理模型：可跨业务域、跨团队结构复用
-- 可自我推进：通过发现、规划、执行、验证、回写闭环，让 Agent 在最少人工编排下持续推进任务
+## 默认推进闭环
 
-## 最小约定
+```mermaid
+flowchart LR
+  A[taskNext / projectNext] --> B[taskContext / projectContext]
+  B --> C[更新任务与路线图 + 文档]
+  C --> D[taskContext 回查]
+  D --> E{还有可推进任务吗?}
+  E -->|是| A
+  E -->|否| F[完成 / 等待新任务]
+```
 
-每个被治理项目使用 `.projitive` 文件作为定位锚点：
-- 通过查找 `.projitive` 文件识别治理根目录
-- `.projitive` 所在目录即治理目录
+推荐最短链路：
 
-治理目录中建议包含：
-- `README.md`：边界、术语、上下文
-- `roadmap.md`：阶段目标与里程碑
-- `tasks.md`：任务池与状态
-- `designs/`：设计决策
-- `reports/`：执行证据与结果
-- `hooks/`：事件型 AI 提示（发放/完成/阻塞/重开）
+1. taskNext
+2. taskContext
+3. taskUpdate 和/或 roadmapUpdate
+4. taskContext
+5. taskNext
 
-## 仓库结构
+## 安装与配置
 
-- `design/`：治理设计规范与编写约定
-- `packages/mcp/`：MCP Server 实现
-- `packages/skill/`：扩展包预留
-
-关键设计文档：
-- `design/HOOKS.md`：HOOK 提示规范
-- `design/HOOKS_CN.md`：中文版本
-- `design/ROADMAP.md` 与 `design/TASKS.md`：内置 ID 分配与引用规则
-
-## 语言规则
-
-- 默认英文
-- 中文使用 `_CN` 后缀
-
-## 版本规范
-
-- 规范版本：`projitive-spec v1.0.0`
-- 对齐规则：各实现（包括 MCP）的主版本必须与规范主版本一致（`v1.x` 对 `v1.x`）
-- 发布规则：
-	- 规范发生破坏性升级（如 `v1` → `v2`）时，MCP 必须先升级主版本（如 `2.0.0`）
-	- 向后兼容的新能力使用次版本升级（如 `1.1.0`）
-	- 仅缺陷修复且不改接口语义时，使用补丁版本升级（如 `1.0.1`）
-
-## 快速开始
-
-1. 阅读 `design/` 下治理设计规范
-2. 在目标治理目录放置 `.projitive`
-3. 准备治理工件（`README.md`、`roadmap.md`、`tasks.md`、`designs/`、`reports/`、`hooks/`）
-4. 在治理 `README.md` 中定义 `Agent 必读`（本地与外部指南）
-5. 通过 npm 包方式配置 MCP 客户端并执行治理操作
-
-## MCP 安装、配置与使用教程
-
-### 1）通过 npm 包安装并启动 MCP
-
-直接使用已发布 npm 包：
+直接使用已发布包：
 
 ```bash
 npx -y @projitive/mcp
 ```
 
-本教程不提供也不建议本地构建/本地路径启动方式。
-
-### 2）配置 MCP 客户端
-
-在 MCP 客户端配置文件（例如 `mcp.json`）中注册 npm 包形式的 stdio 服务：
-
+MCP 客户端配置示例：
 
 ```json
 {
@@ -124,21 +81,27 @@ npx -y @projitive/mcp
 }
 ```
 
-环境变量说明（必填）：
+必填环境变量：
 
-- `PROJITIVE_SCAN_ROOT_PATHS`：扫描/发现类方法（如 `projectNext`、`taskNext`）使用的根目录列表。
-  - 使用按平台分隔符拼接（Linux/macOS 用 `:`，Windows 用 `;`）
-  - 回退策略：当 `PROJITIVE_SCAN_ROOT_PATHS` 未设置时，仍兼容旧变量 `PROJITIVE_SCAN_ROOT_PATH`
-- `PROJITIVE_SCAN_MAX_DEPTH`：扫描/发现类方法使用的深度（整数 `0-8`）。
+- PROJITIVE_SCAN_ROOT_PATHS：扫描根目录（按平台分隔符拼接）
+- PROJITIVE_SCAN_MAX_DEPTH：扫描深度（0-8）
 
-### 3）验证并开始使用
+回退策略：若未设置 PROJITIVE_SCAN_ROOT_PATHS，会回退到旧变量 PROJITIVE_SCAN_ROOT_PATH。
 
-MCP 客户端连接成功后，建议先跑最短链路：
+## 仓库导航
 
-```text
-projectLocate -> projectContext -> taskNext -> taskContext
-```
+- designs/：规范与设计文档
+- packages/mcp/：MCP 服务端实现
+- packages/skills/：技能包与工具脚本
 
-随后在治理工件（`tasks.md`、`designs/`、`reports/`）执行更新，并用 `taskContext` 回查一致性。
+## 下一步阅读
 
-完整方法说明与返回样例可参考 `packages/mcp/README_CN.md`。
+- MCP 用户文档：[packages/mcp/README_CN.md](packages/mcp/README_CN.md)
+- MCP 英文文档：[packages/mcp/README.md](packages/mcp/README.md)
+- 规范入口：[designs/README_CN.md](designs/README_CN.md)
+- 英文规范入口：[designs/README.md](designs/README.md)
+
+## 语言规则
+
+- 默认英文
+- 中文文档使用 _CN 后缀

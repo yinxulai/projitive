@@ -105,7 +105,7 @@ export function registerQuickStartPrompt(server: McpServer): void {
         "2. If roadmap has active goals, split milestones into 1-3 executable TODO tasks",
         "3. Apply task creation gate before adding each task:",
         "   - Clear outcome: one-sentence done condition",
-        "   - Verifiable evidence: at least one report/design/readme link target",
+        "   - Verifiable evidence: at least one report/designs/readme link target",
         "   - Small slice: should be completable in one focused execution cycle",
         "   - Traceability: include at least one roadmapRefs item when applicable",
         "   - Distinct scope: avoid overlap with existing DONE/BLOCKED tasks",

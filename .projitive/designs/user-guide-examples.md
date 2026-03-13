@@ -304,4 +304,4 @@ confidence_score = context_completeness * 0.4 +
 
 - Read the [Best Practices Guide](./best-practices.md)
 - Learn about [Migration from v1.0.0 to v1.1.0](./migration-guide-v1.1.0.md)
-- Explore the [Design Documentation](../design/)
+- Explore the [Design Documentation](../designs/)

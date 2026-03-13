@@ -33,7 +33,7 @@ Recommended field constraints:
 - `id`: `TASK-\d{4}` (for example `TASK-0001`)
 - `status`: only `TODO|IN_PROGRESS|BLOCKED|DONE`
 - `updatedAt`: ISO8601 UTC timestamp
-- `links`: relative paths or URLs only (do not place raw roadmap IDs here)
+- `links`: project-root-relative paths (without leading `/`) or URLs only (do not place raw roadmap IDs here)
 - `roadmapRefs`: optional string array, each item must match `ROADMAP-\d{4}`
 
 Recommended markdown-native example:
@@ -46,7 +46,7 @@ Recommended markdown-native example:
 - updatedAt: 2026-02-17T00:00:00.000Z
 - roadmapRefs: ROADMAP-0001
 - links:
-  - ./designs/task-state-machine-design.md
+  - designs/task-state-machine-design.md
 <!-- PROJITIVE:TASKS:END -->
 ~~~
 
@@ -56,6 +56,7 @@ Recommended markdown-native example:
 - Warn if any `TASK-xxxx` appears outside marker block (possible split source)
 - `IN_PROGRESS` should have non-empty `owner`
 - `DONE` should have at least one `links` evidence
+- File path items in `links` should use project-root-relative format without leading slash (`path/from/root`)
 - `BLOCKED` should include blocker reason in `summary`
 - `updatedAt` should be valid ISO8601 UTC
 - `roadmapRefs` should link to existing `ROADMAP-xxxx` when applicable

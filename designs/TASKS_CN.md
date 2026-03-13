@@ -33,8 +33,7 @@
 - `id`：`TASK-\d{4}`（如 `TASK-0001`）
 - `status`：仅允许 `TODO|IN_PROGRESS|BLOCKED|DONE`
 - `updatedAt`：ISO8601 UTC 时间
-- `links`：仅放相对路径或 URL
-- `links`：仅放相对路径或 URL（不要放纯 roadmap ID）
+- `links`：仅放相对于项目根目录的路径（且不要以 `/` 开头）或 URL（不要放纯 roadmap ID）
 - `roadmapRefs`：可选字符串数组，元素必须匹配 `ROADMAP-\d{4}`
 
 推荐 Markdown 原生示例：
@@ -47,7 +46,7 @@
 - updatedAt: 2026-02-17T00:00:00.000Z
 - roadmapRefs: ROADMAP-0001
 - links:
-  - ./designs/task-state-machine-design.md
+	- designs/task-state-machine-design.md
 <!-- PROJITIVE:TASKS:END -->
 ~~~
 
@@ -57,6 +56,7 @@
 - 若 marker 外出现 `TASK-xxxx`，应告警（疑似双真源）
 - `IN_PROGRESS` 建议强制非空 `owner`
 - `DONE` 建议至少包含 1 条 `links` 证据
+- `links` 中的文件路径建议使用相对于项目根目录的格式（如 `reports/task-0001.md`，不要写成 `/reports/task-0001.md`）
 - `BLOCKED` 建议在 `summary` 写清阻塞原因与解锁条件
 - `updatedAt` 建议校验为 ISO8601 UTC
 - `roadmapRefs` 在适用时应绑定有效 `ROADMAP-xxxx`

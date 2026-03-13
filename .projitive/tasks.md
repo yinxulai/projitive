@@ -61,7 +61,7 @@ This file is generated from .projitive sqlite tables by Projitive MCP. Manual ed
 - roadmapRefs: ROADMAP-0004
 - links:
   - ../README.md
-  - ../design/README.md
+  - ../designs/README.md
   - ./designs/spec-v1.1-governance-change-proposal.md
   - ./designs/user-guide-examples.md
   - ./designs/best-practices.md
@@ -193,8 +193,8 @@ This file is generated from .projitive sqlite tables by Projitive MCP. Manual ed
 - roadmapRefs: ROADMAP-0004
 - links:
   - ./reports/task-0006-completion-2026-02-21.md
-  - ../design/README.md
-  - ../design/PROJITIVE.md
+  - ../designs/README.md
+  - ../designs/PROJITIVE.md
   - ../packages/mcp/source/index.ts
   - ../packages/mcp/source/design-context.ts
   - ../packages/mcp/README.md
@@ -207,8 +207,8 @@ This file is generated from .projitive sqlite tables by Projitive MCP. Manual ed
   - ./designs/spec-v1.1-governance-change-proposal.md
   - ./reports/task-0003-spec-v1.1-proposal-2026-02-21.md
   - ../README.md
-  - ../design/ROADMAP.md
-  - ../design/TASKS.md
+  - ../designs/ROADMAP.md
+  - ../designs/TASKS.md
 ## TASK-0005 | DONE | Improve auto-discovery and task creation mechanism
 - owner: ai-copilot
 - summary: Implemented safer auto-discovery defaults plus a governed task creation mechanism with confidence scoring and validation hooks.
@@ -218,7 +218,7 @@ This file is generated from .projitive sqlite tables by Projitive MCP. Manual ed
   - ../packages/mcp/source/validation/index.ts
   - ./reports/task-0005-implementation-2026-02-21.md
   - ./designs/spec-v1.1-governance-change-proposal.md
-  - ../design/TASKS.md
+  - ../designs/TASKS.md
   - ./roadmap.md
 ## TASK-0001 | DONE | Bootstrap repository self-management governance
 - owner: ai-copilot
