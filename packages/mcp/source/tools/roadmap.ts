@@ -2,7 +2,20 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { candidateFilesFromArtifacts, discoverGovernanceArtifacts, ROADMAP_LINT_CODES, renderLintSuggestions, type LintSuggestion, findTextReferences } from "../common/index.js";
+import {
+  candidateFilesFromArtifacts,
+  discoverGovernanceArtifacts,
+  ROADMAP_LINT_CODES,
+  renderLintSuggestions,
+  type LintSuggestion,
+  findTextReferences,
+  ensureStore,
+  loadRoadmapsFromStore,
+  upsertRoadmapInStore,
+  getStoreVersion,
+  getMarkdownViewState,
+  markMarkdownViewBuilt,
+} from "../common/index.js";
 import {
   asText,
   evidenceSection,
@@ -15,8 +28,134 @@ import {
 } from "../common/index.js";
 import { resolveGovernanceDir, toProjectPath } from "./project.js";
 import { loadTasks } from "./task.js";
+import type { RoadmapMilestone } from "../types.js";
 
 export const ROADMAP_ID_REGEX = /^ROADMAP-\d{4}$/;
+export const ROADMAP_MARKDOWN_FILE = "roadmap.md";
+
+export type RoadmapDocument = {
+  roadmapPath: string;
+  markdownPath: string;
+  markdown: string;
+  milestones: RoadmapMilestone[];
+};
+
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
+function toRoadmapIdNumericSuffix(roadmapId: string): number {
+  const match = roadmapId.match(/^(?:ROADMAP-)(\d{4})$/);
+  if (!match) {
+    return -1;
+  }
+  return Number.parseInt(match[1], 10);
+}
+
+function sortMilestonesNewestFirst(milestones: RoadmapMilestone[]): RoadmapMilestone[] {
+  return [...milestones].sort((a, b) => {
+    const updatedAtDelta = new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+    if (Number.isFinite(updatedAtDelta) && updatedAtDelta !== 0) {
+      return updatedAtDelta;
+    }
+
+    const idDelta = toRoadmapIdNumericSuffix(b.id) - toRoadmapIdNumericSuffix(a.id);
+    if (idDelta !== 0) {
+      return idDelta;
+    }
+
+    return b.id.localeCompare(a.id);
+  });
+}
+
+function normalizeMilestone(raw: Partial<RoadmapMilestone> & { id: string; title: string }): RoadmapMilestone {
+  return {
+    id: String(raw.id),
+    title: String(raw.title),
+    status: raw.status === "done" ? "done" : "active",
+    time: typeof raw.time === "string" && raw.time.trim().length > 0 ? raw.time.trim() : undefined,
+    updatedAt: typeof raw.updatedAt === "string" && Number.isFinite(new Date(raw.updatedAt).getTime()) ? raw.updatedAt : nowIso(),
+  };
+}
+
+function normalizeAndSortMilestones(milestones: RoadmapMilestone[]): RoadmapMilestone[] {
+  return sortMilestonesNewestFirst(
+    milestones
+      .filter((item) => isValidRoadmapId(item.id))
+      .map((item) => normalizeMilestone(item))
+  );
+}
+
+export function renderRoadmapMarkdown(milestones: RoadmapMilestone[]): string {
+  const lines = sortMilestonesNewestFirst(milestones).map((item) => {
+    const checkbox = item.status === "done" ? "x" : " ";
+    const timeText = item.time ? ` (time: ${item.time})` : "";
+    return `- [${checkbox}] ${item.id}: ${item.title}${timeText}`;
+  });
+
+  return [
+    "# Roadmap",
+    "",
+    "This file is generated from .projitive sqlite tables by Projitive MCP. Manual edits will be overwritten.",
+    "",
+    "## Active Milestones",
+    ...(lines.length > 0 ? lines : ["- (no milestones)"]),
+    "",
+  ].join("\n");
+}
+
+function resolveRoadmapArtifactPaths(governanceDir: string): { roadmapPath: string; markdownPath: string } {
+  return {
+    roadmapPath: path.join(governanceDir, ".projitive"),
+    markdownPath: path.join(governanceDir, ROADMAP_MARKDOWN_FILE),
+  };
+}
+
+async function syncRoadmapMarkdownView(roadmapPath: string, markdownPath: string, markdown: string, force = false): Promise<void> {
+  const sourceVersion = await getStoreVersion(roadmapPath, "roadmaps");
+  const viewState = await getMarkdownViewState(roadmapPath, "roadmaps_markdown");
+  const markdownExists = await fs.access(markdownPath).then(() => true).catch(() => false);
+
+  const shouldWrite = force
+    || !markdownExists
+    || viewState.dirty
+    || viewState.lastSourceVersion !== sourceVersion;
+
+  if (!shouldWrite) {
+    return;
+  }
+
+  await fs.writeFile(markdownPath, markdown, "utf-8");
+  await markMarkdownViewBuilt(roadmapPath, "roadmaps_markdown", sourceVersion);
+}
+
+export async function loadRoadmapDocument(inputPath: string): Promise<RoadmapDocument> {
+  return loadRoadmapDocumentWithOptions(inputPath, false);
+}
+
+export async function loadRoadmapDocumentWithOptions(inputPath: string, forceViewSync: boolean): Promise<RoadmapDocument> {
+  const governanceDir = await resolveGovernanceDir(inputPath);
+  const { roadmapPath, markdownPath } = resolveRoadmapArtifactPaths(governanceDir);
+  await ensureStore(roadmapPath);
+
+  const milestones = normalizeAndSortMilestones(await loadRoadmapsFromStore(roadmapPath));
+
+  const normalizedMilestones = normalizeAndSortMilestones(milestones);
+  const markdown = renderRoadmapMarkdown(normalizedMilestones);
+  await syncRoadmapMarkdownView(roadmapPath, markdownPath, markdown, forceViewSync);
+
+  return {
+    roadmapPath,
+    markdownPath,
+    markdown,
+    milestones: normalizedMilestones,
+  };
+}
+
+export async function loadRoadmapIds(inputPath: string): Promise<string[]> {
+  const { milestones } = await loadRoadmapDocument(inputPath);
+  return milestones.map((item) => item.id);
+}
 
 function collectRoadmapLintSuggestionItems(roadmapIds: string[], tasks: Awaited<ReturnType<typeof loadTasks>>["tasks"]): LintSuggestion[] {
   const suggestions: LintSuggestion[] = [];
@@ -24,7 +163,7 @@ function collectRoadmapLintSuggestionItems(roadmapIds: string[], tasks: Awaited<
   if (roadmapIds.length === 0) {
     suggestions.push({
       code: ROADMAP_LINT_CODES.IDS_EMPTY,
-      message: "No roadmap IDs found in roadmap.md.",
+      message: "No roadmap IDs found in .projitive roadmap table.",
       fixHint: "Add at least one ROADMAP-xxxx milestone.",
     });
   }
@@ -32,7 +171,7 @@ function collectRoadmapLintSuggestionItems(roadmapIds: string[], tasks: Awaited<
   if (tasks.length === 0) {
     suggestions.push({
       code: ROADMAP_LINT_CODES.TASKS_EMPTY,
-      message: "No tasks found in tasks.md.",
+      message: "No tasks found in .projitive task table.",
       fixHint: "Add task cards and bind roadmapRefs for traceability.",
     });
     return suggestions;
@@ -79,17 +218,6 @@ export function isValidRoadmapId(id: string): boolean {
   return ROADMAP_ID_REGEX.test(id);
 }
 
-async function readRoadmapIds(governanceDir: string): Promise<string[]> {
-  const roadmapPath = path.join(governanceDir, "roadmap.md");
-  try {
-    const markdown = await fs.readFile(roadmapPath, "utf-8");
-    const matches = markdown.match(/ROADMAP-\d{4}/g) ?? [];
-    return Array.from(new Set(matches));
-  } catch {
-    return [];
-  }
-}
-
 export function registerRoadmapTools(server: McpServer): void {
   server.registerTool(
     "roadmapList",
@@ -102,7 +230,7 @@ export function registerRoadmapTools(server: McpServer): void {
     },
     async ({ projectPath }) => {
       const governanceDir = await resolveGovernanceDir(projectPath);
-      const roadmapIds = await readRoadmapIds(governanceDir);
+      const roadmapIds = await loadRoadmapIds(governanceDir);
       const { tasks } = await loadTasks(governanceDir);
       const lintSuggestions = collectRoadmapLintSuggestions(roadmapIds, tasks);
 
@@ -164,7 +292,7 @@ export function registerRoadmapTools(server: McpServer): void {
 
       const { tasks } = await loadTasks(governanceDir);
       const relatedTasks = tasks.filter((task) => task.roadmapRefs.includes(roadmapId));
-      const roadmapIds = await readRoadmapIds(governanceDir);
+      const roadmapIds = await loadRoadmapIds(governanceDir);
       const lintSuggestionItems = collectRoadmapLintSuggestionItems(roadmapIds, tasks);
       if (relatedTasks.length === 0) {
         lintSuggestionItems.push({
@@ -198,6 +326,91 @@ export function registerRoadmapTools(server: McpServer): void {
           ]),
           lintSection(lintSuggestions),
           nextCallSection(`roadmapContext(projectPath=\"${toProjectPath(governanceDir)}\", roadmapId=\"${roadmapId}\")`),
+        ],
+      });
+
+      return asText(markdown);
+    }
+  );
+
+  server.registerTool(
+    "roadmapUpdate",
+    {
+      title: "Roadmap Update",
+      description: "Update one roadmap milestone fields incrementally in sqlite table",
+      inputSchema: {
+        projectPath: z.string(),
+        roadmapId: z.string(),
+        updates: z.object({
+          title: z.string().optional(),
+          status: z.enum(["active", "done"]).optional(),
+          time: z.string().optional(),
+        }),
+      },
+    },
+    async ({ projectPath, roadmapId, updates }) => {
+      if (!isValidRoadmapId(roadmapId)) {
+        return {
+          ...asText(renderErrorMarkdown(
+            "roadmapUpdate",
+            `Invalid roadmap ID format: ${roadmapId}`,
+            ["expected format: ROADMAP-0001", "retry with a valid roadmap ID"],
+            `roadmapUpdate(projectPath="${projectPath}", roadmapId="ROADMAP-0001", updates={...})`
+          )),
+          isError: true,
+        };
+      }
+
+      const governanceDir = await resolveGovernanceDir(projectPath);
+      const doc = await loadRoadmapDocument(governanceDir);
+      const existing = doc.milestones.find((item) => item.id === roadmapId);
+      if (!existing) {
+        return {
+          ...asText(renderErrorMarkdown(
+            "roadmapUpdate",
+            `Roadmap milestone not found: ${roadmapId}`,
+            ["run roadmapList to discover existing roadmap IDs", "retry with an existing roadmap ID"],
+            `roadmapList(projectPath="${toProjectPath(governanceDir)}")`
+          )),
+          isError: true,
+        };
+      }
+
+      const updated: RoadmapMilestone = {
+        ...existing,
+        title: updates.title ?? existing.title,
+        status: updates.status ?? existing.status,
+        time: updates.time ?? existing.time,
+        updatedAt: nowIso(),
+      };
+
+      await upsertRoadmapInStore(doc.roadmapPath, updated);
+      const refreshed = await loadRoadmapDocumentWithOptions(governanceDir, true);
+
+      const markdown = renderToolResponseMarkdown({
+        toolName: "roadmapUpdate",
+        sections: [
+          summarySection([
+            `- governanceDir: ${governanceDir}`,
+            `- roadmapId: ${roadmapId}`,
+            `- newStatus: ${updated.status}`,
+            `- updatedAt: ${updated.updatedAt}`,
+          ]),
+          evidenceSection([
+            "### Updated Milestone",
+            `- ${updated.id} | ${updated.status} | ${updated.title}${updated.time ? ` | time=${updated.time}` : ""}`,
+            "",
+            `### Roadmap Count`,
+            `- total: ${refreshed.milestones.length}`,
+          ]),
+          guidanceSection([
+            "Milestone updated successfully.",
+            "Re-run roadmapContext to verify linked task traceability.",
+            "SQLite is source of truth; roadmap.md is a generated view and may be overwritten.",
+            "Call `syncViews(projectPath=..., views=[\"roadmap\"], force=true)` when immediate markdown materialization is required.",
+          ]),
+          lintSection([]),
+          nextCallSection(`roadmapContext(projectPath="${toProjectPath(governanceDir)}", roadmapId="${roadmapId}")`),
         ],
       });
 

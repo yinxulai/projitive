@@ -2,74 +2,39 @@
 
 语言：简体中文 | [English](README.md)
 
-**当前规范版本：projitive-spec v1.0.0 | MCP 版本：1.0.8**
+## 版本信息
+
+- 当前规范版本：projitive-spec v1.0.0
+- MCP 版本：2.0.0
+
+## 60 秒上手
+
+如果你只看一段，就看这里：
+
+1. 启动：`npx -y @projitive/mcp`
+2. 配置 mcp.json（扫描根目录 + 深度）
+3. 调用：taskNext -> taskContext -> taskUpdate -> taskContext -> taskNext
+
+你会立刻得到：
+
+- 更快的下一任务选择
+- 更清晰的证据链
+- 更稳定的多 Agent 推进
 
 Projitive MCP Server 是一套面向 Agent 的治理执行接口，帮助你在项目中稳定完成：发现上下文、选择任务、读取证据、持续推进。
 
-## Agent 推进闭环
+## 有什么用
 
-```mermaid
-flowchart LR
-	A[taskNext / projectNext] --> B[taskContext / projectContext]
-	B --> C[更新 tasks/designs/reports]
-	C --> D[taskContext 回查]
-	D --> E{还有可推进任务吗?}
-	E -->|是| A
-	E -->|否| F[完成 / 等待新任务]
-```
+它解决的是“AI 能写代码，但项目推进混乱和不可追溯”的问题。
 
-## 为什么开发者会用它
+- 快速找到下一步最该做的任务。
+- 自动拿到执行任务所需上下文和证据线索。
+- 统一更新任务与路线图状态，避免状态漂移。
+- 让多轮、多 Agent 协作保持稳定推进。
 
-- 命名统一：核心 `List/Context`，加速 `Next/Scan/Locate`。
-- 可控自动化：围绕状态与证据约束推进，降低“改了但不可追溯”的风险。
-- Agent 友好输出：统一 Markdown 结构（Summary / Evidence / Agent Guidance / Next Call）。
-- 可发布可运维：已具备 release 触发的 CI 发布流程。
+## 怎么用
 
-## 它如何帮助 Agent 管理并推进项目
-
-这个 MCP 的目标不是“给信息”，而是“让 Agent 稳定推进交付”。
-
-它把 Agent 的工作变成可闭环流程：
-
-1. **先找到最该做的事**
-	- 用 `taskNext` 或 `projectNext` 自动排序出可推进目标。
-2. **再拿到可执行上下文**
-	- 用 `taskContext` / `projectContext` / `roadmapContext` 获取证据、引用和下一步调用建议。
-3. **按治理规则执行更新**
-	- Agent 更新 `tasks.md`、`designs/`、`reports/`，并遵守 ID 不可变与证据约束。
-4. **回查一致性后继续下一轮**
-	- 重新调用 `taskContext`（或 `roadmapContext`）确认一致，再进入下一任务。
-
-本质上，它把 Agent 执行从零散改动变成 **发现 → 决策 → 执行 → 验证** 的持续推进机制。
-
-## Agent 最短执行路径
-
-```text
-taskNext
-  -> taskContext
-  -> 更新工件（tasks/designs/reports）
-  -> taskContext（回查）
-  -> taskNext（进入下一轮）
-```
-
-当没有可执行任务（`actionableTasks: 0`）时，使用启动路径：
-
-```text
-taskNext
-  -> projectContext
-  -> 在 tasks.md 标记区基于 roadmap/readme/report 缺口新增 1-3 个 TODO 任务
-  -> taskNext
-```
-
-可选：在治理根目录添加 `hooks/task_no_actionable.md`，可覆盖默认的“无任务发现清单”。
-
-如果 Agent 已在项目目录内：
-
-```text
-projectLocate -> projectContext -> taskList -> taskContext
-```
-
-## 快速开始
+### 1. 启动 MCP
 
 建议直接通过 npm 包方式在 MCP 客户端使用：
 
@@ -77,7 +42,9 @@ projectLocate -> projectContext -> taskList -> taskContext
 npx -y @projitive/mcp
 ```
 
-MCP 客户端配置示例（`mcp.json`）：
+### 2. 配置 mcp.json
+
+MCP 客户端配置示例：
 
 ```json
 {
@@ -96,12 +63,119 @@ MCP 客户端配置示例（`mcp.json`）：
 
 环境变量说明（必填）：
 
-- `PROJITIVE_SCAN_ROOT_PATHS`：扫描/发现方法使用的根目录列表。
-  - 使用按平台分隔符拼接（Linux/macOS 用 `:`，Windows 用 `;`），例如 `/workspace/a:/workspace/b`。
-  - 回退策略：若未设置该变量，会回退使用旧变量 `PROJITIVE_SCAN_ROOT_PATH`。
-- `PROJITIVE_SCAN_MAX_DEPTH`：扫描/发现方法使用的深度（整数 `0-8`）。
+- PROJITIVE_SCAN_ROOT_PATHS：扫描根目录列表（按平台分隔符拼接）。
+- PROJITIVE_SCAN_MAX_DEPTH：扫描深度（0-8）。
 
-本 README 不建议本地路径方式启动。
+回退策略：若未设置 PROJITIVE_SCAN_ROOT_PATHS，会回退到旧变量 PROJITIVE_SCAN_ROOT_PATH。
+
+### 3. 按默认推进闭环使用
+
+```mermaid
+flowchart LR
+  A[taskNext / projectNext] --> B[taskContext / projectContext]
+  B --> C[更新 sqlite task/roadmap + docs]
+  C --> D[taskContext 回查]
+  D --> E{还有可推进任务吗?}
+  E -->|是| A
+  E -->|否| F[完成 / 等待新任务]
+```
+
+推荐最短路径：
+
+1. taskNext
+2. taskContext
+3. taskUpdate 和/或 roadmapUpdate
+4. taskContext（回查）
+5. taskNext（继续下一轮）
+
+### 4. 新用户最小闭环示例
+
+这是从首次连接到首次受治理更新的最短完整路径：
+
+```mermaid
+sequenceDiagram
+  participant U as User/Agent
+  participant M as Projitive MCP
+
+  U->>M: projectScan()
+  M-->>U: 发现治理项目
+  U->>M: projectContext(projectPath)
+  M-->>U: 任务/路线图摘要
+  U->>M: taskNext()
+  M-->>U: 选中可执行任务
+  U->>M: taskContext(projectPath, taskId)
+  M-->>U: 证据与阅读顺序
+  U->>M: taskUpdate(projectPath, taskId, updates)
+  M-->>U: 状态更新结果
+  U->>M: taskContext(projectPath, taskId)
+  M-->>U: 回查快照
+```
+
+## 能力总览
+
+### 核心工具
+
+| 分组 | 方法 | 作用 |
+| --- | --- | --- |
+| Project | projectInit | 初始化治理结构 |
+| Project | projectScan | 扫描治理项目 |
+| Project | projectNext | 选择最可推进项目 |
+| Project | projectLocate | 定位治理根目录 |
+| Project | projectContext | 汇总项目治理上下文 |
+| Project | syncViews | 强制物化 markdown 视图 |
+| Task | taskList | 列任务 |
+| Task | taskNext | 选择最可执行任务 |
+| Task | taskContext | 单任务详情与证据定位 |
+| Task | taskUpdate | 更新任务状态与元数据 |
+| Roadmap | roadmapList | 列路线图与关联任务 |
+| Roadmap | roadmapContext | 单路线图详情 |
+| Roadmap | roadmapUpdate | 更新路线图里程碑 |
+
+### Resources
+
+- projitive://governance/workspace
+- projitive://governance/tasks
+- projitive://governance/roadmap
+- projitive://mcp/method-catalog
+
+### Prompts
+
+- executeTaskWorkflow
+- updateTaskStatusWithEvidence
+- triageProjectGovernance
+
+## 设计理念
+
+### 1. 源数据与视图分离
+
+- 治理源数据存储在 .projitive。
+- tasks.md 与 roadmap.md 是可重建视图。
+- 手工改视图可能被后续同步覆盖。
+
+### 2. 默认内嵌 DuckDB 查询
+
+- 查询路径默认使用内嵌 DuckDB 内存引擎。
+- 不产生额外 DuckDB 中间数据库文件。
+
+### 3. 证据优先
+
+- 状态变更应有 reports/designs/readme 等证据支撑。
+- 工具输出保持 Agent 友好结构，便于链式调用。
+
+### 4. 可预测的多 Agent 推进
+
+- 优先使用工具写入，避免随意改表格型 markdown。
+- ID 稳定、状态跃迁明确、每轮可回查。
+
+## 架构文档
+
+- docs/README_CN.md
+- docs/ARCHITECTURE_CN.md
+- docs/MIGRATION_ARCHITECTURE_CN.md
+- REFACTOR_CN.md
+- REFACTOR_V2_CN.md
+
+## 开发说明
 
 仅维护者/贡献者开发时可用：
 
@@ -111,49 +185,3 @@ npm ci
 npm run build
 npm run test
 ```
-
-## MCP 能力机制
-
-- Tools：执行发现、定位、汇总、分诊。
-- Resources：提供治理上下文资源，便于 Agent 低成本加载背景。
-- Prompts：提供参数化执行模板，降低流程偏差。
-
-### Resources（已实现）
-
-- `projitive://governance/workspace`
-- `projitive://governance/tasks`
-- `projitive://governance/roadmap`
-- `projitive://mcp/method-catalog`
-
-### Prompts（已实现）
-
-- `executeTaskWorkflow`
-- `updateTaskStatusWithEvidence`
-- `triageProjectGovernance`
-
-## 方法总览
-
-| 分组 | 方法 | 作用 |
-|---|---|---|
-| Project | `projectInit` | 初始化治理目录结构（默认 `.projitive`） |
-| Project | `projectScan` | 扫描治理项目 |
-| Project | `projectNext` | 选择最可推进项目 |
-| Project | `projectLocate` | 定位治理根目录 |
-| Project | `projectContext` | 汇总项目治理上下文 |
-| Task | `taskList` | 列任务（可过滤） |
-| Task | `taskNext` | 选择最可执行任务 |
-| Task | `taskContext` | 单任务详情与证据定位 |
-| Roadmap | `roadmapList` | 列路线图与关联任务 |
-| Roadmap | `roadmapContext` | 单路线图详情与引用定位 |
-
-参数约束（重要）：
-
-- `projectInit` 必须显式传入 `projectPath`，避免误在工作区根目录初始化。
-- `projectNext` 与 `taskNext` 不再支持 `rootPath` 入参，扫描根目录统一由 `PROJITIVE_SCAN_ROOT_PATHS`（或旧变量 `PROJITIVE_SCAN_ROOT_PATH`）控制。
-
-## 语言切换
-
-- 英文完整文档：`README.md`
-- 中文文档：`README_CN.md`
-
-> 说明：英文文档包含更完整的分方法示例与返回样例；中文文档用于快速上手与日常查阅。

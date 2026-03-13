@@ -83,6 +83,14 @@ export interface Task {
   blocker?: BlockerMetadata;
 }
 
+export interface RoadmapMilestone {
+  id: string;
+  title: string;
+  status: "active" | "done";
+  time?: string;
+  updatedAt: string;
+}
+
 // ============================================================================
 // Validation Types
 // ============================================================================
@@ -102,28 +110,20 @@ export interface ValidationIssue {
 // ============================================================================
 
 export interface TaskDocument {
-  tasksPath: string;
   tasks: Task[];
+  tasksPath: string;
   markdown: string;
+  markdownPath: string;
 }
 
 export interface ActionableTaskCandidate {
   governanceDir: string;
-  tasksPath: string;
   task: Task;
   projectScore: number;
   projectLatestUpdatedAt: string;
   taskUpdatedAtMs: number;
   taskPriority: number;
 }
-
-// ============================================================================
-// Parser Constants
-// ============================================================================
-
-export const TASKS_START = "<!-- PROJITIVE:TASKS:START -->";
-export const TASKS_END = "<!-- PROJITIVE:TASKS:END -->";
-export const TASK_ID_REGEX = /^TASK-\d{4}$/;
 
 // ============================================================================
 // Linter Types
@@ -147,9 +147,6 @@ export const TASK_LINT_CODES = {
   OUTSIDE_MARKER: "TASK_OUTSIDE_MARKER",
   FILTER_EMPTY: "TASK_FILTER_EMPTY",
   LINK_TARGET_MISSING: "TASK_LINK_TARGET_MISSING",
-  HOOK_FILE_MISSING: "TASK_HOOK_FILE_MISSING",
-  CONTEXT_HOOK_HEAD_MISSING: "TASK_CONTEXT_HOOK_HEAD_MISSING",
-  CONTEXT_HOOK_FOOTER_MISSING: "TASK_CONTEXT_HOOK_FOOTER_MISSING",
   // Spec v1.1.0 - Blocker Categorization
   BLOCKED_WITHOUT_BLOCKER: "TASK_BLOCKED_WITHOUT_BLOCKER",
   BLOCKER_TYPE_INVALID: "TASK_BLOCKER_TYPE_INVALID",

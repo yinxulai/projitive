@@ -12,7 +12,7 @@ export type GovernanceFileEntry = {
 };
 
 const FILE_ARTIFACTS = ["README.md", "roadmap.md", "tasks.md"];
-const DIRECTORY_ARTIFACTS = ["designs", "reports", "hooks"];
+const DIRECTORY_ARTIFACTS = ["designs", "reports", "templates"];
 
 async function fileLineCount(filePath: string): Promise<number> {
   const content = await fs.readFile(filePath, "utf-8");

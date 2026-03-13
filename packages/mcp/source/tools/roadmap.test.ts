@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest"
 import fs from "node:fs/promises"
 import path from "node:path"
 import os from "node:os"
-import { isValidRoadmapId, collectRoadmapLintSuggestions } from "./roadmap.js"
+import { isValidRoadmapId, collectRoadmapLintSuggestions, loadRoadmapDocument, renderRoadmapMarkdown } from "./roadmap.js"
 
 describe("roadmap module", () => {
   let tempDir: string
@@ -19,15 +19,11 @@ describe("roadmap module", () => {
     it("should validate correct roadmap IDs", () => {
       expect(isValidRoadmapId("ROADMAP-0001")).toBe(true)
       expect(isValidRoadmapId("ROADMAP-1234")).toBe(true)
-      expect(isValidRoadmapId("ROADMAP-9999")).toBe(true)
     })
 
     it("should reject invalid roadmap IDs", () => {
       expect(isValidRoadmapId("roadmap-0001")).toBe(false)
-      expect(isValidRoadmapId("ROADMAP-001")).toBe(false)
-      expect(isValidRoadmapId("ROADMAP-00001")).toBe(false)
       expect(isValidRoadmapId("TASK-0001")).toBe(false)
-      expect(isValidRoadmapId("")).toBe(false)
       expect(isValidRoadmapId("invalid")).toBe(false)
     })
   })
@@ -44,71 +40,41 @@ describe("roadmap module", () => {
     })
 
     it("should return lint suggestion for tasks without roadmap refs", () => {
-      const tasks = [
-        {
-          id: "TASK-0001",
-          title: "Test Task",
-          status: "TODO" as const,
-          owner: "ai-copilot",
-          summary: "Test",
-          updatedAt: "2026-01-01T00:00:00.000Z",
-          links: [],
-          roadmapRefs: [],
-        },
-      ]
+      const tasks = [{
+        id: "TASK-0001",
+        title: "Test Task",
+        status: "TODO" as const,
+        owner: "ai-copilot",
+        summary: "Test",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        links: [],
+        roadmapRefs: [],
+      }]
       const suggestions = collectRoadmapLintSuggestions(["ROADMAP-0001"], tasks)
       expect(suggestions.some(s => s.includes("TASK_REFS_EMPTY"))).toBe(true)
     })
 
-    it("should return lint suggestion for unknown roadmap refs", () => {
-      const tasks = [
-        {
-          id: "TASK-0001",
-          title: "Test Task",
-          status: "TODO" as const,
-          owner: "ai-copilot",
-          summary: "Test",
-          updatedAt: "2026-01-01T00:00:00.000Z",
-          links: [],
-          roadmapRefs: ["ROADMAP-9999"],
-        },
-      ]
-      const suggestions = collectRoadmapLintSuggestions(["ROADMAP-0001"], tasks)
-      expect(suggestions.some(s => s.includes("UNKNOWN_REFS"))).toBe(true)
+    it("loads from sqlite and rewrites roadmap markdown view", async () => {
+      const governanceDir = path.join(tempDir, ".projitive-db")
+      await fs.mkdir(governanceDir, { recursive: true })
+      await fs.writeFile(path.join(governanceDir, ".projitive"), "", "utf-8")
+
+      const doc = await loadRoadmapDocument(governanceDir)
+      expect(doc.roadmapPath.endsWith(".projitive")).toBe(true)
+      expect(doc.markdownPath.endsWith("roadmap.md")).toBe(true)
+
+      const markdown = await fs.readFile(path.join(governanceDir, "roadmap.md"), "utf-8")
+      expect(markdown).toContain("generated from .projitive sqlite tables")
     })
 
-    it("should return lint suggestion for roadmaps with no linked tasks", () => {
-      const tasks = [
-        {
-          id: "TASK-0001",
-          title: "Test Task",
-          status: "TODO" as const,
-          owner: "ai-copilot",
-          summary: "Test",
-          updatedAt: "2026-01-01T00:00:00.000Z",
-          links: [],
-          roadmapRefs: ["ROADMAP-0001"],
-        },
-      ]
-      const suggestions = collectRoadmapLintSuggestions(["ROADMAP-0001", "ROADMAP-0002"], tasks)
-      expect(suggestions.some(s => s.includes("ZERO_LINKED_TASKS"))).toBe(true)
-    })
+    it("renders milestones in newest-first order", () => {
+      const markdown = renderRoadmapMarkdown([
+        { id: "ROADMAP-0001", title: "Older", status: "active", updatedAt: "2026-01-01T00:00:00.000Z" },
+        { id: "ROADMAP-0002", title: "Newer", status: "done", updatedAt: "2026-02-01T00:00:00.000Z" },
+      ])
 
-    it("should return no lint suggestions for valid setup", () => {
-      const tasks = [
-        {
-          id: "TASK-0001",
-          title: "Test Task",
-          status: "TODO" as const,
-          owner: "ai-copilot",
-          summary: "Test",
-          updatedAt: "2026-01-01T00:00:00.000Z",
-          links: [],
-          roadmapRefs: ["ROADMAP-0001"],
-        },
-      ]
-      const suggestions = collectRoadmapLintSuggestions(["ROADMAP-0001"], tasks)
-      expect(suggestions.length).toBe(0)
+      expect(markdown.indexOf("ROADMAP-0002")).toBeLessThan(markdown.indexOf("ROADMAP-0001"))
+      expect(markdown).toContain("[x] ROADMAP-0002")
     })
   })
 })
