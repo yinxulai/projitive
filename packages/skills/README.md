@@ -23,8 +23,8 @@ Then prompt in your coding agent:
 
 ## References sync on publish
 
-- During `npm publish`/`npm pack`, the package auto-copies English files from repo `design/` to `references/`.
-- Source rule: `design/*.md` excluding `*_CN.md`.
+- During `npm publish`/`npm pack`, the package auto-copies English files from repo `designs/` to `references/`.
+- Source rule: `designs/*.md` excluding `*_CN.md`.
 
 ## What this skill focuses on
 

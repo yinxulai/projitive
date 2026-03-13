@@ -23,8 +23,8 @@ npx skills add @projitive/skills
 
 ## 发布时 references 自动同步
 
-- 在 `npm publish` / `npm pack` 时，会自动将仓库根目录 `design/` 下英文文件复制到 `references/`。
-- 同步规则：`design/*.md` 且排除 `*_CN.md`。
+- 在 `npm publish` / `npm pack` 时，会自动将仓库根目录 `designs/` 下英文文件复制到 `references/`。
+- 同步规则：`designs/*.md` 且排除 `*_CN.md`。
 
 ## 这个 skill 解决什么问题
 

@@ -262,10 +262,13 @@ describe("projitive module", () => {
         path.join(root, ".projitive", "README.md"),
         path.join(root, ".projitive", "roadmap.md"),
         path.join(root, ".projitive", "tasks.md"),
-        path.join(root, ".projitive", "hooks", "task_no_actionable.md"),
+        path.join(root, ".projitive", "templates", "README.md"),
+        path.join(root, ".projitive", "templates", "tools", "taskNext.md"),
+        path.join(root, ".projitive", "templates", "tools", "taskUpdate.md"),
         path.join(root, ".projitive", "designs"),
         path.join(root, ".projitive", "reports"),
-        path.join(root, ".projitive", "hooks"),
+        path.join(root, ".projitive", "templates"),
+        path.join(root, ".projitive", "templates", "tools"),
       ];
 
       await Promise.all(expectedPaths.map(async (targetPath) => {
@@ -342,7 +345,7 @@ describe("projitive module", () => {
       
       expect(initialized.directories.some(d => d.path.includes("designs"))).toBe(true);
       expect(initialized.directories.some(d => d.path.includes("reports"))).toBe(true);
-      expect(initialized.directories.some(d => d.path.includes("hooks"))).toBe(true);
+      expect(initialized.directories.some(d => d.path.includes("templates"))).toBe(true);
     });
   });
 

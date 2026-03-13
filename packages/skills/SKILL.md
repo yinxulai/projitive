@@ -16,7 +16,7 @@ Projitive helps agents continuously ship under governance constraints, not just 
 1. **projitive init** — initialize governance structure in a repository
 2. **Continue project execution** — pick actionable task and advance with evidence
 3. **Project triage** — scan/locate project root and summarize governance health
-4. **Task status transition** — update task status with design/report evidence discipline
+4. **Task status transition** — update task status with designs/report evidence discipline
 
 # Init: Repo Governance Setup
 
@@ -168,7 +168,7 @@ No-MCP fallback order:
 - Prefer smallest valid step that moves one task forward
 - Keep status transitions explicit and evidence-linked
 - Do not rewrite unrelated tasks while executing current task
-- Preserve ID stability in roadmap/tasks/design/report documents
+- Preserve ID stability in roadmap/tasks/designs/report documents
 
 # MCP Command Contract (when available)
 

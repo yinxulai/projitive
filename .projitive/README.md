@@ -16,9 +16,9 @@ This directory is the governance root for the `projitive` repository.
 - Local: ./designs/self-management-bootstrap.md
 - Local: ./designs/mcp-self-iteration-2026-02.md
 - External: ../README.md
-- External: ../design/ROADMAP.md
-- External: ../design/TASKS.md
-- External: ../design/HOOKS.md
+- External: ../designs/ROADMAP.md
+- External: ../designs/TASKS.md
+- External: ../designs/HOOKS.md
 
 ## Operating Rules
 

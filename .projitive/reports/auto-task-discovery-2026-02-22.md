@@ -85,7 +85,7 @@ This report documents the automated task discovery process for the projitive pro
 - Best practices: `.projitive/designs/best-practices.md`
 - Migration guide: `.projitive/designs/migration-guide-v1.1.0.md`
 - README in both English and Chinese
-- Design specifications in `design/` directory
+- Design specifications in `designs/` directory
 
 ### 7. CI/CD Pipeline Check
 

@@ -1,0 +1,14 @@
+{
+  "servers": {
+    "projitive": {
+      "command": "node",
+      "args": [
+        "packages/mcp/output/source/index.js"
+      ],
+      "env": {
+        "PROJITIVE_SCAN_ROOT_PATHS": "/home/yinxulai/github/projitive",
+        "PROJITIVE_SCAN_MAX_DEPTH": "3"
+      }
+    }
+  }
+}

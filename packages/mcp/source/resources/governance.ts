@@ -27,7 +27,7 @@ export function registerGovernanceResources(server: McpServer, repoRoot: string)
     "projitive://governance/tasks",
     {
       title: "Governance Tasks",
-      description: "Current task pool and status under .projitive/tasks.md",
+      description: "Current task pool markdown view generated from .projitive sqlite task table",
       mimeType: "text/markdown",
     },
     async () => ({
@@ -45,7 +45,7 @@ export function registerGovernanceResources(server: McpServer, repoRoot: string)
     "projitive://governance/roadmap",
     {
       title: "Governance Roadmap",
-      description: "Current roadmap under .projitive/roadmap.md",
+      description: "Current roadmap markdown view generated from .projitive sqlite roadmap table",
       mimeType: "text/markdown",
     },
     async () => ({

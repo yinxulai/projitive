@@ -2,7 +2,21 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { candidateFilesFromArtifacts, discoverGovernanceArtifacts, findTextReferences } from "../common/index.js";
+import {
+  candidateFilesFromArtifacts,
+  discoverGovernanceArtifacts,
+  findTextReferences,
+  ensureStore,
+  loadActionableTasksFromStore,
+  loadRoadmapsFromStore,
+  loadTaskStatusStatsFromStore,
+  loadTasksFromStore,
+  replaceTasksInStore,
+  upsertTaskInStore,
+  getStoreVersion,
+  getMarkdownViewState,
+  markMarkdownViewBuilt,
+} from "../common/index.js";
 import {
   asText,
   evidenceSection,
@@ -20,32 +34,20 @@ import type {
   Task,
   TaskStatus,
   TaskDocument,
+  ActionableTaskCandidate,
   SubStateMetadata,
   BlockerMetadata,
-  SubStatePhase,
-  BlockerType,
 } from "../types.js";
 import { SUB_STATE_PHASES, BLOCKER_TYPES } from "../types.js";
 
 // Re-export types for backwards compatibility
-export type { Task, TaskStatus, TaskDocument };
+export type { Task, TaskStatus, TaskDocument, ActionableTaskCandidate };
 
-export const TASKS_START = "<!-- PROJITIVE:TASKS:START -->";
-export const TASKS_END = "<!-- PROJITIVE:TASKS:END -->";
 export const ALLOWED_STATUS = ["TODO", "IN_PROGRESS", "BLOCKED", "DONE"] as const;
 export const TASK_ID_REGEX = /^TASK-\d{4}$/;
+export const TASKS_MARKDOWN_FILE = "tasks.md";
 
 export type TaskLintSuggestion = LintSuggestion;
-
-export type ActionableTaskCandidate = {
-  governanceDir: string;
-  tasksPath: string;
-  task: Task;
-  projectScore: number;
-  projectLatestUpdatedAt: string;
-  taskUpdatedAtMs: number;
-  taskPriority: number;
-};
 
 function appendLintSuggestions(target: string[], suggestions: LintSuggestion[]): void {
   target.push(...renderLintSuggestions(suggestions));
@@ -79,73 +81,44 @@ function taskStatusGuidance(task: Task): string[] {
   ];
 }
 
-async function readOptionalMarkdown(filePath: string): Promise<string | undefined> {
-  const content = await fs.readFile(filePath, "utf-8").catch(() => undefined);
-  if (typeof content !== "string") {
-    return undefined;
-  }
-  const trimmed = content.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
-}
-
-const NO_TASK_DISCOVERY_HOOK_FILE = "task_no_actionable.md";
-
 const DEFAULT_NO_TASK_DISCOVERY_GUIDANCE = [
-  "- Check whether current code violates project guide/spec conventions; create TODO tasks for each actionable gap.",
-  "- Check unit/integration test coverage and identify high-value missing tests; create TODO tasks for meaningful coverage improvements.",
-  "- Check development/testing workflow for bottlenecks (slow feedback, fragile scripts, unclear runbooks); create tasks to improve reliability.",
-  "- Scan for TODO/FIXME/HACK comments and convert feasible items into governed TODO tasks with evidence links.",
-  "- Check dependency freshness and security advisories; create tasks for safe upgrades when needed.",
-  "- Check repeated manual operations that can be automated (lint/test/release checks); create tasks to reduce operational toil.",
+  "- Recheck project state first: run projectContext and confirm there is truly no TODO/IN_PROGRESS task to execute.",
+  "- If all remaining tasks are BLOCKED, create one unblock task with explicit unblock condition and dependency owner.",
+  "- Start from active roadmap milestones and split into the smallest executable slices with a single done condition each.",
+  "- Prefer slices that unlock multiple downstream tasks before isolated refactors or low-impact cleanups.",
+  "- Create TODO tasks only when evidence is clear: each new task must produce at least one report/designs/readme artifact update.",
+  "- Skip duplicate scope: do not create tasks that overlap existing TODO/IN_PROGRESS/BLOCKED task intent.",
+  "- Use quality gates for discovery candidates: user value, delivery risk reduction, or measurable throughput improvement.",
+  "- Keep each discovery round small (1-3 tasks), then rerun taskNext immediately for re-ranking and execution.",
 ];
 
-function parseHookChecklist(markdown: string): string[] {
-  return markdown
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-    .filter((line) => /^[-*+]\s+/.test(line))
-    .map((line) => (line.startsWith("*") ? `-${line.slice(1)}` : line));
-}
+const DEFAULT_TASK_CONTEXT_READING_GUIDANCE = [
+  "- Read governance workspace overview first (README.md / projitive://governance/workspace).",
+  "- Read roadmap and active milestones (roadmap.md / projitive://governance/roadmap).",
+  "- Read task view and related task cards (tasks.md / projitive://governance/tasks).",
+  "- Read design specs and technical decisions under designs/ (architecture, API contracts, constraints).",
+  "- Read reports/ for latest execution evidence, regressions, and unresolved risks.",
+  "- Read process guides under templates/docs/project guidelines to align with local governance rules.",
+  "- If available, read docs/ architecture or migration guides before major structural changes.",
+];
 
 export async function resolveNoTaskDiscoveryGuidance(governanceDir?: string): Promise<string[]> {
-  if (!governanceDir) {
-    return DEFAULT_NO_TASK_DISCOVERY_GUIDANCE;
-  }
-
-  const hookPath = path.join(governanceDir, "hooks", NO_TASK_DISCOVERY_HOOK_FILE);
-  const markdown = await readOptionalMarkdown(hookPath);
-  if (typeof markdown !== "string") {
-    return DEFAULT_NO_TASK_DISCOVERY_GUIDANCE;
-  }
-
-  const checklist = parseHookChecklist(markdown);
-  return checklist.length > 0 ? checklist : DEFAULT_NO_TASK_DISCOVERY_GUIDANCE;
+  void governanceDir;
+  return DEFAULT_NO_TASK_DISCOVERY_GUIDANCE;
 }
 
-function latestTaskUpdatedAt(tasks: Task[]): string {
-  const timestamps = tasks
-    .map((task) => new Date(task.updatedAt).getTime())
-    .filter((value) => Number.isFinite(value));
-
-  if (timestamps.length === 0) {
-    return "(unknown)";
-  }
-
-  return new Date(Math.max(...timestamps)).toISOString();
-}
-
-function actionableScore(tasks: Task[]): number {
-  return tasks.filter((task) => task.status === "IN_PROGRESS").length * 2
-    + tasks.filter((task) => task.status === "TODO").length;
+export async function resolveTaskContextReadingGuidance(governanceDir?: string): Promise<string[]> {
+  void governanceDir;
+  return DEFAULT_TASK_CONTEXT_READING_GUIDANCE;
 }
 
 async function readRoadmapIds(governanceDir: string): Promise<string[]> {
-  const roadmapPath = path.join(governanceDir, "roadmap.md");
+  const dbPath = path.join(governanceDir, ".projitive");
   try {
-    const markdown = await fs.readFile(roadmapPath, "utf-8");
-    const matches = markdown.match(/ROADMAP-\d{4}/g) ?? [];
-    return Array.from(new Set(matches));
+    await ensureStore(dbPath);
+    const milestones = await loadRoadmapsFromStore(dbPath);
+    const ids = milestones.map((item) => item.id).filter((item) => isValidRoadmapId(item));
+    return Array.from(new Set(ids));
   } catch {
     return [];
   }
@@ -160,22 +133,53 @@ export function renderTaskSeedTemplate(roadmapRef: string): string[] {
     "- updatedAt: 2026-01-01T00:00:00.000Z",
     `- roadmapRefs: ${roadmapRef}`,
     "- links:",
-    "  - ./README.md",
-    "  - ./roadmap.md",
+    "  - README.md",
+    "  - .projitive/roadmap.md",
     "```",
   ];
+}
+
+function isHttpUrl(value: string): boolean {
+  return /^https?:\/\//i.test(value);
+}
+
+function isProjectRootRelativePath(value: string): boolean {
+  return value.length > 0
+    && !value.startsWith("/")
+    && !value.startsWith("./")
+    && !value.startsWith("../")
+    && !/^[A-Za-z]:\//.test(value);
+}
+
+function normalizeTaskLink(link: string): string {
+  const trimmed = link.trim();
+  if (trimmed.length === 0 || isHttpUrl(trimmed)) {
+    return trimmed;
+  }
+
+  const slashNormalized = trimmed.replace(/\\/g, "/");
+  const withoutDotPrefix = slashNormalized.replace(/^\.\//, "");
+  return withoutDotPrefix.replace(/^\/+/, "");
+}
+
+function resolveTaskLinkPath(projectPath: string, link: string): string {
+  return path.join(projectPath, link);
 }
 
 async function readActionableTaskCandidates(governanceDirs: string[]): Promise<ActionableTaskCandidate[]> {
   const snapshots = await Promise.all(
     governanceDirs.map(async (governanceDir) => {
-      const snapshot = await loadTasks(governanceDir);
+      const tasksPath = path.join(governanceDir, ".projitive");
+      await ensureStore(tasksPath);
+      const [stats, actionableTasks] = await Promise.all([
+        loadTaskStatusStatsFromStore(tasksPath),
+        loadActionableTasksFromStore(tasksPath),
+      ]);
       return {
         governanceDir,
-        tasksPath: snapshot.tasksPath,
-        tasks: snapshot.tasks,
-        projectScore: actionableScore(snapshot.tasks),
-        projectLatestUpdatedAt: latestTaskUpdatedAt(snapshot.tasks),
+        tasks: actionableTasks,
+        projectScore: stats.inProgress * 2 + stats.todo,
+        projectLatestUpdatedAt: stats.latestUpdatedAt || "(unknown)",
       };
     })
   );
@@ -184,7 +188,6 @@ async function readActionableTaskCandidates(governanceDirs: string[]): Promise<A
     .filter((task) => task.status === "IN_PROGRESS" || task.status === "TODO")
     .map((task) => ({
       governanceDir: item.governanceDir,
-      tasksPath: item.tasksPath,
       task,
       projectScore: item.projectScore,
       projectLatestUpdatedAt: item.projectLatestUpdatedAt,
@@ -216,6 +219,59 @@ export function toTaskUpdatedAtMs(updatedAt: string): number {
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
+function toTaskIdNumericSuffix(taskId: string): number {
+  const match = taskId.match(/^(?:TASK-)(\d{4})$/);
+  if (!match) {
+    return -1;
+  }
+  return Number.parseInt(match[1], 10);
+}
+
+export function sortTasksNewestFirst(tasks: Task[]): Task[] {
+  return [...tasks].sort((a, b) => {
+    const updatedAtDelta = toTaskUpdatedAtMs(b.updatedAt) - toTaskUpdatedAtMs(a.updatedAt);
+    if (updatedAtDelta !== 0) {
+      return updatedAtDelta;
+    }
+
+    const idDelta = toTaskIdNumericSuffix(b.id) - toTaskIdNumericSuffix(a.id);
+    if (idDelta !== 0) {
+      return idDelta;
+    }
+
+    return b.id.localeCompare(a.id);
+  });
+}
+
+function normalizeAndSortTasks(tasks: Task[]): Task[] {
+  return sortTasksNewestFirst(tasks.map((task) => normalizeTask(task)));
+}
+
+function resolveTaskArtifactPaths(governanceDir: string): { tasksPath: string; markdownPath: string } {
+  return {
+    tasksPath: path.join(governanceDir, ".projitive"),
+    markdownPath: path.join(governanceDir, TASKS_MARKDOWN_FILE),
+  };
+}
+
+async function syncTasksMarkdownView(tasksPath: string, markdownPath: string, markdown: string, force = false): Promise<void> {
+  const sourceVersion = await getStoreVersion(tasksPath, "tasks");
+  const viewState = await getMarkdownViewState(tasksPath, "tasks_markdown");
+  const markdownExists = await fs.access(markdownPath).then(() => true).catch(() => false);
+
+  const shouldWrite = force
+    || !markdownExists
+    || viewState.dirty
+    || viewState.lastSourceVersion !== sourceVersion;
+
+  if (!shouldWrite) {
+    return;
+  }
+
+  await fs.writeFile(markdownPath, markdown, "utf-8");
+  await markMarkdownViewBuilt(tasksPath, "tasks_markdown", sourceVersion);
+}
+
 export function rankActionableTaskCandidates(candidates: ActionableTaskCandidate[]): ActionableTaskCandidate[] {
   return [...candidates].sort((a, b) => {
     if (b.projectScore !== a.projectScore) {
@@ -234,124 +290,6 @@ export function rankActionableTaskCandidates(candidates: ActionableTaskCandidate
   });
 }
 
-// Helper function to check if a line is a top-level task field
-function isTopLevelField(line: string): boolean {
-  const topLevelFields = [
-    "- owner:",
-    "- summary:",
-    "- updatedAt:",
-    "- roadmapRefs:",
-    "- links:",
-    "- hooks:",
-    "- subState:",
-    "- blocker:",
-  ];
-  return topLevelFields.some((field) => line.startsWith(field));
-}
-
-// Parse subState nested field
-function parseSubState(lines: string[], startIndex: number): { subState: SubStateMetadata; endIndex: number } {
-  const subState: SubStateMetadata = {};
-  let index = startIndex + 1;
-
-  while (index < lines.length) {
-    const line = lines[index];
-    const trimmed = line.trim();
-
-    // Check if we've reached the end of subState (new top-level field or new task)
-    if (trimmed.startsWith("- ") && isTopLevelField(trimmed)) {
-      break;
-    }
-
-    // Check if we've reached a new task
-    if (trimmed.startsWith("## TASK-")) {
-      break;
-    }
-
-    // Parse nested fields (2-space indentation expected)
-    if (trimmed.startsWith("- phase:")) {
-      const phase = trimmed.replace("- phase:", "").trim();
-      if (SUB_STATE_PHASES.includes(phase as SubStatePhase)) {
-        subState.phase = phase as SubStatePhase;
-      }
-    } else if (trimmed.startsWith("- confidence:")) {
-      const confidenceStr = trimmed.replace("- confidence:", "").trim();
-      const confidence = Number.parseFloat(confidenceStr);
-      if (!Number.isNaN(confidence) && confidence >= 0 && confidence <= 1) {
-        subState.confidence = confidence;
-      }
-    } else if (trimmed.startsWith("- estimatedCompletion:")) {
-      const estimatedCompletion = trimmed.replace("- estimatedCompletion:", "").trim();
-      if (estimatedCompletion && estimatedCompletion !== "(none)") {
-        subState.estimatedCompletion = estimatedCompletion;
-      }
-    }
-
-    index++;
-  }
-
-  return { subState, endIndex: index - 1 };
-}
-
-// Parse blocker nested field
-function parseBlocker(lines: string[], startIndex: number): { blocker: BlockerMetadata; endIndex: number } {
-  const blocker: Partial<BlockerMetadata> = {};
-  let index = startIndex + 1;
-
-  while (index < lines.length) {
-    const line = lines[index];
-    const trimmed = line.trim();
-
-    // Check if we've reached the end of blocker (new top-level field or new task)
-    if (trimmed.startsWith("- ") && isTopLevelField(trimmed)) {
-      break;
-    }
-
-    // Check if we've reached a new task
-    if (trimmed.startsWith("## TASK-")) {
-      break;
-    }
-
-    // Parse nested fields (2-space indentation expected)
-    if (trimmed.startsWith("- type:")) {
-      const type = trimmed.replace("- type:", "").trim();
-      if (BLOCKER_TYPES.includes(type as BlockerType)) {
-        blocker.type = type as BlockerType;
-      }
-    } else if (trimmed.startsWith("- description:")) {
-      const description = trimmed.replace("- description:", "").trim();
-      if (description && description !== "(none)") {
-        blocker.description = description;
-      }
-    } else if (trimmed.startsWith("- blockingEntity:")) {
-      const blockingEntity = trimmed.replace("- blockingEntity:", "").trim();
-      if (blockingEntity && blockingEntity !== "(none)") {
-        blocker.blockingEntity = blockingEntity;
-      }
-    } else if (trimmed.startsWith("- unblockCondition:")) {
-      const unblockCondition = trimmed.replace("- unblockCondition:", "").trim();
-      if (unblockCondition && unblockCondition !== "(none)") {
-        blocker.unblockCondition = unblockCondition;
-      }
-    } else if (trimmed.startsWith("- escalationPath:")) {
-      const escalationPath = trimmed.replace("- escalationPath:", "").trim();
-      if (escalationPath && escalationPath !== "(none)") {
-        blocker.escalationPath = escalationPath;
-      }
-    }
-
-    index++;
-  }
-
-  // Validate required fields
-  if (!blocker.type || !blocker.description) {
-    // Return empty blocker if required fields are missing
-    return { blocker: { type: "external_dependency", description: "Unknown blocker" }, endIndex: index - 1 };
-  }
-
-  return { blocker: blocker as BlockerMetadata, endIndex: index - 1 };
-}
-
 export function normalizeTask(task: Partial<Task> & { id: string; title: string }): Task {
   const normalizedRoadmapRefs = Array.isArray(task.roadmapRefs)
     ? task.roadmapRefs.map(String).filter((value) => isValidRoadmapId(value))
@@ -364,7 +302,16 @@ export function normalizeTask(task: Partial<Task> & { id: string; title: string 
     owner: task.owner ? String(task.owner) : "",
     summary: task.summary ? String(task.summary) : "",
     updatedAt: task.updatedAt ? String(task.updatedAt) : nowIso(),
-    links: Array.isArray(task.links) ? task.links.map(String) : [],
+    links: Array.isArray(task.links)
+      ? Array.from(
+          new Set(
+            task.links
+              .map(String)
+              .map((value) => normalizeTaskLink(value))
+              .filter((value) => value.length > 0)
+          )
+        )
+      : [],
     roadmapRefs: Array.from(new Set(normalizedRoadmapRefs)),
   };
 
@@ -379,179 +326,9 @@ export function normalizeTask(task: Partial<Task> & { id: string; title: string 
   return normalized;
 }
 
-export async function parseTasksBlock(markdown: string): Promise<Task[]> {
-  const start = markdown.indexOf(TASKS_START);
-  const end = markdown.indexOf(TASKS_END);
-
-  if (start === -1 || end === -1 || end <= start) {
-    return [];
-  }
-
-  const body = markdown.slice(start + TASKS_START.length, end).trim();
-  if (!body || body === "(no tasks)") {
-    return [];
-  }
-
-  const sections = body
-    .split(/\n(?=##\s+TASK-\d{4}\s+\|\s+(?:TODO|IN_PROGRESS|BLOCKED|DONE)\s+\|)/g)
-    .map((section) => section.trim())
-    .filter((section) => section.startsWith("## TASK-"));
-
-  const tasks: Task[] = [];
-
-  for (const section of sections) {
-    const lines = section.split(/\r?\n/);
-    const header = lines[0]?.match(/^##\s+(TASK-\d{4})\s+\|\s+(TODO|IN_PROGRESS|BLOCKED|DONE)\s+\|\s+(.+)$/);
-    if (!header) {
-      continue;
-    }
-
-    const [, id, statusRaw, title] = header;
-    const status = statusRaw as TaskStatus;
-
-    const taskDraft: Partial<Task> & { id: string; title: string } = {
-      id,
-      title: title.trim(),
-      status,
-      owner: "",
-      summary: "",
-      updatedAt: nowIso(),
-      links: [],
-      roadmapRefs: [],
-    };
-
-    let inLinks = false;
-    let inHooks = false;
-
-    // Convert to indexed for loop to allow skipping lines when parsing subState/blocker
-    const sectionLines = lines.slice(1);
-    for (let lineIndex = 0; lineIndex < sectionLines.length; lineIndex++) {
-      const line = sectionLines[lineIndex];
-      const trimmed = line.trim();
-      if (!trimmed) {
-        continue;
-      }
-
-      if (trimmed.startsWith("- owner:")) {
-        taskDraft.owner = trimmed.replace("- owner:", "").trim();
-        inLinks = false;
-        inHooks = false;
-        continue;
-      }
-
-      if (trimmed.startsWith("- summary:")) {
-        taskDraft.summary = trimmed.replace("- summary:", "").trim();
-        inLinks = false;
-        inHooks = false;
-        continue;
-      }
-
-      if (trimmed.startsWith("- updatedAt:")) {
-        taskDraft.updatedAt = trimmed.replace("- updatedAt:", "").trim();
-        inLinks = false;
-        inHooks = false;
-        continue;
-      }
-
-      if (trimmed.startsWith("- roadmapRefs:")) {
-        const payload = trimmed.replace("- roadmapRefs:", "").trim();
-        const refs = payload === "(none)"
-          ? []
-          : payload
-            .split(",")
-            .map((value) => value.trim())
-            .filter((value) => value.length > 0);
-        taskDraft.roadmapRefs = refs;
-        inLinks = false;
-        inHooks = false;
-        continue;
-      }
-
-      if (trimmed === "- links:") {
-        inLinks = true;
-        inHooks = false;
-        continue;
-      }
-
-      if (trimmed === "- hooks:") {
-        inLinks = false;
-        inHooks = true;
-        continue;
-      }
-
-      // Handle subState nested field (Spec v1.1.0)
-      if (trimmed.startsWith("- subState:")) {
-        const { subState, endIndex } = parseSubState(sectionLines, lineIndex);
-        if (Object.keys(subState).length > 0) {
-          taskDraft.subState = subState;
-        }
-        // Skip to the end of subState parsing
-        lineIndex = endIndex;
-        inLinks = false;
-        inHooks = false;
-        continue;
-      }
-
-      // Handle blocker nested field (Spec v1.1.0)
-      if (trimmed.startsWith("- blocker:")) {
-        const { blocker, endIndex } = parseBlocker(sectionLines, lineIndex);
-        if (blocker.type && blocker.description) {
-          taskDraft.blocker = blocker;
-        }
-        // Skip to the end of blocker parsing
-        lineIndex = endIndex;
-        inLinks = false;
-        inHooks = false;
-        continue;
-      }
-
-      const nestedItem = trimmed.match(/^-\s+(.+)$/);
-      if (!nestedItem) {
-        continue;
-      }
-
-      const nestedValue = nestedItem[1].trim();
-      if (nestedValue === "(none)") {
-        continue;
-      }
-
-      if (inLinks) {
-        taskDraft.links = [...(taskDraft.links ?? []), nestedValue];
-        continue;
-      }
-
-      if (inHooks) {
-        continue;
-      }
-    }
-
-    tasks.push(normalizeTask(taskDraft));
-  }
-
-  return tasks;
-}
-
-export function findTaskIdsOutsideMarkers(markdown: string): string[] {
-  const start = markdown.indexOf(TASKS_START);
-  const end = markdown.indexOf(TASKS_END);
-
-  const outsideText = (start !== -1 && end !== -1 && end > start)
-    ? `${markdown.slice(0, start)}\n${markdown.slice(end + TASKS_END.length)}`
-    : markdown;
-
-  const ids = outsideText.match(/TASK-\d{4}/g) ?? [];
-  return Array.from(new Set(ids));
-}
-
-type CollectTaskLintOptions = {
-  markdown?: string;
-  outsideMarkerScopeIds?: Set<string>;
-};
-
-function collectTaskLintSuggestionItems(tasks: Task[], options: CollectTaskLintOptions = {}): TaskLintSuggestion[] {
+function collectTaskLintSuggestionItems(tasks: Task[]): TaskLintSuggestion[] {
   const suggestions: TaskLintSuggestion[] = [];
 
-  const { markdown, outsideMarkerScopeIds } = options;
   const duplicateIds = Array.from(
     tasks.reduce((counter, task) => {
       counter.set(task.id, (counter.get(task.id) ?? 0) + 1);
@@ -615,16 +392,16 @@ function collectTaskLintSuggestionItems(tasks: Task[], options: CollectTaskLintO
     });
   }
 
-  if (typeof markdown === "string") {
-    const outsideMarkerTaskIds = findTaskIdsOutsideMarkers(markdown)
-      .filter((taskId) => (outsideMarkerScopeIds ? outsideMarkerScopeIds.has(taskId) : true));
-    if (outsideMarkerTaskIds.length > 0) {
-      suggestions.push({
-        code: TASK_LINT_CODES.OUTSIDE_MARKER,
-        message: `TASK IDs found outside marker block: ${outsideMarkerTaskIds.join(", ")}.`,
-        fixHint: "Keep task source of truth inside marker region only.",
-      });
-    }
+  const invalidLinkPathFormat = tasks.filter((task) => task.links.some((link) => {
+    const normalized = link.trim();
+    return normalized.length > 0 && !isHttpUrl(normalized) && !isProjectRootRelativePath(normalized);
+  }));
+  if (invalidLinkPathFormat.length > 0) {
+    suggestions.push({
+      code: TASK_LINT_CODES.LINK_PATH_FORMAT_INVALID,
+      message: `${invalidLinkPathFormat.length} task(s) contain invalid links path format.`,
+      fixHint: "Use project-root-relative paths without leading slash (for example reports/task-0001.md) or http(s) URL.",
+    });
   }
 
   // ============================================================================
@@ -696,8 +473,8 @@ function collectTaskLintSuggestionItems(tasks: Task[], options: CollectTaskLintO
   return suggestions;
 }
 
-export function collectTaskLintSuggestions(tasks: Task[], markdown?: string, outsideMarkerScopeIds?: Set<string>): string[] {
-  return renderLintSuggestions(collectTaskLintSuggestionItems(tasks, { markdown, outsideMarkerScopeIds }));
+export function collectTaskLintSuggestions(tasks: Task[]): string[] {
+  return renderLintSuggestions(collectTaskLintSuggestionItems(tasks));
 }
 
 function collectSingleTaskLintSuggestions(task: Task): string[] {
@@ -716,6 +493,18 @@ function collectSingleTaskLintSuggestions(task: Task): string[] {
       code: TASK_LINT_CODES.DONE_LINKS_MISSING,
       message: "Current task is DONE but has no links evidence.",
       fixHint: "Add at least one evidence link.",
+    });
+  }
+
+  const invalidLinkPathFormat = task.links.some((link) => {
+    const normalized = link.trim();
+    return normalized.length > 0 && !isHttpUrl(normalized) && !isProjectRootRelativePath(normalized);
+  });
+  if (invalidLinkPathFormat) {
+    suggestions.push({
+      code: TASK_LINT_CODES.LINK_PATH_FORMAT_INVALID,
+      message: "Current task has invalid links path format.",
+      fixHint: "Use project-root-relative paths without leading slash (for example reports/task-0001.md) or http(s) URL.",
     });
   }
 
@@ -804,6 +593,7 @@ function collectSingleTaskLintSuggestions(task: Task): string[] {
 
 async function collectTaskFileLintSuggestions(governanceDir: string, task: Task): Promise<string[]> {
   const suggestions: TaskLintSuggestion[] = [];
+  const projectPath = toProjectPath(governanceDir);
 
   for (const link of task.links) {
     const normalized = link.trim();
@@ -815,7 +605,16 @@ async function collectTaskFileLintSuggestions(governanceDir: string, task: Task)
       continue;
     }
 
-    const resolvedPath = path.resolve(governanceDir, normalized);
+    if (!isProjectRootRelativePath(normalized)) {
+      suggestions.push({
+        code: TASK_LINT_CODES.LINK_PATH_FORMAT_INVALID,
+        message: `Link path should be project-root-relative without leading slash: ${normalized}.`,
+        fixHint: "Use path/from/project/root format.",
+      });
+      continue;
+    }
+
+    const resolvedPath = resolveTaskLinkPath(projectPath, normalized);
     const exists = await fs.access(resolvedPath).then(() => true).catch(() => false);
     if (!exists) {
       suggestions.push({
@@ -829,7 +628,7 @@ async function collectTaskFileLintSuggestions(governanceDir: string, task: Task)
 }
 
 export function renderTasksMarkdown(tasks: Task[]): string {
-  const sections = tasks.map((task) => {
+  const sections = sortTasksNewestFirst(tasks).map((task) => {
     const roadmapRefs = task.roadmapRefs.length > 0 ? task.roadmapRefs.join(", ") : "(none)";
     const links = task.links.length > 0
       ? ["- links:", ...task.links.map((link) => `  - ${link}`)]
@@ -880,25 +679,23 @@ export function renderTasksMarkdown(tasks: Task[]): string {
   return [
     "# Tasks",
     "",
-    "This file is maintained by Projitive MCP. If editing manually, please keep the Markdown structure valid.",
+    "This file is generated from .projitive sqlite tables by Projitive MCP. Manual edits will be overwritten.",
     "",
-    TASKS_START,
     ...(sections.length > 0 ? sections : ["(no tasks)"]),
-    TASKS_END,
     "",
   ].join("\n");
 }
 
 export async function ensureTasksFile(inputPath: string): Promise<string> {
   const governanceDir = await resolveGovernanceDir(inputPath);
-  const tasksPath = path.join(governanceDir, "tasks.md");
+  const { tasksPath, markdownPath } = resolveTaskArtifactPaths(governanceDir);
 
   await fs.mkdir(governanceDir, { recursive: true });
+  await ensureStore(tasksPath);
 
-  const accessResult = await catchIt(fs.access(tasksPath));
-  if (accessResult.isError()) {
-    await fs.writeFile(tasksPath, renderTasksMarkdown([]), "utf-8");
-  }
+  const tasks = normalizeAndSortTasks(await loadTasksFromStore(tasksPath));
+
+  await syncTasksMarkdownView(tasksPath, markdownPath, renderTasksMarkdown(tasks));
 
   return tasksPath;
 }
@@ -909,14 +706,23 @@ export async function loadTasks(inputPath: string): Promise<{ tasksPath: string;
 }
 
 export async function loadTasksDocument(inputPath: string): Promise<TaskDocument> {
+  return loadTasksDocumentWithOptions(inputPath, false);
+}
+
+export async function loadTasksDocumentWithOptions(inputPath: string, forceViewSync: boolean): Promise<TaskDocument> {
   const tasksPath = await ensureTasksFile(inputPath);
-  const markdown = await fs.readFile(tasksPath, "utf-8");
-  return { tasksPath, markdown, tasks: await parseTasksBlock(markdown) };
+  const tasks = normalizeAndSortTasks(await loadTasksFromStore(tasksPath));
+  const markdown = renderTasksMarkdown(tasks);
+  const markdownPath = path.join(path.dirname(tasksPath), TASKS_MARKDOWN_FILE);
+  await syncTasksMarkdownView(tasksPath, markdownPath, markdown, forceViewSync);
+  return { tasksPath, markdownPath, markdown, tasks };
 }
 
 export async function saveTasks(tasksPath: string, tasks: Task[]): Promise<void> {
-  const normalized = tasks.map((task) => normalizeTask(task));
-  await fs.writeFile(tasksPath, renderTasksMarkdown(normalized), "utf-8");
+  const normalized = normalizeAndSortTasks(tasks);
+  const markdownPath = path.join(path.dirname(tasksPath), TASKS_MARKDOWN_FILE);
+  await replaceTasksInStore(tasksPath, normalized);
+  await syncTasksMarkdownView(tasksPath, markdownPath, renderTasksMarkdown(normalized));
 }
 
 export function validateTransition(from: TaskStatus, to: TaskStatus): boolean {
@@ -948,15 +754,11 @@ export function registerTaskTools(server: McpServer): void {
     },
     async ({ projectPath, status, limit }) => {
       const governanceDir = await resolveGovernanceDir(projectPath);
-      const { tasksPath, tasks, markdown: tasksMarkdown } = await loadTasksDocument(governanceDir);
+      const { tasks } = await loadTasksDocument(governanceDir);
       const filtered = tasks
         .filter((task) => (status ? task.status === status : true))
         .slice(0, limit ?? 100);
-      const lintSuggestions = collectTaskLintSuggestions(
-        filtered,
-        tasksMarkdown,
-        new Set(filtered.map((task) => task.id))
-      );
+      const lintSuggestions = collectTaskLintSuggestions(filtered);
       if (status && filtered.length === 0) {
         appendLintSuggestions(lintSuggestions, [
           {
@@ -973,7 +775,6 @@ export function registerTaskTools(server: McpServer): void {
         sections: [
           summarySection([
             `- governanceDir: ${governanceDir}`,
-            `- tasksPath: ${tasksPath}`,
             `- filter.status: ${status ?? "(none)"}`,
             `- returned: ${filtered.length}`,
           ]),
@@ -1011,21 +812,18 @@ export function registerTaskTools(server: McpServer): void {
       if (rankedCandidates.length === 0) {
         const projectSnapshots = await Promise.all(
           projects.map(async (governanceDir) => {
-            const { tasksPath, tasks } = await loadTasks(governanceDir);
+            const tasksPath = path.join(governanceDir, ".projitive");
+            await ensureStore(tasksPath);
+            const stats = await loadTaskStatusStatsFromStore(tasksPath);
             const roadmapIds = await readRoadmapIds(governanceDir);
-            const todo = tasks.filter((task) => task.status === "TODO").length;
-            const inProgress = tasks.filter((task) => task.status === "IN_PROGRESS").length;
-            const blocked = tasks.filter((task) => task.status === "BLOCKED").length;
-            const done = tasks.filter((task) => task.status === "DONE").length;
             return {
               governanceDir,
-              tasksPath,
               roadmapIds,
-              total: tasks.length,
-              todo,
-              inProgress,
-              blocked,
-              done,
+              total: stats.total,
+              todo: stats.todo,
+              inProgress: stats.inProgress,
+              blocked: stats.blocked,
+              done: stats.done,
             };
           })
         );
@@ -1047,7 +845,7 @@ export function registerTaskTools(server: McpServer): void {
               "### Project Snapshots",
               ...(projectSnapshots.length > 0
                 ? projectSnapshots.map(
-                    (item, index) => `${index + 1}. ${item.governanceDir} | total=${item.total} | todo=${item.todo} | in_progress=${item.inProgress} | blocked=${item.blocked} | done=${item.done} | roadmapIds=${item.roadmapIds.join(", ") || "(none)"} | tasksPath=${item.tasksPath}`
+                    (item, index) => `${index + 1}. ${item.governanceDir} | total=${item.total} | todo=${item.todo} | in_progress=${item.inProgress} | blocked=${item.blocked} | done=${item.done} | roadmapIds=${item.roadmapIds.join(", ") || "(none)"}`
                   )
                 : ["- (none)"]),
               "",
@@ -1057,16 +855,17 @@ export function registerTaskTools(server: McpServer): void {
             guidanceSection([
               "- No TODO/IN_PROGRESS task is available.",
               "- Use no-task discovery checklist below to proactively find and create meaningful TODO tasks.",
+              "- If roadmap has active milestones, analyze milestone intent and split into 1-3 executable TODO tasks.",
               "",
               "### No-Task Discovery Checklist",
               ...noTaskDiscoveryGuidance,
               "",
               "- If no tasks exist, derive 1-3 TODO tasks from roadmap milestones, README scope, or unresolved report gaps.",
               "- If only BLOCKED/DONE tasks exist, reopen one blocked item or create a follow-up TODO task.",
-              "- After adding tasks inside marker block, rerun `taskNext` to re-rank actionable work.",
+              "- After creating tasks, rerun `taskNext` to re-rank actionable work.",
             ]),
             lintSection([
-              "- No actionable tasks found. Verify task statuses and required fields in marker block.",
+              "- No actionable tasks found. Verify task statuses and required fields in .projitive task table.",
               "- Ensure each new task has stable TASK-xxxx ID and at least one roadmapRefs item.",
             ]),
             nextCallSection(preferredProject
@@ -1079,15 +878,15 @@ export function registerTaskTools(server: McpServer): void {
 
       const selected = rankedCandidates[0];
       const selectedTaskDocument = await loadTasksDocument(selected.governanceDir);
-      const lintSuggestions = collectTaskLintSuggestions(selectedTaskDocument.tasks, selectedTaskDocument.markdown);
+      const lintSuggestions = collectTaskLintSuggestions(selectedTaskDocument.tasks);
       const artifacts = await discoverGovernanceArtifacts(selected.governanceDir);
       const fileCandidates = candidateFilesFromArtifacts(artifacts);
       const referenceLocations = (
         await Promise.all(fileCandidates.map((file) => findTextReferences(file, selected.task.id)))
       ).flat();
-      const taskLocation = (await findTextReferences(selected.tasksPath, selected.task.id))[0];
+      const taskLocation = (await findTextReferences(selectedTaskDocument.markdownPath, selected.task.id))[0];
       const relatedArtifacts = Array.from(new Set(referenceLocations.map((item) => item.filePath)));
-      const suggestedReadOrder = [selected.tasksPath, ...relatedArtifacts.filter((item) => item !== selected.tasksPath)];
+      const suggestedReadOrder = [selectedTaskDocument.markdownPath, ...relatedArtifacts.filter((item) => item !== selectedTaskDocument.markdownPath)];
       const candidateLimit = limit ?? 5;
 
       const markdown = renderToolResponseMarkdown({
@@ -1110,7 +909,7 @@ export function registerTaskTools(server: McpServer): void {
             `- owner: ${selected.task.owner || "(none)"}`,
             `- updatedAt: ${selected.task.updatedAt}`,
             `- roadmapRefs: ${selected.task.roadmapRefs.join(", ") || "(none)"}`,
-            `- taskLocation: ${taskLocation ? `${taskLocation.filePath}#L${taskLocation.line}` : selected.tasksPath}`,
+            `- taskLocation: ${taskLocation ? `${taskLocation.filePath}#L${taskLocation.line}` : selectedTaskDocument.markdownPath}`,
             "",
             "### Top Candidates",
             ...rankedCandidates
@@ -1170,7 +969,7 @@ export function registerTaskTools(server: McpServer): void {
       }
 
       const governanceDir = await resolveGovernanceDir(projectPath);
-      const { tasksPath, tasks, markdown: tasksMarkdown } = await loadTasksDocument(governanceDir);
+      const { markdownPath, tasks, markdown: tasksMarkdown } = await loadTasksDocument(governanceDir);
       const task = tasks.find((item) => item.id === taskId);
       if (!task) {
         return {
@@ -1188,19 +987,9 @@ export function registerTaskTools(server: McpServer): void {
         ...collectSingleTaskLintSuggestions(task),
         ...(await collectTaskFileLintSuggestions(governanceDir, task)),
       ];
+      const contextReadingGuidance = await resolveTaskContextReadingGuidance(governanceDir);
 
-      const outsideMarkerTaskIds = findTaskIdsOutsideMarkers(tasksMarkdown);
-      if (outsideMarkerTaskIds.includes(task.id)) {
-        appendLintSuggestions(lintSuggestions, [
-          {
-            code: TASK_LINT_CODES.OUTSIDE_MARKER,
-            message: `Current task ID appears outside marker block (${task.id}).`,
-            fixHint: "Keep task source of truth inside marker region.",
-          },
-        ]);
-      }
-
-      const taskLocation = (await findTextReferences(tasksPath, taskId))[0];
+      const taskLocation = (await findTextReferences(markdownPath, taskId))[0];
       const artifacts = await discoverGovernanceArtifacts(governanceDir);
       const fileCandidates = candidateFilesFromArtifacts(artifacts);
       const referenceLocations = (
@@ -1208,7 +997,7 @@ export function registerTaskTools(server: McpServer): void {
       ).flat();
 
       const relatedArtifacts = Array.from(new Set(referenceLocations.map((item) => item.filePath)));
-      const suggestedReadOrder = [tasksPath, ...relatedArtifacts.filter((item) => item !== tasksPath)];
+      const suggestedReadOrder = [markdownPath, ...relatedArtifacts.filter((item) => item !== markdownPath)];
 
       // Build summary with subState and blocker info (v1.1.0)
       const summaryLines = [
@@ -1219,7 +1008,7 @@ export function registerTaskTools(server: McpServer): void {
         `- owner: ${task.owner}`,
         `- updatedAt: ${task.updatedAt}`,
         `- roadmapRefs: ${task.roadmapRefs.join(", ") || "(none)"}`,
-        `- taskLocation: ${taskLocation ? `${taskLocation.filePath}#L${taskLocation.line}` : tasksPath}`,
+        `- taskLocation: ${taskLocation ? `${taskLocation.filePath}#L${taskLocation.line}` : markdownPath}`,
       ];
 
       // Add subState info for IN_PROGRESS tasks (v1.1.0)
@@ -1270,9 +1059,13 @@ export function registerTaskTools(server: McpServer): void {
           ]),
           guidanceSection([
             "- Read the files in Suggested Read Order.",
+            "",
+            "### Recommended Context Reading",
+            ...contextReadingGuidance,
+            "",
             "- Verify whether current status and evidence are consistent.",
             ...taskStatusGuidance(task),
-            "- If updates are needed, edit tasks/designs/reports markdown directly and keep TASK IDs unchanged.",
+            "- If updates are needed, use tool writes for sqlite source (`taskUpdate` / `roadmapUpdate`) and keep TASK IDs unchanged.",
             "- After editing, re-run `taskContext` to verify references and context consistency.",
           ]),
           lintSection(lintSuggestions),
@@ -1328,7 +1121,7 @@ export function registerTaskTools(server: McpServer): void {
       }
 
       const governanceDir = await resolveGovernanceDir(projectPath);
-      const { tasksPath, tasks, markdown: tasksMarkdown } = await loadTasksDocument(governanceDir);
+      const { tasksPath, tasks } = await loadTasksDocument(governanceDir);
       const taskIndex = tasks.findIndex((item) => item.id === taskId);
 
       if (taskIndex === -1) {
@@ -1390,8 +1183,19 @@ export function registerTaskTools(server: McpServer): void {
       // Update updatedAt
       task.updatedAt = nowIso();
 
-      // Save tasks
-      await saveTasks(tasksPath, tasks);
+      const normalizedTask = normalizeTask(task);
+
+      // Save task incrementally
+      await upsertTaskInStore(tasksPath, normalizedTask);
+
+      task.status = normalizedTask.status;
+      task.owner = normalizedTask.owner;
+      task.summary = normalizedTask.summary;
+      task.roadmapRefs = normalizedTask.roadmapRefs;
+      task.links = normalizedTask.links;
+      task.updatedAt = normalizedTask.updatedAt;
+      task.subState = normalizedTask.subState;
+      task.blocker = normalizedTask.blocker;
 
       // Build response
       const updateSummary = [
@@ -1440,6 +1244,8 @@ export function registerTaskTools(server: McpServer): void {
             "Task updated successfully. Run `taskContext` to verify the changes.",
             "If status changed to DONE, ensure evidence links are added.",
             "If subState or blocker were updated, verify the metadata is correct.",
+            "SQLite is source of truth; tasks.md is a generated view and may be overwritten.",
+            "Call `syncViews(projectPath=..., views=[\"tasks\"], force=true)` when immediate markdown materialization is required.",
           ]),
           lintSection([]),
           nextCallSection(`taskContext(projectPath=\"${toProjectPath(governanceDir)}\", taskId=\"${taskId}\")`),
