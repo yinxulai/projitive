@@ -1,5 +1,10 @@
 # Projitive
 
+[![CI MCP](https://github.com/yinxulai/projitive/actions/workflows/mcp-lint-test.yml/badge.svg)](https://github.com/yinxulai/projitive/actions/workflows/mcp-lint-test.yml)
+[![Release Publish MCP](https://github.com/yinxulai/projitive/actions/workflows/mcp-release.yml/badge.svg)](https://github.com/yinxulai/projitive/actions/workflows/mcp-release.yml)
+[![npm version](https://img.shields.io/npm/v/%40projitive%2Fmcp?label=npm)](https://www.npmjs.com/package/@projitive/mcp)
+[![npm downloads](https://img.shields.io/npm/dm/%40projitive%2Fmcp)](https://www.npmjs.com/package/@projitive/mcp)
+
 语言：简体中文 | [English](README.md)
 
 Projitive 是一套面向 Agent 交付的治理模型与 MCP 工具链。

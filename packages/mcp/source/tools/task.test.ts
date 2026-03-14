@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   collectTaskLintSuggestions,
   isValidTaskId,
@@ -8,6 +8,7 @@ import {
   renderTaskSeedTemplate,
   renderTasksMarkdown,
   loadTasksDocument,
+  registerTaskTools,
   saveTasks,
   taskPriority,
   toTaskUpdatedAtMs,
@@ -17,6 +18,23 @@ import {
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { replaceRoadmapsInStore } from '../common/store.js'
+
+async function createGovernanceWorkspace(): Promise<{ projectRoot: string; governanceDir: string; dbPath: string }> {
+  const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'projitive-mcp-task-workspace-'))
+  const governanceDir = path.join(projectRoot, '.projitive')
+  const dbPath = path.join(governanceDir, '.projitive')
+  await fs.mkdir(governanceDir, { recursive: true })
+  await fs.writeFile(dbPath, '', 'utf-8')
+  return { projectRoot, governanceDir, dbPath }
+}
+
+function getToolHandler(mockServer: { registerTool: ReturnType<typeof vi.fn> }, toolName: string) {
+  const call = mockServer.registerTool.mock.calls.find((entry) => entry[0] === toolName)
+  expect(call).toBeTruthy()
+  return call?.[2] as (args?: Record<string, unknown>) => Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }>
+}
 
 function buildCandidate(partial: Partial<ActionableTaskCandidate> & { id: string; title: string; status: 'TODO' | 'IN_PROGRESS' | 'BLOCKED' | 'DONE' }): ActionableTaskCandidate {
   const task = normalizeTask({
@@ -214,5 +232,123 @@ describe('tasks module', () => {
     expect(markdown).toContain('Repository: https://github.com/yinxulai/projitive')
 
     await fs.rm(root, { recursive: true, force: true })
+  })
+
+  it('taskCreate auto-generates the next task id and syncs tasks view', async () => {
+    const { projectRoot, governanceDir, dbPath } = await createGovernanceWorkspace()
+    await replaceRoadmapsInStore(dbPath, [
+      { id: 'ROADMAP-0001', title: 'Bootstrap', status: 'active', updatedAt: '2026-03-14T00:00:00.000Z' },
+    ])
+    await saveTasks(dbPath, [
+      normalizeTask({ id: 'TASK-0009', title: 'existing', status: 'TODO', roadmapRefs: ['ROADMAP-0001'] }),
+    ])
+
+    const mockServer = { registerTool: vi.fn() } as unknown as McpServer & { registerTool: ReturnType<typeof vi.fn> }
+    registerTaskTools(mockServer)
+
+    const taskCreate = getToolHandler(mockServer, 'taskCreate')
+    const result = await taskCreate({
+      projectPath: projectRoot,
+      title: 'newly generated',
+      summary: 'auto id test',
+      roadmapRefs: ['ROADMAP-0001'],
+    })
+
+    expect(result.isError).toBeUndefined()
+    expect(result.content[0].text).toContain('TASK-0010')
+
+    const loaded = await loadTasksDocument(governanceDir)
+    expect(loaded.tasks.some((task) => task.id === 'TASK-0010' && task.title === 'newly generated')).toBe(true)
+
+    await fs.rm(projectRoot, { recursive: true, force: true })
+  })
+
+  it('taskUpdate rejects invalid status transitions', async () => {
+    const { projectRoot, dbPath } = await createGovernanceWorkspace()
+    await saveTasks(dbPath, [
+      normalizeTask({ id: 'TASK-0001', title: 'done task', status: 'DONE' }),
+    ])
+
+    const mockServer = { registerTool: vi.fn() } as unknown as McpServer & { registerTool: ReturnType<typeof vi.fn> }
+    registerTaskTools(mockServer)
+
+    const taskUpdate = getToolHandler(mockServer, 'taskUpdate')
+    const result = await taskUpdate({
+      projectPath: projectRoot,
+      taskId: 'TASK-0001',
+      updates: { status: 'IN_PROGRESS' },
+    })
+
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toContain('Invalid status transition')
+
+    await fs.rm(projectRoot, { recursive: true, force: true })
+  })
+
+  it('taskNext emits no-actionable guidance when only blocked tasks exist', async () => {
+    const { projectRoot, dbPath } = await createGovernanceWorkspace()
+    await replaceRoadmapsInStore(dbPath, [
+      { id: 'ROADMAP-0001', title: 'Blocked milestone', status: 'active', updatedAt: '2026-03-14T00:00:00.000Z' },
+    ])
+    await saveTasks(dbPath, [
+      normalizeTask({
+        id: 'TASK-0001',
+        title: 'blocked task',
+        status: 'BLOCKED',
+        summary: 'waiting',
+        roadmapRefs: ['ROADMAP-0001'],
+      }),
+    ])
+
+    vi.stubEnv('PROJITIVE_SCAN_ROOT_PATHS', projectRoot)
+    vi.stubEnv('PROJITIVE_SCAN_MAX_DEPTH', '3')
+
+    const mockServer = { registerTool: vi.fn() } as unknown as McpServer & { registerTool: ReturnType<typeof vi.fn> }
+    registerTaskTools(mockServer)
+
+    const taskNext = getToolHandler(mockServer, 'taskNext')
+    const result = await taskNext({})
+
+    expect(result.content[0].text).toContain('No TODO/IN_PROGRESS task is available.')
+    expect(result.content[0].text).toContain('No-Task Discovery Checklist')
+    expect(result.content[0].text).toContain('taskCreate(projectPath=')
+
+    vi.unstubAllEnvs()
+    await fs.rm(projectRoot, { recursive: true, force: true })
+  })
+
+  it('taskList and taskContext expose synced views and evidence for an existing task', async () => {
+    const { projectRoot, governanceDir, dbPath } = await createGovernanceWorkspace()
+    await replaceRoadmapsInStore(dbPath, [
+      { id: 'ROADMAP-0001', title: 'Roadmap', status: 'active', updatedAt: '2026-03-14T00:00:00.000Z' },
+    ])
+    await fs.writeFile(path.join(projectRoot, 'README.md'), '# Root Readme\nTASK-0001\n', 'utf-8')
+    await saveTasks(dbPath, [
+      normalizeTask({
+        id: 'TASK-0001',
+        title: 'inspect me',
+        status: 'IN_PROGRESS',
+        owner: 'copilot',
+        summary: 'has evidence',
+        roadmapRefs: ['ROADMAP-0001'],
+        links: ['README.md'],
+      }),
+    ])
+
+    const mockServer = { registerTool: vi.fn() } as unknown as McpServer & { registerTool: ReturnType<typeof vi.fn> }
+    registerTaskTools(mockServer)
+
+    const taskList = getToolHandler(mockServer, 'taskList')
+    const listResult = await taskList({ projectPath: projectRoot, status: 'IN_PROGRESS' })
+    expect(listResult.content[0].text).toContain(`tasksView: ${path.join(governanceDir, 'tasks.md')}`)
+    expect(listResult.content[0].text).toContain('TASK-0001 | IN_PROGRESS | inspect me')
+
+    const taskContext = getToolHandler(mockServer, 'taskContext')
+    const contextResult = await taskContext({ projectPath: projectRoot, taskId: 'TASK-0001' })
+    expect(contextResult.content[0].text).toContain(`roadmapView: ${path.join(governanceDir, 'roadmap.md')}`)
+    expect(contextResult.content[0].text).toContain('### Reference Locations')
+    expect(contextResult.content[0].text).toContain('README.md')
+
+    await fs.rm(projectRoot, { recursive: true, force: true })
   })
 })

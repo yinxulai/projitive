@@ -1,5 +1,10 @@
 # Projitive
 
+[![CI MCP](https://github.com/yinxulai/projitive/actions/workflows/mcp-lint-test.yml/badge.svg)](https://github.com/yinxulai/projitive/actions/workflows/mcp-lint-test.yml)
+[![Release Publish MCP](https://github.com/yinxulai/projitive/actions/workflows/mcp-release.yml/badge.svg)](https://github.com/yinxulai/projitive/actions/workflows/mcp-release.yml)
+[![npm version](https://img.shields.io/npm/v/%40projitive%2Fmcp?label=npm)](https://www.npmjs.com/package/@projitive/mcp)
+[![npm downloads](https://img.shields.io/npm/dm/%40projitive%2Fmcp)](https://www.npmjs.com/package/@projitive/mcp)
+
 Language: English | [简体中文](README_CN.md)
 
 Projitive is a governance model and MCP toolchain for Agent-driven delivery.
