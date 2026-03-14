@@ -1,12 +1,12 @@
-import type { GovernanceFileEntry } from "./files.js";
+import type { GovernanceFileEntry } from './files.js'
 
 export function candidateFilesFromArtifacts(artifacts: GovernanceFileEntry[]): string[] {
   return artifacts
     .filter((item) => item.exists)
     .flatMap((item) => {
-      if (item.kind === "file") {
-        return [item.path];
+      if (item.kind === 'file') {
+        return [item.path]
       }
-      return (item.markdownFiles ?? []).map((entry) => entry.path);
-    });
+      return (item.markdownFiles ?? []).map((entry) => entry.path)
+    })
 }

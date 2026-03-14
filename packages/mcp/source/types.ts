@@ -7,7 +7,7 @@
 // Task State Machine
 // ============================================================================
 
-export const ALLOWED_STATUS = ["TODO", "IN_PROGRESS", "BLOCKED", "DONE"] as const;
+export const ALLOWED_STATUS = ['TODO', 'IN_PROGRESS', 'BLOCKED', 'DONE'] as const
 export type TaskStatus = (typeof ALLOWED_STATUS)[number];
 
 // ============================================================================
@@ -21,7 +21,7 @@ export type TaskStatus = (typeof ALLOWED_STATUS)[number];
  * - implementation: Writing and testing code
  * - testing: Validation and verification
  */
-export const SUB_STATE_PHASES = ["discovery", "design", "implementation", "testing"] as const;
+export const SUB_STATE_PHASES = ['discovery', 'design', 'implementation', 'testing'] as const
 export type SubStatePhase = (typeof SUB_STATE_PHASES)[number];
 
 /**
@@ -41,11 +41,11 @@ export interface SubStateMetadata {
  * Blocker categorization for BLOCKED state (Spec v1.1.0)
  */
 export const BLOCKER_TYPES = [
-  "internal_dependency",
-  "external_dependency", 
-  "resource",
-  "approval"
-] as const;
+  'internal_dependency',
+  'external_dependency', 
+  'resource',
+  'approval'
+] as const
 export type BlockerType = (typeof BLOCKER_TYPES)[number];
 
 /**
@@ -86,7 +86,7 @@ export interface Task {
 export interface RoadmapMilestone {
   id: string;
   title: string;
-  status: "active" | "done";
+  status: 'active' | 'done';
   time?: string;
   updatedAt: string;
 }
@@ -95,7 +95,7 @@ export interface RoadmapMilestone {
 // Validation Types
 // ============================================================================
 
-export type ValidationSeverity = "error" | "warning" | "info";
+export type ValidationSeverity = 'error' | 'warning' | 'info';
 
 export interface ValidationIssue {
   code: string;
@@ -135,25 +135,25 @@ export interface LintSuggestion {
   fixHint?: string;
 }
 
-export interface TaskLintSuggestion extends LintSuggestion {}
+export type TaskLintSuggestion = LintSuggestion
 
 export const TASK_LINT_CODES = {
-  DUPLICATE_ID: "TASK_DUPLICATE_ID",
-  IN_PROGRESS_OWNER_EMPTY: "TASK_IN_PROGRESS_OWNER_EMPTY",
-  DONE_LINKS_MISSING: "TASK_DONE_LINKS_MISSING",
-  BLOCKED_SUMMARY_EMPTY: "TASK_BLOCKED_SUMMARY_EMPTY",
-  UPDATED_AT_INVALID: "TASK_UPDATED_AT_INVALID",
-  ROADMAP_REFS_EMPTY: "TASK_ROADMAP_REFS_EMPTY",
-  OUTSIDE_MARKER: "TASK_OUTSIDE_MARKER",
-  FILTER_EMPTY: "TASK_FILTER_EMPTY",
-  LINK_TARGET_MISSING: "TASK_LINK_TARGET_MISSING",
-  LINK_PATH_FORMAT_INVALID: "TASK_LINK_PATH_FORMAT_INVALID",
+  DUPLICATE_ID: 'TASK_DUPLICATE_ID',
+  IN_PROGRESS_OWNER_EMPTY: 'TASK_IN_PROGRESS_OWNER_EMPTY',
+  DONE_LINKS_MISSING: 'TASK_DONE_LINKS_MISSING',
+  BLOCKED_SUMMARY_EMPTY: 'TASK_BLOCKED_SUMMARY_EMPTY',
+  UPDATED_AT_INVALID: 'TASK_UPDATED_AT_INVALID',
+  ROADMAP_REFS_EMPTY: 'TASK_ROADMAP_REFS_EMPTY',
+  OUTSIDE_MARKER: 'TASK_OUTSIDE_MARKER',
+  FILTER_EMPTY: 'TASK_FILTER_EMPTY',
+  LINK_TARGET_MISSING: 'TASK_LINK_TARGET_MISSING',
+  LINK_PATH_FORMAT_INVALID: 'TASK_LINK_PATH_FORMAT_INVALID',
   // Spec v1.1.0 - Blocker Categorization
-  BLOCKED_WITHOUT_BLOCKER: "TASK_BLOCKED_WITHOUT_BLOCKER",
-  BLOCKER_TYPE_INVALID: "TASK_BLOCKER_TYPE_INVALID",
-  BLOCKER_DESCRIPTION_EMPTY: "TASK_BLOCKER_DESCRIPTION_EMPTY",
+  BLOCKED_WITHOUT_BLOCKER: 'TASK_BLOCKED_WITHOUT_BLOCKER',
+  BLOCKER_TYPE_INVALID: 'TASK_BLOCKER_TYPE_INVALID',
+  BLOCKER_DESCRIPTION_EMPTY: 'TASK_BLOCKER_DESCRIPTION_EMPTY',
   // Spec v1.1.0 - Sub-state Metadata
-  IN_PROGRESS_WITHOUT_SUBSTATE: "TASK_IN_PROGRESS_WITHOUT_SUBSTATE",
-  SUBSTATE_PHASE_INVALID: "TASK_SUBSTATE_PHASE_INVALID",
-  SUBSTATE_CONFIDENCE_INVALID: "TASK_SUBSTATE_CONFIDENCE_INVALID",
-} as const;
+  IN_PROGRESS_WITHOUT_SUBSTATE: 'TASK_IN_PROGRESS_WITHOUT_SUBSTATE',
+  SUBSTATE_PHASE_INVALID: 'TASK_SUBSTATE_PHASE_INVALID',
+  SUBSTATE_CONFIDENCE_INVALID: 'TASK_SUBSTATE_CONFIDENCE_INVALID',
+} as const

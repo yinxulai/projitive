@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from 'vitest'
 import {
   collectTaskLintSuggestions,
   isValidTaskId,
@@ -13,199 +13,206 @@ import {
   toTaskUpdatedAtMs,
   validateTransition,
   type ActionableTaskCandidate,
-} from "./task.js";
-import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
+} from './task.js'
+import fs from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
 
-function buildCandidate(partial: Partial<ActionableTaskCandidate> & { id: string; title: string; status: "TODO" | "IN_PROGRESS" | "BLOCKED" | "DONE" }): ActionableTaskCandidate {
+function buildCandidate(partial: Partial<ActionableTaskCandidate> & { id: string; title: string; status: 'TODO' | 'IN_PROGRESS' | 'BLOCKED' | 'DONE' }): ActionableTaskCandidate {
   const task = normalizeTask({
     id: partial.id,
     title: partial.title,
     status: partial.status,
-    updatedAt: partial.task?.updatedAt ?? "2026-01-01T00:00:00.000Z",
-  });
+    updatedAt: partial.task?.updatedAt ?? '2026-01-01T00:00:00.000Z',
+  })
 
   return {
-    governanceDir: partial.governanceDir ?? "/workspace/a",
+    governanceDir: partial.governanceDir ?? '/workspace/a',
     task,
     projectScore: partial.projectScore ?? 1,
-    projectLatestUpdatedAt: partial.projectLatestUpdatedAt ?? "2026-01-01T00:00:00.000Z",
+    projectLatestUpdatedAt: partial.projectLatestUpdatedAt ?? '2026-01-01T00:00:00.000Z',
     taskUpdatedAtMs: partial.taskUpdatedAtMs ?? toTaskUpdatedAtMs(task.updatedAt),
     taskPriority: partial.taskPriority ?? taskPriority(task.status),
-  };
+  }
 }
 
-describe("tasks module", () => {
-  it("validates task IDs", () => {
-    expect(isValidTaskId("TASK-0001")).toBe(true);
-    expect(isValidTaskId("TASK-001")).toBe(false);
-  });
+describe('tasks module', () => {
+  it('validates task IDs', () => {
+    expect(isValidTaskId('TASK-0001')).toBe(true)
+    expect(isValidTaskId('TASK-1')).toBe(true)
+    expect(isValidTaskId('TASK-12345')).toBe(true)
+    expect(isValidTaskId('TASK-ABCD')).toBe(false)
+  })
 
-  it("allows and rejects expected transitions", () => {
-    expect(validateTransition("TODO", "IN_PROGRESS")).toBe(true);
-    expect(validateTransition("IN_PROGRESS", "DONE")).toBe(true);
-    expect(validateTransition("DONE", "IN_PROGRESS")).toBe(false);
-  });
+  it('allows and rejects expected transitions', () => {
+    expect(validateTransition('TODO', 'IN_PROGRESS')).toBe(true)
+    expect(validateTransition('IN_PROGRESS', 'DONE')).toBe(true)
+    expect(validateTransition('DONE', 'IN_PROGRESS')).toBe(false)
+  })
 
-  it("assigns priority for actionable statuses", () => {
-    expect(taskPriority("IN_PROGRESS")).toBe(2);
-    expect(taskPriority("TODO")).toBe(1);
-    expect(taskPriority("BLOCKED")).toBe(0);
-  });
+  it('assigns priority for actionable statuses', () => {
+    expect(taskPriority('IN_PROGRESS')).toBe(2)
+    expect(taskPriority('TODO')).toBe(1)
+    expect(taskPriority('BLOCKED')).toBe(0)
+  })
 
-  it("returns zero timestamp for invalid date", () => {
-    expect(toTaskUpdatedAtMs("invalid")).toBe(0);
-  });
+  it('returns zero timestamp for invalid date', () => {
+    expect(toTaskUpdatedAtMs('invalid')).toBe(0)
+  })
 
-  it("ranks by project score, then task priority, then recency", () => {
+  it('ranks by project score, then task priority, then recency', () => {
     const candidates = [
-      buildCandidate({ id: "TASK-0001", title: "A", status: "TODO", projectScore: 2 }),
-      buildCandidate({ id: "TASK-0002", title: "B", status: "IN_PROGRESS", projectScore: 2 }),
-      buildCandidate({ id: "TASK-0003", title: "C", status: "IN_PROGRESS", projectScore: 3 }),
-    ];
+      buildCandidate({ id: 'TASK-0001', title: 'A', status: 'TODO', projectScore: 2 }),
+      buildCandidate({ id: 'TASK-0002', title: 'B', status: 'IN_PROGRESS', projectScore: 2 }),
+      buildCandidate({ id: 'TASK-0003', title: 'C', status: 'IN_PROGRESS', projectScore: 3 }),
+    ]
 
-    const ranked = rankActionableTaskCandidates(candidates);
-    expect(ranked[0].task.id).toBe("TASK-0003");
-    expect(ranked[1].task.id).toBe("TASK-0002");
-    expect(ranked[2].task.id).toBe("TASK-0001");
-  });
+    const ranked = rankActionableTaskCandidates(candidates)
+    expect(ranked[0].task.id).toBe('TASK-0003')
+    expect(ranked[1].task.id).toBe('TASK-0002')
+    expect(ranked[2].task.id).toBe('TASK-0001')
+  })
 
-  it("renders task markdown without legacy markers", () => {
-    const task = normalizeTask({ id: "TASK-0002", title: "render", status: "IN_PROGRESS" });
-    const markdown = renderTasksMarkdown([task]);
-    expect(markdown.includes("PROJITIVE:TASKS:START")).toBe(false);
-    expect(markdown.includes("PROJITIVE:TASKS:END")).toBe(false);
-    expect(markdown.includes("## TASK-0002 | IN_PROGRESS | render")).toBe(true);
-  });
+  it('renders task markdown without legacy markers', () => {
+    const task = normalizeTask({ id: 'TASK-0002', title: 'render', status: 'IN_PROGRESS' })
+    const markdown = renderTasksMarkdown([task])
+    expect(markdown.includes('PROJITIVE:TASKS:START')).toBe(false)
+    expect(markdown.includes('PROJITIVE:TASKS:END')).toBe(false)
+    expect(markdown.includes('## TASK-0002 | IN_PROGRESS | render')).toBe(true)
+    expect(markdown).toContain('Author: yinxulai')
+    expect(markdown).toContain('Repository: https://github.com/yinxulai/projitive')
+    expect(markdown).toContain('Do not edit this file manually.')
+  })
 
-  it("renders tasks with subState and blocker metadata", () => {
+  it('renders tasks with subState and blocker metadata', () => {
     const task1 = normalizeTask({
-      id: "TASK-0001",
-      title: "In Progress Task",
-      status: "IN_PROGRESS",
+      id: 'TASK-0001',
+      title: 'In Progress Task',
+      status: 'IN_PROGRESS',
       subState: {
-        phase: "implementation",
+        phase: 'implementation',
         confidence: 0.85,
       },
-    });
+    })
 
     const task2 = normalizeTask({
-      id: "TASK-0002",
-      title: "Blocked Task",
-      status: "BLOCKED",
+      id: 'TASK-0002',
+      title: 'Blocked Task',
+      status: 'BLOCKED',
       blocker: {
-        type: "external_dependency",
-        description: "Waiting for API",
+        type: 'external_dependency',
+        description: 'Waiting for API',
       },
-    });
+    })
 
-    const markdown = renderTasksMarkdown([task1, task2]);
-    expect(markdown).toContain("phase: implementation");
-    expect(markdown).toContain("confidence: 0.85");
-    expect(markdown).toContain("type: external_dependency");
-    expect(markdown).toContain("description: Waiting for API");
-  });
+    const markdown = renderTasksMarkdown([task1, task2])
+    expect(markdown).toContain('phase: implementation')
+    expect(markdown).toContain('confidence: 0.85')
+    expect(markdown).toContain('type: external_dependency')
+    expect(markdown).toContain('description: Waiting for API')
+  })
 
-  it("collects lint lines with stable code prefix", () => {
+  it('collects lint lines with stable code prefix', () => {
     const task = normalizeTask({
-      id: "TASK-0001",
-      title: "lint",
-      status: "IN_PROGRESS",
-      owner: "",
+      id: 'TASK-0001',
+      title: 'lint',
+      status: 'IN_PROGRESS',
+      owner: '',
       roadmapRefs: [],
-    });
+    })
 
-    const lint = collectTaskLintSuggestions([task]);
-    expect(lint.some((line) => line.startsWith("- [TASK_IN_PROGRESS_OWNER_EMPTY]"))).toBe(true);
-    expect(lint.some((line) => line.startsWith("- [TASK_ROADMAP_REFS_EMPTY]"))).toBe(true);
-  });
+    const lint = collectTaskLintSuggestions([task])
+    expect(lint.some((line) => line.startsWith('- [TASK_IN_PROGRESS_OWNER_EMPTY]'))).toBe(true)
+    expect(lint.some((line) => line.startsWith('- [TASK_ROADMAP_REFS_EMPTY]'))).toBe(true)
+  })
 
-  it("collects blocker/substate lint rules", () => {
+  it('collects blocker/substate lint rules', () => {
     const blocked = normalizeTask({
-      id: "TASK-0001",
-      title: "Blocked",
-      status: "BLOCKED",
-      summary: "blocked reason",
-      roadmapRefs: ["ROADMAP-0001"],
-    });
+      id: 'TASK-0001',
+      title: 'Blocked',
+      status: 'BLOCKED',
+      summary: 'blocked reason',
+      roadmapRefs: ['ROADMAP-0001'],
+    })
     const inProgress = normalizeTask({
-      id: "TASK-0002",
-      title: "In Progress",
-      status: "IN_PROGRESS",
-      owner: "ai-copilot",
-      roadmapRefs: ["ROADMAP-0001"],
-    });
+      id: 'TASK-0002',
+      title: 'In Progress',
+      status: 'IN_PROGRESS',
+      owner: 'ai-copilot',
+      roadmapRefs: ['ROADMAP-0001'],
+    })
 
-    const lint = collectTaskLintSuggestions([blocked, inProgress]);
-    expect(lint.some((line) => line.includes("BLOCKED_WITHOUT_BLOCKER"))).toBe(true);
-    expect(lint.some((line) => line.includes("IN_PROGRESS_WITHOUT_SUBSTATE"))).toBe(true);
-  });
+    const lint = collectTaskLintSuggestions([blocked, inProgress])
+    expect(lint.some((line) => line.includes('BLOCKED_WITHOUT_BLOCKER'))).toBe(true)
+    expect(lint.some((line) => line.includes('IN_PROGRESS_WITHOUT_SUBSTATE'))).toBe(true)
+  })
 
-  it("normalizes links to project-root-relative format without leading slash", () => {
+  it('normalizes links to project-root-relative format without leading slash', () => {
     const task = normalizeTask({
-      id: "TASK-0003",
-      title: "link normalize",
-      status: "TODO",
-      links: ["/reports/a.md", "./designs/b.md", "reports/c.md", "https://example.com/evidence"],
-    });
+      id: 'TASK-0003',
+      title: 'link normalize',
+      status: 'TODO',
+      links: ['/reports/a.md', './designs/b.md', 'reports/c.md', 'https://example.com/evidence'],
+    })
 
-    expect(task.links).toContain("reports/a.md");
-    expect(task.links).toContain("designs/b.md");
-    expect(task.links).toContain("reports/c.md");
-    expect(task.links).toContain("https://example.com/evidence");
-    expect(task.links.some((item) => item.startsWith("/"))).toBe(false);
-  });
+    expect(task.links).toContain('reports/a.md')
+    expect(task.links).toContain('designs/b.md')
+    expect(task.links).toContain('reports/c.md')
+    expect(task.links).toContain('https://example.com/evidence')
+    expect(task.links.some((item) => item.startsWith('/'))).toBe(false)
+  })
 
-  it("lints invalid links path format", () => {
+  it('lints invalid links path format', () => {
     const task = normalizeTask({
-      id: "TASK-0004",
-      title: "invalid link",
-      status: "TODO",
-      links: ["../outside.md"],
-      roadmapRefs: ["ROADMAP-0001"],
-    });
+      id: 'TASK-0004',
+      title: 'invalid link',
+      status: 'TODO',
+      links: ['../outside.md'],
+      roadmapRefs: ['ROADMAP-0001'],
+    })
 
-    const lint = collectTaskLintSuggestions([task]);
-    expect(lint.some((line) => line.includes("TASK_LINK_PATH_FORMAT_INVALID"))).toBe(true);
-  });
+    const lint = collectTaskLintSuggestions([task])
+    expect(lint.some((line) => line.includes('TASK_LINK_PATH_FORMAT_INVALID'))).toBe(true)
+  })
 
-  it("renders seed task template with provided roadmap ref", () => {
-    const lines = renderTaskSeedTemplate("ROADMAP-0099");
-    const markdown = lines.join("\n");
-    expect(markdown).toContain("- roadmapRefs: ROADMAP-0099");
-  });
+  it('renders seed task template with provided roadmap ref', () => {
+    const lines = renderTaskSeedTemplate('ROADMAP-0099')
+    const markdown = lines.join('\n')
+    expect(markdown).toContain('- roadmapRefs: ROADMAP-0099')
+  })
 
-  it("uses default no-task guidance when hook file is absent", async () => {
-    const guidance = await resolveNoTaskDiscoveryGuidance("/path/that/does/not/exist");
-    expect(guidance.length).toBeGreaterThan(3);
-  });
+  it('uses default no-task guidance when hook file is absent', async () => {
+    const guidance = await resolveNoTaskDiscoveryGuidance('/path/that/does/not/exist')
+    expect(guidance.length).toBeGreaterThan(3)
+  })
 
-  it("returns same default no-task guidance regardless of path", async () => {
-    const guidanceA = await resolveNoTaskDiscoveryGuidance("/path/that/does/not/exist");
-    const guidanceB = await resolveNoTaskDiscoveryGuidance("/another/path");
-    expect(guidanceA).toEqual(guidanceB);
-  });
+  it('returns same default no-task guidance regardless of path', async () => {
+    const guidanceA = await resolveNoTaskDiscoveryGuidance('/path/that/does/not/exist')
+    const guidanceB = await resolveNoTaskDiscoveryGuidance('/another/path')
+    expect(guidanceA).toEqual(guidanceB)
+  })
 
-  it("loads and saves tasks from governance store and keeps newest-first order", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "projitive-mcp-task-"));
-    const governanceDir = path.join(root, ".projitive");
-    await fs.mkdir(governanceDir, { recursive: true });
-    await fs.writeFile(path.join(governanceDir, ".projitive"), "", "utf-8");
+  it('loads and saves tasks from governance store and keeps newest-first order', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'projitive-mcp-task-'))
+    const governanceDir = path.join(root, '.projitive')
+    await fs.mkdir(governanceDir, { recursive: true })
+    await fs.writeFile(path.join(governanceDir, '.projitive'), '', 'utf-8')
 
-    const tasksPath = path.join(governanceDir, ".projitive");
+    const tasksPath = path.join(governanceDir, '.projitive')
     await saveTasks(tasksPath, [
-      normalizeTask({ id: "TASK-0001", title: "older", status: "TODO", updatedAt: "2026-01-01T00:00:00.000Z" }),
-      normalizeTask({ id: "TASK-0002", title: "newer", status: "TODO", updatedAt: "2026-02-01T00:00:00.000Z" }),
-    ]);
+      normalizeTask({ id: 'TASK-0001', title: 'older', status: 'TODO', updatedAt: '2026-01-01T00:00:00.000Z' }),
+      normalizeTask({ id: 'TASK-0002', title: 'newer', status: 'TODO', updatedAt: '2026-02-01T00:00:00.000Z' }),
+    ])
 
-    const loaded = await loadTasksDocument(governanceDir);
-    expect(loaded.tasks[0].id).toBe("TASK-0002");
-    expect(loaded.tasks[1].id).toBe("TASK-0001");
+    const loaded = await loadTasksDocument(governanceDir)
+    expect(loaded.tasks[0].id).toBe('TASK-0002')
+    expect(loaded.tasks[1].id).toBe('TASK-0001')
 
-    const markdown = await fs.readFile(path.join(governanceDir, "tasks.md"), "utf-8");
-    expect(markdown).toContain("generated from .projitive governance store");
+    const markdown = await fs.readFile(path.join(governanceDir, 'tasks.md'), 'utf-8')
+    expect(markdown).toContain('generated from .projitive governance store')
+    expect(markdown).toContain('Author: yinxulai')
+    expect(markdown).toContain('Repository: https://github.com/yinxulai/projitive')
 
-    await fs.rm(root, { recursive: true, force: true });
-  });
-});
+    await fs.rm(root, { recursive: true, force: true })
+  })
+})

@@ -1,9 +1,9 @@
 // Governance workflow prompts
 
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
-import { registerQuickStartPrompt } from "./quickStart.js"
-import { registerTaskDiscoveryPrompt } from "./taskDiscovery.js"
-import { registerTaskExecutionPrompt } from "./taskExecution.js"
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { registerQuickStartPrompt } from './quickStart.js'
+import { registerTaskDiscoveryPrompt } from './taskDiscovery.js'
+import { registerTaskExecutionPrompt } from './taskExecution.js'
 
 export function registerPrompts(server: McpServer): void {
   registerQuickStartPrompt(server)

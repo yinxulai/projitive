@@ -44,8 +44,11 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Lint
-        run: npm run lint
+      - name: Type Check
+        run: npm run lint:types
+
+      - name: ESLint
+        run: npm run lint:eslint
 
       - name: Test
         run: npm run test

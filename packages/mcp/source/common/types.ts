@@ -1,6 +1,6 @@
 // Common type definitions (simplified)
 
-export type TaskStatus = "TODO" | "IN_PROGRESS" | "BLOCKED" | "DONE"
+export type TaskStatus = 'TODO' | 'IN_PROGRESS' | 'BLOCKED' | 'DONE'
 
 export interface TaskMetadata {
   id: string
@@ -12,12 +12,12 @@ export interface TaskMetadata {
   links: string[]
   roadmapRefs: string[]
   subState?: {
-    phase?: "discovery" | "design" | "implementation" | "testing"
+    phase?: 'discovery' | 'design' | 'implementation' | 'testing'
     confidence?: number
     estimatedCompletion?: string
   }
   blocker?: {
-    type?: "internal_dependency" | "external_dependency" | "resource" | "approval"
+    type?: 'internal_dependency' | 'external_dependency' | 'resource' | 'approval'
     reason?: string
   }
 }
@@ -53,14 +53,14 @@ export interface PromptDefinition {
   metadata: {
     title: string
     description: string
-    argsSchema?: any
+    argsSchema?: unknown
   }
-  handler: (args: any) => Promise<{ messages: any[] }>
+  handler: (args: unknown) => Promise<{ messages: unknown[] }>
 }
 
 export const VALID_STATUS_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
-  TODO: ["IN_PROGRESS"],
-  IN_PROGRESS: ["TODO", "BLOCKED", "DONE"],
-  BLOCKED: ["IN_PROGRESS"],
+  TODO: ['IN_PROGRESS'],
+  IN_PROGRESS: ['TODO', 'BLOCKED', 'DONE'],
+  BLOCKED: ['IN_PROGRESS'],
   DONE: [],
 }

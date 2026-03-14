@@ -1,7 +1,7 @@
-import fs from "node:fs/promises";
-import path from "node:path";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
+import fs from 'node:fs/promises'
+import path from 'node:path'
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { z } from 'zod'
 import {
   candidateFilesFromArtifacts,
   discoverGovernanceArtifacts,
@@ -16,7 +16,7 @@ import {
   getStoreVersion,
   getMarkdownViewState,
   markMarkdownViewBuilt,
-} from "../common/index.js";
+} from '../common/index.js'
 import {
   asText,
   evidenceSection,
@@ -26,167 +26,165 @@ import {
   renderErrorMarkdown,
   renderToolResponseMarkdown,
   summarySection,
-} from "../common/index.js";
-import { catchIt, TASK_LINT_CODES, renderLintSuggestions, type LintSuggestion } from "../common/index.js";
-import { resolveGovernanceDir, resolveScanDepth, resolveScanRoots, discoverProjectsAcrossRoots, toProjectPath } from "./project.js";
-import { isValidRoadmapId } from "./roadmap.js";
+} from '../common/index.js'
+import { TASK_LINT_CODES, renderLintSuggestions, type LintSuggestion } from '../common/index.js'
+import { resolveGovernanceDir, resolveScanDepth, resolveScanRoots, discoverProjectsAcrossRoots, toProjectPath } from './project.js'
+import { isValidRoadmapId } from './roadmap.js'
 import type {
   Task,
   TaskStatus,
   TaskDocument,
   ActionableTaskCandidate,
-  SubStateMetadata,
-  BlockerMetadata,
-} from "../types.js";
-import { SUB_STATE_PHASES, BLOCKER_TYPES } from "../types.js";
+} from '../types.js'
+import { SUB_STATE_PHASES, BLOCKER_TYPES } from '../types.js'
 
 // Re-export types for backwards compatibility
-export type { Task, TaskStatus, TaskDocument, ActionableTaskCandidate };
+export type { Task, TaskStatus, TaskDocument, ActionableTaskCandidate }
 
-export const ALLOWED_STATUS = ["TODO", "IN_PROGRESS", "BLOCKED", "DONE"] as const;
-export const TASK_ID_REGEX = /^TASK-\d{4}$/;
-export const TASKS_MARKDOWN_FILE = "tasks.md";
+export const ALLOWED_STATUS = ['TODO', 'IN_PROGRESS', 'BLOCKED', 'DONE'] as const
+export const TASK_ID_REGEX = /^TASK-(\d+)$/
+export const TASKS_MARKDOWN_FILE = 'tasks.md'
 
 export type TaskLintSuggestion = LintSuggestion;
 
 function appendLintSuggestions(target: string[], suggestions: LintSuggestion[]): void {
-  target.push(...renderLintSuggestions(suggestions));
+  target.push(...renderLintSuggestions(suggestions))
 }
 
 function taskStatusGuidance(task: Task): string[] {
-  if (task.status === "TODO") {
+  if (task.status === 'TODO') {
     return [
-      "- This task is TODO: confirm scope and set execution plan before edits.",
-      "- Move to IN_PROGRESS only after owner and initial evidence are ready.",
-    ];
+      '- This task is TODO: confirm scope and set execution plan before edits.',
+      '- Move to IN_PROGRESS only after owner and initial evidence are ready.',
+    ]
   }
 
-  if (task.status === "IN_PROGRESS") {
+  if (task.status === 'IN_PROGRESS') {
     return [
-      "- This task is IN_PROGRESS: prioritize finishing with report/design evidence updates.",
-      "- Verify references stay consistent before marking DONE.",
-    ];
+      '- This task is IN_PROGRESS: prioritize finishing with report/design evidence updates.',
+      '- Verify references stay consistent before marking DONE.',
+    ]
   }
 
-  if (task.status === "BLOCKED") {
+  if (task.status === 'BLOCKED') {
     return [
-      "- This task is BLOCKED: identify blocker and required unblock condition first.",
-      "- Reopen only after blocker evidence is documented.",
-    ];
+      '- This task is BLOCKED: identify blocker and required unblock condition first.',
+      '- Reopen only after blocker evidence is documented.',
+    ]
   }
 
   return [
-    "- This task is DONE: only reopen when new requirement changes scope.",
-    "- Keep report evidence immutable unless correction is required.",
-  ];
+    '- This task is DONE: only reopen when new requirement changes scope.',
+    '- Keep report evidence immutable unless correction is required.',
+  ]
 }
 
 const DEFAULT_NO_TASK_DISCOVERY_GUIDANCE = [
-  "- Recheck project state first: run projectContext and confirm there is truly no TODO/IN_PROGRESS task to execute.",
-  "- Create new tasks via `taskCreate(...)` (do not edit tasks.md directly).",
-  "- If all remaining tasks are BLOCKED, create one unblock task with explicit unblock condition and dependency owner.",
-  "- Start from active roadmap milestones and split into the smallest executable slices with a single done condition each.",
-  "- Prefer slices that unlock multiple downstream tasks before isolated refactors or low-impact cleanups.",
-  "- Create TODO tasks only when evidence is clear: each new task must produce at least one report/designs/readme artifact update.",
-  "- Skip duplicate scope: do not create tasks that overlap existing TODO/IN_PROGRESS/BLOCKED task intent.",
-  "- Use quality gates for discovery candidates: user value, delivery risk reduction, or measurable throughput improvement.",
-  "- Keep each discovery round small (1-3 tasks), then rerun taskNext immediately for re-ranking and execution.",
-];
+  '- Recheck project state first: run projectContext and confirm there is truly no TODO/IN_PROGRESS task to execute.',
+  '- Create new tasks via `taskCreate(...)` (do not edit tasks.md directly).',
+  '- If all remaining tasks are BLOCKED, create one unblock task with explicit unblock condition and dependency owner.',
+  '- Start from active roadmap milestones and split into the smallest executable slices with a single done condition each.',
+  '- Prefer slices that unlock multiple downstream tasks before isolated refactors or low-impact cleanups.',
+  '- Create TODO tasks only when evidence is clear: each new task must produce at least one report/designs/readme artifact update.',
+  '- Skip duplicate scope: do not create tasks that overlap existing TODO/IN_PROGRESS/BLOCKED task intent.',
+  '- Use quality gates for discovery candidates: user value, delivery risk reduction, or measurable throughput improvement.',
+  '- Keep each discovery round small (1-3 tasks), then rerun taskNext immediately for re-ranking and execution.',
+]
 
 const DEFAULT_TASK_CONTEXT_READING_GUIDANCE = [
-  "- Read governance workspace overview first (README.md / projitive://governance/workspace).",
-  "- Read roadmap and active milestones (roadmap.md / projitive://governance/roadmap).",
-  "- Read task view and related task cards (tasks.md / projitive://governance/tasks).",
-  "- Read design specs and technical decisions under designs/ (architecture, API contracts, constraints).",
-  "- Read reports/ for latest execution evidence, regressions, and unresolved risks.",
-  "- Read process guides under templates/docs/project guidelines to align with local governance rules.",
-  "- If available, read docs/ architecture or migration guides before major structural changes.",
-];
+  '- Read governance workspace overview first (README.md / projitive://governance/workspace).',
+  '- Read roadmap and active milestones (roadmap.md / projitive://governance/roadmap).',
+  '- Read task view and related task cards (tasks.md / projitive://governance/tasks).',
+  '- Read design specs and technical decisions under designs/ (architecture, API contracts, constraints).',
+  '- Read reports/ for latest execution evidence, regressions, and unresolved risks.',
+  '- Read process guides under templates/docs/project guidelines to align with local governance rules.',
+  '- If available, read docs/ architecture or migration guides before major structural changes.',
+]
 
 export async function resolveNoTaskDiscoveryGuidance(governanceDir?: string): Promise<string[]> {
-  void governanceDir;
-  return DEFAULT_NO_TASK_DISCOVERY_GUIDANCE;
+  void governanceDir
+  return DEFAULT_NO_TASK_DISCOVERY_GUIDANCE
 }
 
 export async function resolveTaskContextReadingGuidance(governanceDir?: string): Promise<string[]> {
-  void governanceDir;
-  return DEFAULT_TASK_CONTEXT_READING_GUIDANCE;
+  void governanceDir
+  return DEFAULT_TASK_CONTEXT_READING_GUIDANCE
 }
 
 async function readRoadmapIds(governanceDir: string): Promise<string[]> {
-  const dbPath = path.join(governanceDir, ".projitive");
+  const dbPath = path.join(governanceDir, '.projitive')
   try {
-    await ensureStore(dbPath);
-    const milestones = await loadRoadmapsFromStore(dbPath);
-    const ids = milestones.map((item) => item.id).filter((item) => isValidRoadmapId(item));
-    return Array.from(new Set(ids));
+    await ensureStore(dbPath)
+    const milestones = await loadRoadmapsFromStore(dbPath)
+    const ids = milestones.map((item) => item.id).filter((item) => isValidRoadmapId(item))
+    return Array.from(new Set(ids))
   } catch {
-    return [];
+    return []
   }
 }
 
 export function renderTaskSeedTemplate(roadmapRef: string): string[] {
   return [
-    "```markdown",
-    "## TASK-0001 | TODO | Define initial executable objective",
-    "- owner: ai-copilot",
-    "- summary: Convert one roadmap milestone or report gap into an actionable task.",
-    "- updatedAt: 2026-01-01T00:00:00.000Z",
+    '```markdown',
+    '## TASK-0001 | TODO | Define initial executable objective',
+    '- owner: ai-copilot',
+    '- summary: Convert one roadmap milestone or report gap into an actionable task.',
+    '- updatedAt: 2026-01-01T00:00:00.000Z',
     `- roadmapRefs: ${roadmapRef}`,
-    "- links:",
-    "  - README.md",
-    "  - .projitive/roadmap.md",
-    "```",
-  ];
+    '- links:',
+    '  - README.md',
+    '  - .projitive/roadmap.md',
+    '```',
+  ]
 }
 
 function isHttpUrl(value: string): boolean {
-  return /^https?:\/\//i.test(value);
+  return /^https?:\/\//i.test(value)
 }
 
 function isProjectRootRelativePath(value: string): boolean {
   return value.length > 0
-    && !value.startsWith("/")
-    && !value.startsWith("./")
-    && !value.startsWith("../")
-    && !/^[A-Za-z]:\//.test(value);
+    && !value.startsWith('/')
+    && !value.startsWith('./')
+    && !value.startsWith('../')
+    && !/^[A-Za-z]:\//.test(value)
 }
 
 function normalizeTaskLink(link: string): string {
-  const trimmed = link.trim();
+  const trimmed = link.trim()
   if (trimmed.length === 0 || isHttpUrl(trimmed)) {
-    return trimmed;
+    return trimmed
   }
 
-  const slashNormalized = trimmed.replace(/\\/g, "/");
-  const withoutDotPrefix = slashNormalized.replace(/^\.\//, "");
-  return withoutDotPrefix.replace(/^\/+/, "");
+  const slashNormalized = trimmed.replace(/\\/g, '/')
+  const withoutDotPrefix = slashNormalized.replace(/^\.\//, '')
+  return withoutDotPrefix.replace(/^\/+/, '')
 }
 
 function resolveTaskLinkPath(projectPath: string, link: string): string {
-  return path.join(projectPath, link);
+  return path.join(projectPath, link)
 }
 
 async function readActionableTaskCandidates(governanceDirs: string[]): Promise<ActionableTaskCandidate[]> {
   const snapshots = await Promise.all(
     governanceDirs.map(async (governanceDir) => {
-      const tasksPath = path.join(governanceDir, ".projitive");
-      await ensureStore(tasksPath);
+      const tasksPath = path.join(governanceDir, '.projitive')
+      await ensureStore(tasksPath)
       const [stats, actionableTasks] = await Promise.all([
         loadTaskStatusStatsFromStore(tasksPath),
         loadActionableTasksFromStore(tasksPath),
-      ]);
+      ])
       return {
         governanceDir,
         tasks: actionableTasks,
         projectScore: stats.inProgress * 2 + stats.todo,
-        projectLatestUpdatedAt: stats.latestUpdatedAt || "(unknown)",
-      };
+        projectLatestUpdatedAt: stats.latestUpdatedAt || '(unknown)',
+      }
     })
-  );
+  )
 
   return snapshots.flatMap((item) => item.tasks
-    .filter((task) => task.status === "IN_PROGRESS" || task.status === "TODO")
+    .filter((task) => task.status === 'IN_PROGRESS' || task.status === 'TODO')
     .map((task) => ({
       governanceDir: item.governanceDir,
       task,
@@ -194,114 +192,127 @@ async function readActionableTaskCandidates(governanceDirs: string[]): Promise<A
       projectLatestUpdatedAt: item.projectLatestUpdatedAt,
       taskUpdatedAtMs: toTaskUpdatedAtMs(task.updatedAt),
       taskPriority: taskPriority(task.status),
-    })));
+    })))
 }
 
 export function nowIso(): string {
-  return new Date().toISOString();
+  return new Date().toISOString()
 }
 
 export function isValidTaskId(id: string): boolean {
-  return TASK_ID_REGEX.test(id);
+  return toTaskIdNumericSuffix(id) > 0
 }
 
-export function taskPriority(status: Task["status"]): number {
-  if (status === "IN_PROGRESS") {
-    return 2;
+export function taskPriority(status: Task['status']): number {
+  if (status === 'IN_PROGRESS') {
+    return 2
   }
-  if (status === "TODO") {
-    return 1;
+  if (status === 'TODO') {
+    return 1
   }
-  return 0;
+  return 0
 }
 
 export function toTaskUpdatedAtMs(updatedAt: string): number {
-  const timestamp = new Date(updatedAt).getTime();
-  return Number.isFinite(timestamp) ? timestamp : 0;
+  const timestamp = new Date(updatedAt).getTime()
+  return Number.isFinite(timestamp) ? timestamp : 0
 }
 
 function toTaskIdNumericSuffix(taskId: string): number {
-  const match = taskId.match(/^(?:TASK-)(\d{4})$/);
+  const match = taskId.match(TASK_ID_REGEX)
   if (!match) {
-    return -1;
+    return -1
   }
-  return Number.parseInt(match[1], 10);
+
+  const suffix = Number.parseInt(match[1], 10)
+  return Number.isFinite(suffix) ? suffix : -1
+}
+
+function nextTaskId(tasks: Task[]): string {
+  const maxSuffix = tasks
+    .map((item) => toTaskIdNumericSuffix(item.id))
+    .filter((value) => value > 0)
+    .reduce((max, value) => Math.max(max, value), 0)
+
+  const next = maxSuffix + 1
+  const minWidth = Math.max(4, String(next).length)
+  return `TASK-${String(next).padStart(minWidth, '0')}`
 }
 
 export function sortTasksNewestFirst(tasks: Task[]): Task[] {
   return [...tasks].sort((a, b) => {
-    const updatedAtDelta = toTaskUpdatedAtMs(b.updatedAt) - toTaskUpdatedAtMs(a.updatedAt);
+    const updatedAtDelta = toTaskUpdatedAtMs(b.updatedAt) - toTaskUpdatedAtMs(a.updatedAt)
     if (updatedAtDelta !== 0) {
-      return updatedAtDelta;
+      return updatedAtDelta
     }
 
-    const idDelta = toTaskIdNumericSuffix(b.id) - toTaskIdNumericSuffix(a.id);
+    const idDelta = toTaskIdNumericSuffix(b.id) - toTaskIdNumericSuffix(a.id)
     if (idDelta !== 0) {
-      return idDelta;
+      return idDelta
     }
 
-    return b.id.localeCompare(a.id);
-  });
+    return b.id.localeCompare(a.id)
+  })
 }
 
 function normalizeAndSortTasks(tasks: Task[]): Task[] {
-  return sortTasksNewestFirst(tasks.map((task) => normalizeTask(task)));
+  return sortTasksNewestFirst(tasks.map((task) => normalizeTask(task)))
 }
 
 function resolveTaskArtifactPaths(governanceDir: string): { tasksPath: string; markdownPath: string } {
   return {
-    tasksPath: path.join(governanceDir, ".projitive"),
+    tasksPath: path.join(governanceDir, '.projitive'),
     markdownPath: path.join(governanceDir, TASKS_MARKDOWN_FILE),
-  };
+  }
 }
 
 async function syncTasksMarkdownView(tasksPath: string, markdownPath: string, markdown: string, force = false): Promise<void> {
-  const sourceVersion = await getStoreVersion(tasksPath, "tasks");
-  const viewState = await getMarkdownViewState(tasksPath, "tasks_markdown");
-  const markdownExists = await fs.access(markdownPath).then(() => true).catch(() => false);
+  const sourceVersion = await getStoreVersion(tasksPath, 'tasks')
+  const viewState = await getMarkdownViewState(tasksPath, 'tasks_markdown')
+  const markdownExists = await fs.access(markdownPath).then(() => true).catch(() => false)
 
   const shouldWrite = force
     || !markdownExists
     || viewState.dirty
-    || viewState.lastSourceVersion !== sourceVersion;
+    || viewState.lastSourceVersion !== sourceVersion
 
   if (!shouldWrite) {
-    return;
+    return
   }
 
-  await fs.writeFile(markdownPath, markdown, "utf-8");
-  await markMarkdownViewBuilt(tasksPath, "tasks_markdown", sourceVersion);
+  await fs.writeFile(markdownPath, markdown, 'utf-8')
+  await markMarkdownViewBuilt(tasksPath, 'tasks_markdown', sourceVersion)
 }
 
 export function rankActionableTaskCandidates(candidates: ActionableTaskCandidate[]): ActionableTaskCandidate[] {
   return [...candidates].sort((a, b) => {
     if (b.projectScore !== a.projectScore) {
-      return b.projectScore - a.projectScore;
+      return b.projectScore - a.projectScore
     }
     if (b.taskPriority !== a.taskPriority) {
-      return b.taskPriority - a.taskPriority;
+      return b.taskPriority - a.taskPriority
     }
     if (b.taskUpdatedAtMs !== a.taskUpdatedAtMs) {
-      return b.taskUpdatedAtMs - a.taskUpdatedAtMs;
+      return b.taskUpdatedAtMs - a.taskUpdatedAtMs
     }
     if (a.governanceDir !== b.governanceDir) {
-      return a.governanceDir.localeCompare(b.governanceDir);
+      return a.governanceDir.localeCompare(b.governanceDir)
     }
-    return a.task.id.localeCompare(b.task.id);
-  });
+    return a.task.id.localeCompare(b.task.id)
+  })
 }
 
 export function normalizeTask(task: Partial<Task> & { id: string; title: string }): Task {
   const normalizedRoadmapRefs = Array.isArray(task.roadmapRefs)
     ? task.roadmapRefs.map(String).filter((value) => isValidRoadmapId(value))
-    : [];
+    : []
 
   const normalized: Task = {
     id: String(task.id),
     title: String(task.title),
-    status: ALLOWED_STATUS.includes(task.status as TaskStatus) ? (task.status as TaskStatus) : "TODO",
-    owner: task.owner ? String(task.owner) : "",
-    summary: task.summary ? String(task.summary) : "",
+    status: ALLOWED_STATUS.includes(task.status as TaskStatus) ? (task.status as TaskStatus) : 'TODO',
+    owner: task.owner ? String(task.owner) : '',
+    summary: task.summary ? String(task.summary) : '',
     updatedAt: task.updatedAt ? String(task.updatedAt) : nowIso(),
     links: Array.isArray(task.links)
       ? Array.from(
@@ -314,510 +325,517 @@ export function normalizeTask(task: Partial<Task> & { id: string; title: string 
         )
       : [],
     roadmapRefs: Array.from(new Set(normalizedRoadmapRefs)),
-  };
+  }
 
   // Include optional v1.1.0 fields if present
   if (task.subState) {
-    normalized.subState = task.subState;
+    normalized.subState = task.subState
   }
   if (task.blocker) {
-    normalized.blocker = task.blocker;
+    normalized.blocker = task.blocker
   }
 
-  return normalized;
+  return normalized
 }
 
 function collectTaskLintSuggestionItems(tasks: Task[]): TaskLintSuggestion[] {
-  const suggestions: TaskLintSuggestion[] = [];
+  const suggestions: TaskLintSuggestion[] = []
 
   const duplicateIds = Array.from(
     tasks.reduce((counter, task) => {
-      counter.set(task.id, (counter.get(task.id) ?? 0) + 1);
-      return counter;
+      counter.set(task.id, (counter.get(task.id) ?? 0) + 1)
+      return counter
     }, new Map<string, number>())
       .entries()
   )
     .filter(([, count]) => count > 1)
-    .map(([id]) => id);
+    .map(([id]) => id)
 
   if (duplicateIds.length > 0) {
     suggestions.push({
       code: TASK_LINT_CODES.DUPLICATE_ID,
-      message: `Duplicate task IDs detected: ${duplicateIds.join(", ")}.`,
-      fixHint: "Keep task IDs unique in marker block.",
-    });
+      message: `Duplicate task IDs detected: ${duplicateIds.join(', ')}.`,
+      fixHint: 'Keep task IDs unique in marker block.',
+    })
   }
 
-  const inProgressWithoutOwner = tasks.filter((task) => task.status === "IN_PROGRESS" && task.owner.trim().length === 0);
+  const inProgressWithoutOwner = tasks.filter((task) => task.status === 'IN_PROGRESS' && task.owner.trim().length === 0)
   if (inProgressWithoutOwner.length > 0) {
     suggestions.push({
       code: TASK_LINT_CODES.IN_PROGRESS_OWNER_EMPTY,
       message: `${inProgressWithoutOwner.length} IN_PROGRESS task(s) have empty owner.`,
-      fixHint: "Set owner before continuing execution.",
-    });
+      fixHint: 'Set owner before continuing execution.',
+    })
   }
 
-  const doneWithoutLinks = tasks.filter((task) => task.status === "DONE" && task.links.length === 0);
+  const doneWithoutLinks = tasks.filter((task) => task.status === 'DONE' && task.links.length === 0)
   if (doneWithoutLinks.length > 0) {
     suggestions.push({
       code: TASK_LINT_CODES.DONE_LINKS_MISSING,
       message: `${doneWithoutLinks.length} DONE task(s) have no links evidence.`,
-      fixHint: "Add at least one evidence link before keeping DONE.",
-    });
+      fixHint: 'Add at least one evidence link before keeping DONE.',
+    })
   }
 
-  const blockedWithoutReason = tasks.filter((task) => task.status === "BLOCKED" && task.summary.trim().length === 0);
+  const blockedWithoutReason = tasks.filter((task) => task.status === 'BLOCKED' && task.summary.trim().length === 0)
   if (blockedWithoutReason.length > 0) {
     suggestions.push({
       code: TASK_LINT_CODES.BLOCKED_SUMMARY_EMPTY,
       message: `${blockedWithoutReason.length} BLOCKED task(s) have empty summary.`,
-      fixHint: "Add blocker reason and unblock condition.",
-    });
+      fixHint: 'Add blocker reason and unblock condition.',
+    })
   }
 
-  const invalidUpdatedAt = tasks.filter((task) => !Number.isFinite(new Date(task.updatedAt).getTime()));
+  const invalidUpdatedAt = tasks.filter((task) => !Number.isFinite(new Date(task.updatedAt).getTime()))
   if (invalidUpdatedAt.length > 0) {
     suggestions.push({
       code: TASK_LINT_CODES.UPDATED_AT_INVALID,
       message: `${invalidUpdatedAt.length} task(s) have invalid updatedAt format.`,
-      fixHint: "Use ISO8601 UTC timestamp.",
-    });
+      fixHint: 'Use ISO8601 UTC timestamp.',
+    })
   }
 
-  const missingRoadmapRefs = tasks.filter((task) => task.roadmapRefs.length === 0);
+  const missingRoadmapRefs = tasks.filter((task) => task.roadmapRefs.length === 0)
   if (missingRoadmapRefs.length > 0) {
     suggestions.push({
       code: TASK_LINT_CODES.ROADMAP_REFS_EMPTY,
       message: `${missingRoadmapRefs.length} task(s) have empty roadmapRefs.`,
-      fixHint: "Bind at least one ROADMAP-xxxx when applicable.",
-    });
+      fixHint: 'Bind at least one ROADMAP-xxxx when applicable.',
+    })
   }
 
   const invalidLinkPathFormat = tasks.filter((task) => task.links.some((link) => {
-    const normalized = link.trim();
-    return normalized.length > 0 && !isHttpUrl(normalized) && !isProjectRootRelativePath(normalized);
-  }));
+    const normalized = link.trim()
+    return normalized.length > 0 && !isHttpUrl(normalized) && !isProjectRootRelativePath(normalized)
+  }))
   if (invalidLinkPathFormat.length > 0) {
     suggestions.push({
       code: TASK_LINT_CODES.LINK_PATH_FORMAT_INVALID,
       message: `${invalidLinkPathFormat.length} task(s) contain invalid links path format.`,
-      fixHint: "Use project-root-relative paths without leading slash (for example reports/task-0001.md) or http(s) URL.",
-    });
+      fixHint: 'Use project-root-relative paths without leading slash (for example reports/task-0001.md) or http(s) URL.',
+    })
   }
 
   // ============================================================================
   // Spec v1.1.0 - Blocker Categorization Validation
   // ============================================================================
 
-  const blockedWithoutBlocker = tasks.filter((task) => task.status === "BLOCKED" && !task.blocker);
+  const blockedWithoutBlocker = tasks.filter((task) => task.status === 'BLOCKED' && !task.blocker)
   if (blockedWithoutBlocker.length > 0) {
     suggestions.push({
       code: TASK_LINT_CODES.BLOCKED_WITHOUT_BLOCKER,
       message: `${blockedWithoutBlocker.length} BLOCKED task(s) have no blocker metadata.`,
-      fixHint: "Add structured blocker metadata with type and description.",
-    });
+      fixHint: 'Add structured blocker metadata with type and description.',
+    })
   }
 
-  const blockerTypeInvalid = tasks.filter((task) => task.blocker && !BLOCKER_TYPES.includes(task.blocker.type));
+  const blockerTypeInvalid = tasks.filter((task) => task.blocker && !BLOCKER_TYPES.includes(task.blocker.type))
   if (blockerTypeInvalid.length > 0) {
     suggestions.push({
       code: TASK_LINT_CODES.BLOCKER_TYPE_INVALID,
       message: `${blockerTypeInvalid.length} task(s) have invalid blocker type.`,
-      fixHint: `Use one of: ${BLOCKER_TYPES.join(", ")}.`,
-    });
+      fixHint: `Use one of: ${BLOCKER_TYPES.join(', ')}.`,
+    })
   }
 
-  const blockerDescriptionEmpty = tasks.filter((task) => task.blocker && !task.blocker.description?.trim());
+  const blockerDescriptionEmpty = tasks.filter((task) => task.blocker && !task.blocker.description?.trim())
   if (blockerDescriptionEmpty.length > 0) {
     suggestions.push({
       code: TASK_LINT_CODES.BLOCKER_DESCRIPTION_EMPTY,
       message: `${blockerDescriptionEmpty.length} task(s) have empty blocker description.`,
-      fixHint: "Provide a clear description of why the task is blocked.",
-    });
+      fixHint: 'Provide a clear description of why the task is blocked.',
+    })
   }
 
   // ============================================================================
   // Spec v1.1.0 - Sub-state Metadata Validation (Optional but Recommended)
   // ============================================================================
 
-  const inProgressWithoutSubState = tasks.filter((task) => task.status === "IN_PROGRESS" && !task.subState);
+  const inProgressWithoutSubState = tasks.filter((task) => task.status === 'IN_PROGRESS' && !task.subState)
   if (inProgressWithoutSubState.length > 0) {
     suggestions.push({
       code: TASK_LINT_CODES.IN_PROGRESS_WITHOUT_SUBSTATE,
       message: `${inProgressWithoutSubState.length} IN_PROGRESS task(s) have no subState metadata.`,
-      fixHint: "Add optional subState metadata for better progress tracking.",
-    });
+      fixHint: 'Add optional subState metadata for better progress tracking.',
+    })
   }
 
   const subStatePhaseInvalid = tasks.filter(
     (task) => task.subState?.phase && !SUB_STATE_PHASES.includes(task.subState.phase)
-  );
+  )
   if (subStatePhaseInvalid.length > 0) {
     suggestions.push({
       code: TASK_LINT_CODES.SUBSTATE_PHASE_INVALID,
       message: `${subStatePhaseInvalid.length} task(s) have invalid subState phase.`,
-      fixHint: `Use one of: ${SUB_STATE_PHASES.join(", ")}.`,
-    });
+      fixHint: `Use one of: ${SUB_STATE_PHASES.join(', ')}.`,
+    })
   }
 
   const subStateConfidenceInvalid = tasks.filter(
-    (task) => typeof task.subState?.confidence === "number" && (task.subState.confidence < 0 || task.subState.confidence > 1)
-  );
+    (task) => typeof task.subState?.confidence === 'number' && (task.subState.confidence < 0 || task.subState.confidence > 1)
+  )
   if (subStateConfidenceInvalid.length > 0) {
     suggestions.push({
       code: TASK_LINT_CODES.SUBSTATE_CONFIDENCE_INVALID,
       message: `${subStateConfidenceInvalid.length} task(s) have invalid confidence score.`,
-      fixHint: "Confidence must be between 0.0 and 1.0.",
-    });
+      fixHint: 'Confidence must be between 0.0 and 1.0.',
+    })
   }
 
-  return suggestions;
+  return suggestions
 }
 
 export function collectTaskLintSuggestions(tasks: Task[]): string[] {
-  return renderLintSuggestions(collectTaskLintSuggestionItems(tasks));
+  return renderLintSuggestions(collectTaskLintSuggestionItems(tasks))
 }
 
 function collectSingleTaskLintSuggestions(task: Task): string[] {
-  const suggestions: TaskLintSuggestion[] = [];
+  const suggestions: TaskLintSuggestion[] = []
 
-  if (task.status === "IN_PROGRESS" && task.owner.trim().length === 0) {
+  if (task.status === 'IN_PROGRESS' && task.owner.trim().length === 0) {
     suggestions.push({
       code: TASK_LINT_CODES.IN_PROGRESS_OWNER_EMPTY,
-      message: "Current task is IN_PROGRESS but owner is empty.",
-      fixHint: "Set owner before continuing execution.",
-    });
+      message: 'Current task is IN_PROGRESS but owner is empty.',
+      fixHint: 'Set owner before continuing execution.',
+    })
   }
 
-  if (task.status === "DONE" && task.links.length === 0) {
+  if (task.status === 'DONE' && task.links.length === 0) {
     suggestions.push({
       code: TASK_LINT_CODES.DONE_LINKS_MISSING,
-      message: "Current task is DONE but has no links evidence.",
-      fixHint: "Add at least one evidence link.",
-    });
+      message: 'Current task is DONE but has no links evidence.',
+      fixHint: 'Add at least one evidence link.',
+    })
   }
 
   const invalidLinkPathFormat = task.links.some((link) => {
-    const normalized = link.trim();
-    return normalized.length > 0 && !isHttpUrl(normalized) && !isProjectRootRelativePath(normalized);
-  });
+    const normalized = link.trim()
+    return normalized.length > 0 && !isHttpUrl(normalized) && !isProjectRootRelativePath(normalized)
+  })
   if (invalidLinkPathFormat) {
     suggestions.push({
       code: TASK_LINT_CODES.LINK_PATH_FORMAT_INVALID,
-      message: "Current task has invalid links path format.",
-      fixHint: "Use project-root-relative paths without leading slash (for example reports/task-0001.md) or http(s) URL.",
-    });
+      message: 'Current task has invalid links path format.',
+      fixHint: 'Use project-root-relative paths without leading slash (for example reports/task-0001.md) or http(s) URL.',
+    })
   }
 
-  if (task.status === "BLOCKED" && task.summary.trim().length === 0) {
+  if (task.status === 'BLOCKED' && task.summary.trim().length === 0) {
     suggestions.push({
       code: TASK_LINT_CODES.BLOCKED_SUMMARY_EMPTY,
-      message: "Current task is BLOCKED but summary is empty.",
-      fixHint: "Add blocker reason and unblock condition.",
-    });
+      message: 'Current task is BLOCKED but summary is empty.',
+      fixHint: 'Add blocker reason and unblock condition.',
+    })
   }
 
   if (!Number.isFinite(new Date(task.updatedAt).getTime())) {
     suggestions.push({
       code: TASK_LINT_CODES.UPDATED_AT_INVALID,
-      message: "Current task updatedAt is invalid.",
-      fixHint: "Use ISO8601 UTC timestamp.",
-    });
+      message: 'Current task updatedAt is invalid.',
+      fixHint: 'Use ISO8601 UTC timestamp.',
+    })
   }
 
   if (task.roadmapRefs.length === 0) {
     suggestions.push({
       code: TASK_LINT_CODES.ROADMAP_REFS_EMPTY,
-      message: "Current task has empty roadmapRefs.",
-      fixHint: "Bind ROADMAP-xxxx where applicable.",
-    });
+      message: 'Current task has empty roadmapRefs.',
+      fixHint: 'Bind ROADMAP-xxxx where applicable.',
+    })
   }
 
   // ============================================================================
   // Spec v1.1.0 - Blocker Categorization Validation (Single Task)
   // ============================================================================
 
-  if (task.status === "BLOCKED" && !task.blocker) {
+  if (task.status === 'BLOCKED' && !task.blocker) {
     suggestions.push({
       code: TASK_LINT_CODES.BLOCKED_WITHOUT_BLOCKER,
-      message: "Current task is BLOCKED but has no blocker metadata.",
-      fixHint: "Add structured blocker metadata with type and description.",
-    });
+      message: 'Current task is BLOCKED but has no blocker metadata.',
+      fixHint: 'Add structured blocker metadata with type and description.',
+    })
   }
 
   if (task.blocker && !BLOCKER_TYPES.includes(task.blocker.type)) {
     suggestions.push({
       code: TASK_LINT_CODES.BLOCKER_TYPE_INVALID,
       message: `Current task has invalid blocker type: ${task.blocker.type}.`,
-      fixHint: `Use one of: ${BLOCKER_TYPES.join(", ")}.`,
-    });
+      fixHint: `Use one of: ${BLOCKER_TYPES.join(', ')}.`,
+    })
   }
 
   if (task.blocker && !task.blocker.description?.trim()) {
     suggestions.push({
       code: TASK_LINT_CODES.BLOCKER_DESCRIPTION_EMPTY,
-      message: "Current task has empty blocker description.",
-      fixHint: "Provide a clear description of why the task is blocked.",
-    });
+      message: 'Current task has empty blocker description.',
+      fixHint: 'Provide a clear description of why the task is blocked.',
+    })
   }
 
   // ============================================================================
   // Spec v1.1.0 - Sub-state Metadata Validation (Single Task, Optional)
   // ============================================================================
 
-  if (task.status === "IN_PROGRESS" && !task.subState) {
+  if (task.status === 'IN_PROGRESS' && !task.subState) {
     suggestions.push({
       code: TASK_LINT_CODES.IN_PROGRESS_WITHOUT_SUBSTATE,
-      message: "Current task is IN_PROGRESS but has no subState metadata.",
-      fixHint: "Add optional subState metadata for better progress tracking.",
-    });
+      message: 'Current task is IN_PROGRESS but has no subState metadata.',
+      fixHint: 'Add optional subState metadata for better progress tracking.',
+    })
   }
 
   if (task.subState?.phase && !SUB_STATE_PHASES.includes(task.subState.phase)) {
     suggestions.push({
       code: TASK_LINT_CODES.SUBSTATE_PHASE_INVALID,
       message: `Current task has invalid subState phase: ${task.subState.phase}.`,
-      fixHint: `Use one of: ${SUB_STATE_PHASES.join(", ")}.`,
-    });
+      fixHint: `Use one of: ${SUB_STATE_PHASES.join(', ')}.`,
+    })
   }
 
-  if (typeof task.subState?.confidence === "number" && (task.subState.confidence < 0 || task.subState.confidence > 1)) {
+  if (typeof task.subState?.confidence === 'number' && (task.subState.confidence < 0 || task.subState.confidence > 1)) {
     suggestions.push({
       code: TASK_LINT_CODES.SUBSTATE_CONFIDENCE_INVALID,
       message: `Current task has invalid confidence score: ${task.subState.confidence}.`,
-      fixHint: "Confidence must be between 0.0 and 1.0.",
-    });
+      fixHint: 'Confidence must be between 0.0 and 1.0.',
+    })
   }
 
-  return renderLintSuggestions(suggestions);
+  return renderLintSuggestions(suggestions)
 }
 
 async function collectTaskFileLintSuggestions(governanceDir: string, task: Task): Promise<string[]> {
-  const suggestions: TaskLintSuggestion[] = [];
-  const projectPath = toProjectPath(governanceDir);
+  const suggestions: TaskLintSuggestion[] = []
+  const projectPath = toProjectPath(governanceDir)
 
   for (const link of task.links) {
-    const normalized = link.trim();
+    const normalized = link.trim()
     if (normalized.length === 0) {
-      continue;
+      continue
     }
 
     if (/^https?:\/\//i.test(normalized)) {
-      continue;
+      continue
     }
 
     if (!isProjectRootRelativePath(normalized)) {
       suggestions.push({
         code: TASK_LINT_CODES.LINK_PATH_FORMAT_INVALID,
         message: `Link path should be project-root-relative without leading slash: ${normalized}.`,
-        fixHint: "Use path/from/project/root format.",
-      });
-      continue;
+        fixHint: 'Use path/from/project/root format.',
+      })
+      continue
     }
 
-    const resolvedPath = resolveTaskLinkPath(projectPath, normalized);
-    const exists = await fs.access(resolvedPath).then(() => true).catch(() => false);
+    const resolvedPath = resolveTaskLinkPath(projectPath, normalized)
+    const exists = await fs.access(resolvedPath).then(() => true).catch(() => false)
     if (!exists) {
       suggestions.push({
         code: TASK_LINT_CODES.LINK_TARGET_MISSING,
         message: `Link target not found: ${normalized} (resolved: ${resolvedPath}).`,
-      });
+      })
     }
   }
 
-  return renderLintSuggestions(suggestions);
+  return renderLintSuggestions(suggestions)
 }
 
 export function renderTasksMarkdown(tasks: Task[]): string {
   const sections = sortTasksNewestFirst(tasks).map((task) => {
-    const roadmapRefs = task.roadmapRefs.length > 0 ? task.roadmapRefs.join(", ") : "(none)";
+    const roadmapRefs = task.roadmapRefs.length > 0 ? task.roadmapRefs.join(', ') : '(none)'
     const links = task.links.length > 0
-      ? ["- links:", ...task.links.map((link) => `  - ${link}`)]
-      : ["- links:", "  - (none)"];
+      ? ['- links:', ...task.links.map((link) => `  - ${link}`)]
+      : ['- links:', '  - (none)']
 
     const lines = [
       `## ${task.id} | ${task.status} | ${task.title}`,
-      `- owner: ${task.owner || "(none)"}`,
-      `- summary: ${task.summary || "(none)"}`,
+      `- owner: ${task.owner || '(none)'}`,
+      `- summary: ${task.summary || '(none)'}`,
       `- updatedAt: ${task.updatedAt}`,
       `- roadmapRefs: ${roadmapRefs}`,
       ...links,
-    ];
+    ]
 
     // Add subState for IN_PROGRESS tasks (Spec v1.1.0)
-    if (task.subState && task.status === "IN_PROGRESS") {
-      lines.push(`- subState:`);
+    if (task.subState && task.status === 'IN_PROGRESS') {
+      lines.push('- subState:')
       if (task.subState.phase) {
-        lines.push(`  - phase: ${task.subState.phase}`);
+        lines.push(`  - phase: ${task.subState.phase}`)
       }
-      if (typeof task.subState.confidence === "number") {
-        lines.push(`  - confidence: ${task.subState.confidence}`);
+      if (typeof task.subState.confidence === 'number') {
+        lines.push(`  - confidence: ${task.subState.confidence}`)
       }
       if (task.subState.estimatedCompletion) {
-        lines.push(`  - estimatedCompletion: ${task.subState.estimatedCompletion}`);
+        lines.push(`  - estimatedCompletion: ${task.subState.estimatedCompletion}`)
       }
     }
 
     // Add blocker for BLOCKED tasks (Spec v1.1.0)
-    if (task.blocker && task.status === "BLOCKED") {
-      lines.push(`- blocker:`);
-      lines.push(`  - type: ${task.blocker.type}`);
-      lines.push(`  - description: ${task.blocker.description}`);
+    if (task.blocker && task.status === 'BLOCKED') {
+      lines.push('- blocker:')
+      lines.push(`  - type: ${task.blocker.type}`)
+      lines.push(`  - description: ${task.blocker.description}`)
       if (task.blocker.blockingEntity) {
-        lines.push(`  - blockingEntity: ${task.blocker.blockingEntity}`);
+        lines.push(`  - blockingEntity: ${task.blocker.blockingEntity}`)
       }
       if (task.blocker.unblockCondition) {
-        lines.push(`  - unblockCondition: ${task.blocker.unblockCondition}`);
+        lines.push(`  - unblockCondition: ${task.blocker.unblockCondition}`)
       }
       if (task.blocker.escalationPath) {
-        lines.push(`  - escalationPath: ${task.blocker.escalationPath}`);
+        lines.push(`  - escalationPath: ${task.blocker.escalationPath}`)
       }
     }
 
-    return lines.join("\n");
-  });
+    return lines.join('\n')
+  })
 
   return [
-    "# Tasks",
-    "",
-    "This file is generated from .projitive governance store by Projitive MCP. Manual edits will be overwritten.",
-    "",
-    ...(sections.length > 0 ? sections : ["(no tasks)"]),
-    "",
-  ].join("\n");
+    '# Tasks',
+    '',
+    'Projitive is an AI-first project governance framework for tasks, roadmaps, reports, and designs.',
+    'Author: yinxulai',
+    'Repository: https://github.com/yinxulai/projitive',
+    'Do not edit this file manually. This file is automatically generated by Projitive.',
+    'This file is generated from .projitive governance store by Projitive MCP. Manual edits will be overwritten.',
+    '',
+    ...(sections.length > 0 ? sections : ['(no tasks)']),
+    '',
+  ].join('\n')
 }
 
 export async function ensureTasksFile(inputPath: string): Promise<string> {
-  const governanceDir = await resolveGovernanceDir(inputPath);
-  const { tasksPath, markdownPath } = resolveTaskArtifactPaths(governanceDir);
+  const governanceDir = await resolveGovernanceDir(inputPath)
+  const { tasksPath, markdownPath } = resolveTaskArtifactPaths(governanceDir)
 
-  await fs.mkdir(governanceDir, { recursive: true });
-  await ensureStore(tasksPath);
+  await fs.mkdir(governanceDir, { recursive: true })
+  await ensureStore(tasksPath)
 
-  const tasks = normalizeAndSortTasks(await loadTasksFromStore(tasksPath));
+  const tasks = normalizeAndSortTasks(await loadTasksFromStore(tasksPath))
 
-  await syncTasksMarkdownView(tasksPath, markdownPath, renderTasksMarkdown(tasks));
+  await syncTasksMarkdownView(tasksPath, markdownPath, renderTasksMarkdown(tasks))
 
-  return tasksPath;
+  return tasksPath
 }
 
 export async function loadTasks(inputPath: string): Promise<{ tasksPath: string; tasks: Task[] }> {
-  const { tasksPath, tasks } = await loadTasksDocument(inputPath);
-  return { tasksPath, tasks };
+  const { tasksPath, tasks } = await loadTasksDocument(inputPath)
+  return { tasksPath, tasks }
 }
 
 export async function loadTasksDocument(inputPath: string): Promise<TaskDocument> {
-  return loadTasksDocumentWithOptions(inputPath, false);
+  return loadTasksDocumentWithOptions(inputPath, false)
 }
 
 export async function loadTasksDocumentWithOptions(inputPath: string, forceViewSync: boolean): Promise<TaskDocument> {
-  const tasksPath = await ensureTasksFile(inputPath);
-  const tasks = normalizeAndSortTasks(await loadTasksFromStore(tasksPath));
-  const markdown = renderTasksMarkdown(tasks);
-  const markdownPath = path.join(path.dirname(tasksPath), TASKS_MARKDOWN_FILE);
-  await syncTasksMarkdownView(tasksPath, markdownPath, markdown, forceViewSync);
-  return { tasksPath, markdownPath, markdown, tasks };
+  const tasksPath = await ensureTasksFile(inputPath)
+  const tasks = normalizeAndSortTasks(await loadTasksFromStore(tasksPath))
+  const markdown = renderTasksMarkdown(tasks)
+  const markdownPath = path.join(path.dirname(tasksPath), TASKS_MARKDOWN_FILE)
+  await syncTasksMarkdownView(tasksPath, markdownPath, markdown, forceViewSync)
+  return { tasksPath, markdownPath, markdown, tasks }
 }
 
 export async function saveTasks(tasksPath: string, tasks: Task[]): Promise<void> {
-  const normalized = normalizeAndSortTasks(tasks);
-  const markdownPath = path.join(path.dirname(tasksPath), TASKS_MARKDOWN_FILE);
-  await replaceTasksInStore(tasksPath, normalized);
-  await syncTasksMarkdownView(tasksPath, markdownPath, renderTasksMarkdown(normalized));
+  const normalized = normalizeAndSortTasks(tasks)
+  const markdownPath = path.join(path.dirname(tasksPath), TASKS_MARKDOWN_FILE)
+  await replaceTasksInStore(tasksPath, normalized)
+  await syncTasksMarkdownView(tasksPath, markdownPath, renderTasksMarkdown(normalized))
 }
 
 export function validateTransition(from: TaskStatus, to: TaskStatus): boolean {
   if (from === to) {
-    return true;
+    return true
   }
 
   const allowed: Record<TaskStatus, Set<TaskStatus>> = {
-    TODO: new Set(["IN_PROGRESS", "BLOCKED"]),
-    IN_PROGRESS: new Set(["BLOCKED", "DONE"]),
-    BLOCKED: new Set(["IN_PROGRESS", "TODO"]),
+    TODO: new Set(['IN_PROGRESS', 'BLOCKED']),
+    IN_PROGRESS: new Set(['BLOCKED', 'DONE']),
+    BLOCKED: new Set(['IN_PROGRESS', 'TODO']),
     DONE: new Set(),
-  };
+  }
 
-  return allowed[from].has(to);
+  return allowed[from].has(to)
 }
 
 export function registerTaskTools(server: McpServer): void {
   server.registerTool(
-    "taskList",
+    'taskList',
     {
-      title: "Task List",
-      description: "List tasks for a known project and optionally filter by status",
+      title: 'Task List',
+      description: 'List tasks for a known project and optionally filter by status',
       inputSchema: {
         projectPath: z.string(),
-        status: z.enum(["TODO", "IN_PROGRESS", "BLOCKED", "DONE"]).optional(),
+        status: z.enum(['TODO', 'IN_PROGRESS', 'BLOCKED', 'DONE']).optional(),
         limit: z.number().int().min(1).max(200).optional(),
       },
     },
     async ({ projectPath, status, limit }) => {
-      const governanceDir = await resolveGovernanceDir(projectPath);
-      const normalizedProjectPath = toProjectPath(governanceDir);
-      const { tasks } = await loadTasksDocument(governanceDir);
+      const governanceDir = await resolveGovernanceDir(projectPath)
+      const normalizedProjectPath = toProjectPath(governanceDir)
+      const { tasks, markdownPath: tasksViewPath } = await loadTasksDocument(governanceDir)
+      const roadmapViewPath = path.join(governanceDir, 'roadmap.md')
       const filtered = tasks
         .filter((task) => (status ? task.status === status : true))
-        .slice(0, limit ?? 100);
-      const lintSuggestions = collectTaskLintSuggestions(filtered);
+        .slice(0, limit ?? 100)
+      const lintSuggestions = collectTaskLintSuggestions(filtered)
       if (status && filtered.length === 0) {
         appendLintSuggestions(lintSuggestions, [
           {
             code: TASK_LINT_CODES.FILTER_EMPTY,
             message: `No tasks matched status=${status}.`,
-            fixHint: "Confirm status values or update task states.",
+            fixHint: 'Confirm status values or update task states.',
           },
-        ]);
+        ])
       }
-      const nextTaskId = filtered[0]?.id;
+      const nextTaskId = filtered[0]?.id
 
       const markdown = renderToolResponseMarkdown({
-        toolName: "taskList",
+        toolName: 'taskList',
         sections: [
           summarySection([
             `- projectPath: ${normalizedProjectPath}`,
             `- governanceDir: ${governanceDir}`,
-            `- filter.status: ${status ?? "(none)"}`,
+            `- tasksView: ${tasksViewPath}`,
+            `- roadmapView: ${roadmapViewPath}`,
+            `- filter.status: ${status ?? '(none)'}`,
             `- returned: ${filtered.length}`,
           ]),
           evidenceSection([
-            "- tasks:",
-            ...filtered.map((task) => `- ${task.id} | ${task.status} | ${task.title} | owner=${task.owner || ""} | updatedAt=${task.updatedAt}`),
+            '- tasks:',
+            ...filtered.map((task) => `- ${task.id} | ${task.status} | ${task.title} | owner=${task.owner || ''} | updatedAt=${task.updatedAt}`),
           ]),
-          guidanceSection(["- Pick one task ID and call `taskContext`." ]),
+          guidanceSection(['- Pick one task ID and call `taskContext`.' ]),
           lintSection(lintSuggestions),
           nextCallSection(nextTaskId
-            ? `taskContext(projectPath=\"${toProjectPath(governanceDir)}\", taskId=\"${nextTaskId}\")`
+            ? `taskContext(projectPath="${toProjectPath(governanceDir)}", taskId="${nextTaskId}")`
             : undefined),
         ],
-      });
+      })
 
-      return asText(markdown);
+      return asText(markdown)
     }
-  );
+  )
 
   server.registerTool(
-    "taskCreate",
+    'taskCreate',
     {
-      title: "Task Create",
-      description: "Create a new task in governance store with stable TASK-xxxx ID",
+      title: 'Task Create',
+      description: 'Create a new task in governance store with stable TASK-<number> ID',
       inputSchema: {
         projectPath: z.string(),
-        taskId: z.string(),
+        taskId: z.string().optional(),
         title: z.string(),
-        status: z.enum(["TODO", "IN_PROGRESS", "BLOCKED", "DONE"]).optional(),
+        status: z.enum(['TODO', 'IN_PROGRESS', 'BLOCKED', 'DONE']).optional(),
         owner: z.string().optional(),
         summary: z.string().optional(),
         roadmapRefs: z.array(z.string()).optional(),
         links: z.array(z.string()).optional(),
         subState: z.object({
-          phase: z.enum(["discovery", "design", "implementation", "testing"]).optional(),
+          phase: z.enum(['discovery', 'design', 'implementation', 'testing']).optional(),
           confidence: z.number().min(0).max(1).optional(),
           estimatedCompletion: z.string().optional(),
         }).optional(),
         blocker: z.object({
-          type: z.enum(["internal_dependency", "external_dependency", "resource", "approval"]),
+          type: z.enum(['internal_dependency', 'external_dependency', 'resource', 'approval']),
           description: z.string(),
           blockingEntity: z.string().optional(),
           unblockCondition: z.string().optional(),
@@ -826,39 +844,41 @@ export function registerTaskTools(server: McpServer): void {
       },
     },
     async ({ projectPath, taskId, title, status, owner, summary, roadmapRefs, links, subState, blocker }) => {
-      if (!isValidTaskId(taskId)) {
+      if (taskId && !isValidTaskId(taskId)) {
         return {
           ...asText(renderErrorMarkdown(
-            "taskCreate",
+            'taskCreate',
             `Invalid task ID format: ${taskId}`,
-            ["expected format: TASK-0001", "retry with a valid task ID"],
-            `taskCreate(projectPath=\"${projectPath}\", taskId=\"TASK-0001\", title=\"Define executable objective\")`
+            ['expected format: TASK-1 or TASK-0001', 'omit taskId to auto-generate next ID'],
+            `taskCreate(projectPath="${projectPath}", title="Define executable objective")`
           )),
           isError: true,
-        };
+        }
       }
 
-      const governanceDir = await resolveGovernanceDir(projectPath);
-      const normalizedProjectPath = toProjectPath(governanceDir);
-      const { tasksPath, tasks } = await loadTasksDocument(governanceDir);
-      const duplicated = tasks.some((item) => item.id === taskId);
+      const governanceDir = await resolveGovernanceDir(projectPath)
+      const normalizedProjectPath = toProjectPath(governanceDir)
+      const { tasksPath, tasks, markdownPath: tasksViewPath } = await loadTasksDocument(governanceDir)
+      const roadmapViewPath = path.join(governanceDir, 'roadmap.md')
+      const finalTaskId = taskId ?? nextTaskId(tasks)
+      const duplicated = tasks.some((item) => item.id === finalTaskId)
 
       if (duplicated) {
         return {
           ...asText(renderErrorMarkdown(
-            "taskCreate",
-            `Task already exists: ${taskId}`,
-            ["task IDs must be unique", "use taskUpdate for existing tasks"],
-            `taskUpdate(projectPath=\"${normalizedProjectPath}\", taskId=\"${taskId}\", updates={...})`
+            'taskCreate',
+            `Task already exists: ${finalTaskId}`,
+            ['task IDs must be unique', 'use taskUpdate for existing tasks'],
+            `taskUpdate(projectPath="${normalizedProjectPath}", taskId="${finalTaskId}", updates={...})`
           )),
           isError: true,
-        };
+        }
       }
 
       const createdTask = normalizeTask({
-        id: taskId,
+        id: finalTaskId,
         title,
-        status: status ?? "TODO",
+        status: status ?? 'TODO',
         owner,
         summary,
         roadmapRefs,
@@ -866,69 +886,71 @@ export function registerTaskTools(server: McpServer): void {
         subState,
         blocker,
         updatedAt: nowIso(),
-      });
+      })
 
-      await upsertTaskInStore(tasksPath, createdTask);
-      await loadTasksDocumentWithOptions(governanceDir, true);
+      await upsertTaskInStore(tasksPath, createdTask)
+      await loadTasksDocumentWithOptions(governanceDir, true)
 
       const lintSuggestions = [
         ...collectSingleTaskLintSuggestions(createdTask),
         ...(await collectTaskFileLintSuggestions(governanceDir, createdTask)),
-      ];
+      ]
 
       const markdown = renderToolResponseMarkdown({
-        toolName: "taskCreate",
+        toolName: 'taskCreate',
         sections: [
           summarySection([
             `- projectPath: ${normalizedProjectPath}`,
             `- governanceDir: ${governanceDir}`,
+            `- tasksView: ${tasksViewPath}`,
+            `- roadmapView: ${roadmapViewPath}`,
             `- taskId: ${createdTask.id}`,
             `- status: ${createdTask.status}`,
-            `- owner: ${createdTask.owner || "(none)"}`,
+            `- owner: ${createdTask.owner || '(none)'}`,
             `- updatedAt: ${createdTask.updatedAt}`,
           ]),
           evidenceSection([
-            "### Created Task",
+            '### Created Task',
             `- ${createdTask.id} | ${createdTask.status} | ${createdTask.title}`,
-            `- summary: ${createdTask.summary || "(none)"}`,
-            `- roadmapRefs: ${createdTask.roadmapRefs.join(", ") || "(none)"}`,
-            `- links: ${createdTask.links.join(", ") || "(none)"}`,
+            `- summary: ${createdTask.summary || '(none)'}`,
+            `- roadmapRefs: ${createdTask.roadmapRefs.join(', ') || '(none)'}`,
+            `- links: ${createdTask.links.join(', ') || '(none)'}`,
           ]),
           guidanceSection([
-            "Task created in governance store successfully and tasks.md has been synced.",
-            "Run taskContext to verify references and lint guidance.",
+            'Task created in governance store successfully and tasks.md has been synced.',
+            'Run taskContext to verify references and lint guidance.',
           ]),
           lintSection(lintSuggestions),
-          nextCallSection(`taskContext(projectPath=\"${normalizedProjectPath}\", taskId=\"${createdTask.id}\")`),
+          nextCallSection(`taskContext(projectPath="${normalizedProjectPath}", taskId="${createdTask.id}")`),
         ],
-      });
+      })
 
-      return asText(markdown);
+      return asText(markdown)
     }
-  );
+  )
 
   server.registerTool(
-    "taskNext",
+    'taskNext',
     {
-      title: "Task Next",
-      description: "Start here to auto-select the highest-priority actionable task",
+      title: 'Task Next',
+      description: 'Start here to auto-select the highest-priority actionable task',
       inputSchema: {
         limit: z.number().int().min(1).max(20).optional(),
       },
     },
     async ({ limit }) => {
-      const roots = resolveScanRoots();
-      const depth = resolveScanDepth();
-      const projects = await discoverProjectsAcrossRoots(roots, depth);
-      const rankedCandidates = rankActionableTaskCandidates(await readActionableTaskCandidates(projects));
+      const roots = resolveScanRoots()
+      const depth = resolveScanDepth()
+      const projects = await discoverProjectsAcrossRoots(roots, depth)
+      const rankedCandidates = rankActionableTaskCandidates(await readActionableTaskCandidates(projects))
 
       if (rankedCandidates.length === 0) {
         const projectSnapshots = await Promise.all(
           projects.map(async (governanceDir) => {
-            const tasksPath = path.join(governanceDir, ".projitive");
-            await ensureStore(tasksPath);
-            const stats = await loadTaskStatusStatsFromStore(tasksPath);
-            const roadmapIds = await readRoadmapIds(governanceDir);
+            const tasksPath = path.join(governanceDir, '.projitive')
+            await ensureStore(tasksPath)
+            const stats = await loadTaskStatusStatsFromStore(tasksPath)
+            const roadmapIds = await readRoadmapIds(governanceDir)
             return {
               governanceDir,
               roadmapIds,
@@ -937,77 +959,77 @@ export function registerTaskTools(server: McpServer): void {
               inProgress: stats.inProgress,
               blocked: stats.blocked,
               done: stats.done,
-            };
+            }
           })
-        );
+        )
 
-        const preferredProject = projectSnapshots[0];
-        const preferredRoadmapRef = preferredProject?.roadmapIds[0] ?? "ROADMAP-0001";
-        const noTaskDiscoveryGuidance = await resolveNoTaskDiscoveryGuidance(preferredProject?.governanceDir);
+        const preferredProject = projectSnapshots[0]
+        const preferredRoadmapRef = preferredProject?.roadmapIds[0] ?? 'ROADMAP-0001'
+        const noTaskDiscoveryGuidance = await resolveNoTaskDiscoveryGuidance(preferredProject?.governanceDir)
         const markdown = renderToolResponseMarkdown({
-          toolName: "taskNext",
+          toolName: 'taskNext',
           sections: [
             summarySection([
-              `- rootPaths: ${roots.join(", ")}`,
+              `- rootPaths: ${roots.join(', ')}`,
               `- rootCount: ${roots.length}`,
               `- maxDepth: ${depth}`,
               `- matchedProjects: ${projects.length}`,
-              "- actionableTasks: 0",
+              '- actionableTasks: 0',
             ]),
             evidenceSection([
-              "### Project Snapshots",
+              '### Project Snapshots',
               ...(projectSnapshots.length > 0
                 ? projectSnapshots.map(
-                    (item, index) => `${index + 1}. ${toProjectPath(item.governanceDir)} | total=${item.total} | todo=${item.todo} | in_progress=${item.inProgress} | blocked=${item.blocked} | done=${item.done} | roadmapIds=${item.roadmapIds.join(", ") || "(none)"}`
+                    (item, index) => `${index + 1}. ${toProjectPath(item.governanceDir)} | total=${item.total} | todo=${item.todo} | in_progress=${item.inProgress} | blocked=${item.blocked} | done=${item.done} | roadmapIds=${item.roadmapIds.join(', ') || '(none)'}`
                   )
-                : ["- (none)"]),
-              "",
-              "### Seed Task Template",
+                : ['- (none)']),
+              '',
+              '### Seed Task Template',
               ...renderTaskSeedTemplate(preferredRoadmapRef),
             ]),
             guidanceSection([
-              "- No TODO/IN_PROGRESS task is available.",
-              "- Create 1-3 new TODO tasks using `taskCreate(...)` from active roadmap slices.",
-              "- Use no-task discovery checklist below to proactively find and create meaningful TODO tasks.",
-              "- If roadmap has active milestones, analyze milestone intent and split into 1-3 executable TODO tasks.",
-              "",
-              "### No-Task Discovery Checklist",
+              '- No TODO/IN_PROGRESS task is available.',
+              '- Create 1-3 new TODO tasks using `taskCreate(...)` from active roadmap slices.',
+              '- Use no-task discovery checklist below to proactively find and create meaningful TODO tasks.',
+              '- If roadmap has active milestones, analyze milestone intent and split into 1-3 executable TODO tasks.',
+              '',
+              '### No-Task Discovery Checklist',
               ...noTaskDiscoveryGuidance,
-              "",
-              "- If no tasks exist, derive 1-3 TODO tasks from roadmap milestones, README scope, or unresolved report gaps.",
-              "- If only BLOCKED/DONE tasks exist, reopen one blocked item or create a follow-up TODO task.",
-              "- After creating tasks, rerun `taskNext` to re-rank actionable work.",
+              '',
+              '- If no tasks exist, derive 1-3 TODO tasks from roadmap milestones, README scope, or unresolved report gaps.',
+              '- If only BLOCKED/DONE tasks exist, reopen one blocked item or create a follow-up TODO task.',
+              '- After creating tasks, rerun `taskNext` to re-rank actionable work.',
             ]),
             lintSection([
-              "- No actionable tasks found. Verify task statuses and required fields in .projitive task table.",
-              "- Ensure each new task has stable TASK-xxxx ID and at least one roadmapRefs item.",
+              '- No actionable tasks found. Verify task statuses and required fields in .projitive task table.',
+              '- Ensure each new task has stable TASK-<number> ID and at least one roadmapRefs item.',
             ]),
             nextCallSection(preferredProject
-              ? `taskCreate(projectPath=\"${toProjectPath(preferredProject.governanceDir)}\", taskId=\"TASK-0001\", title=\"Create first executable slice\", roadmapRefs=[\"${preferredRoadmapRef}\"], summary=\"Derived from active roadmap milestone\")`
-              : "projectScan()"),
+                ? `taskCreate(projectPath="${toProjectPath(preferredProject.governanceDir)}", title="Create first executable slice", roadmapRefs=["${preferredRoadmapRef}"], summary="Derived from active roadmap milestone")`
+              : 'projectScan()'),
           ],
-        });
-        return asText(markdown);
+        })
+        return asText(markdown)
       }
 
-      const selected = rankedCandidates[0];
-      const selectedTaskDocument = await loadTasksDocument(selected.governanceDir);
-      const lintSuggestions = collectTaskLintSuggestions(selectedTaskDocument.tasks);
-      const artifacts = await discoverGovernanceArtifacts(selected.governanceDir);
-      const fileCandidates = candidateFilesFromArtifacts(artifacts);
+      const selected = rankedCandidates[0]
+      const selectedTaskDocument = await loadTasksDocument(selected.governanceDir)
+      const lintSuggestions = collectTaskLintSuggestions(selectedTaskDocument.tasks)
+      const artifacts = await discoverGovernanceArtifacts(selected.governanceDir)
+      const fileCandidates = candidateFilesFromArtifacts(artifacts)
       const referenceLocations = (
         await Promise.all(fileCandidates.map((file) => findTextReferences(file, selected.task.id)))
-      ).flat();
-      const taskLocation = (await findTextReferences(selectedTaskDocument.markdownPath, selected.task.id))[0];
-      const relatedArtifacts = Array.from(new Set(referenceLocations.map((item) => item.filePath)));
-      const suggestedReadOrder = [selectedTaskDocument.markdownPath, ...relatedArtifacts.filter((item) => item !== selectedTaskDocument.markdownPath)];
-      const candidateLimit = limit ?? 5;
+      ).flat()
+      const taskLocation = (await findTextReferences(selectedTaskDocument.markdownPath, selected.task.id))[0]
+      const relatedArtifacts = Array.from(new Set(referenceLocations.map((item) => item.filePath)))
+      const suggestedReadOrder = [selectedTaskDocument.markdownPath, ...relatedArtifacts.filter((item) => item !== selectedTaskDocument.markdownPath)]
+      const candidateLimit = limit ?? 5
 
       const markdown = renderToolResponseMarkdown({
-        toolName: "taskNext",
+        toolName: 'taskNext',
         sections: [
           summarySection([
-            `- rootPaths: ${roots.join(", ")}`,
+            `- rootPaths: ${roots.join(', ')}`,
             `- rootCount: ${roots.length}`,
             `- maxDepth: ${depth}`,
             `- matchedProjects: ${projects.length}`,
@@ -1017,53 +1039,53 @@ export function registerTaskTools(server: McpServer): void {
             `- selectedTaskStatus: ${selected.task.status}`,
           ]),
           evidenceSection([
-            "### Selected Task",
+            '### Selected Task',
             `- id: ${selected.task.id}`,
             `- title: ${selected.task.title}`,
-            `- owner: ${selected.task.owner || "(none)"}`,
+            `- owner: ${selected.task.owner || '(none)'}`,
             `- updatedAt: ${selected.task.updatedAt}`,
-            `- roadmapRefs: ${selected.task.roadmapRefs.join(", ") || "(none)"}`,
+            `- roadmapRefs: ${selected.task.roadmapRefs.join(', ') || '(none)'}`,
             `- taskLocation: ${taskLocation ? `${taskLocation.filePath}#L${taskLocation.line}` : selectedTaskDocument.markdownPath}`,
-            "",
-            "### Top Candidates",
+            '',
+            '### Top Candidates',
             ...rankedCandidates
               .slice(0, candidateLimit)
               .map((item, index) => `${index + 1}. ${item.task.id} | ${item.task.status} | ${item.task.title} | projectPath=${toProjectPath(item.governanceDir)} | projectScore=${item.projectScore} | latest=${item.projectLatestUpdatedAt}`),
-            "",
-            "### Selection Reason",
-            "- Rank rule: projectScore DESC -> taskPriority DESC -> taskUpdatedAt DESC.",
+            '',
+            '### Selection Reason',
+            '- Rank rule: projectScore DESC -> taskPriority DESC -> taskUpdatedAt DESC.',
             `- Selected candidate scores: projectScore=${selected.projectScore}, taskPriority=${selected.taskPriority}, taskUpdatedAtMs=${selected.taskUpdatedAtMs}.`,
-            "",
-            "### Related Artifacts",
-            ...(relatedArtifacts.length > 0 ? relatedArtifacts.map((file) => `- ${file}`) : ["- (none)"]),
-            "",
-            "### Reference Locations",
+            '',
+            '### Related Artifacts',
+            ...(relatedArtifacts.length > 0 ? relatedArtifacts.map((file) => `- ${file}`) : ['- (none)']),
+            '',
+            '### Reference Locations',
             ...(referenceLocations.length > 0
               ? referenceLocations.map((item) => `- ${item.filePath}#L${item.line}: ${item.text}`)
-              : ["- (none)"]),
-            "",
-            "### Suggested Read Order",
+              : ['- (none)']),
+            '',
+            '### Suggested Read Order',
             ...suggestedReadOrder.map((item, index) => `${index + 1}. ${item}`),
           ]),
           guidanceSection([
-            "- Start immediately with Suggested Read Order and execute the selected task.",
-            "- Update markdown artifacts directly while keeping TASK/ROADMAP IDs unchanged.",
-            "- Re-run `taskContext` for the selectedTaskId after edits to verify evidence consistency.",
+            '- Start immediately with Suggested Read Order and execute the selected task.',
+            '- Update markdown artifacts directly while keeping TASK/ROADMAP IDs unchanged.',
+            '- Re-run `taskContext` for the selectedTaskId after edits to verify evidence consistency.',
           ]),
           lintSection(lintSuggestions),
-          nextCallSection(`taskContext(projectPath=\"${toProjectPath(selected.governanceDir)}\", taskId=\"${selected.task.id}\")`),
+          nextCallSection(`taskContext(projectPath="${toProjectPath(selected.governanceDir)}", taskId="${selected.task.id}")`),
         ],
-      });
+      })
 
-      return asText(markdown);
+      return asText(markdown)
     }
-  );
+  )
 
   server.registerTool(
-    "taskContext",
+    'taskContext',
     {
-      title: "Task Context",
-      description: "Get deep context, evidence links, and read order for one task",
+      title: 'Task Context',
+      description: 'Get deep context, evidence links, and read order for one task',
       inputSchema: {
         projectPath: z.string(),
         taskId: z.string(),
@@ -1073,148 +1095,151 @@ export function registerTaskTools(server: McpServer): void {
       if (!isValidTaskId(taskId)) {
         return {
           ...asText(renderErrorMarkdown(
-            "taskContext",
+            'taskContext',
             `Invalid task ID format: ${taskId}`,
-            ["expected format: TASK-0001", "retry with a valid task ID"],
-            `taskContext(projectPath=\"${projectPath}\", taskId=\"TASK-0001\")`
+            ['expected format: TASK-1 or TASK-0001', 'retry with a valid task ID'],
+            `taskContext(projectPath="${projectPath}", taskId="TASK-0001")`
           )),
           isError: true,
-        };
+        }
       }
 
-      const governanceDir = await resolveGovernanceDir(projectPath);
-      const normalizedProjectPath = toProjectPath(governanceDir);
-      const { markdownPath, tasks, markdown: tasksMarkdown } = await loadTasksDocument(governanceDir);
-      const task = tasks.find((item) => item.id === taskId);
+      const governanceDir = await resolveGovernanceDir(projectPath)
+      const normalizedProjectPath = toProjectPath(governanceDir)
+      const { markdownPath, tasks } = await loadTasksDocument(governanceDir)
+      const roadmapViewPath = path.join(governanceDir, 'roadmap.md')
+      const task = tasks.find((item) => item.id === taskId)
       if (!task) {
         return {
           ...asText(renderErrorMarkdown(
-            "taskContext",
+            'taskContext',
             `Task not found: ${taskId}`,
-            ["run `taskList` to discover available IDs", "retry with an existing task ID"],
-            `taskList(projectPath=\"${toProjectPath(governanceDir)}\")`
+            ['run `taskList` to discover available IDs', 'retry with an existing task ID'],
+            `taskList(projectPath="${toProjectPath(governanceDir)}")`
           )),
           isError: true,
-        };
+        }
       }
 
       const lintSuggestions = [
         ...collectSingleTaskLintSuggestions(task),
         ...(await collectTaskFileLintSuggestions(governanceDir, task)),
-      ];
-      const contextReadingGuidance = await resolveTaskContextReadingGuidance(governanceDir);
+      ]
+      const contextReadingGuidance = await resolveTaskContextReadingGuidance(governanceDir)
 
-      const taskLocation = (await findTextReferences(markdownPath, taskId))[0];
-      const artifacts = await discoverGovernanceArtifacts(governanceDir);
-      const fileCandidates = candidateFilesFromArtifacts(artifacts);
+      const taskLocation = (await findTextReferences(markdownPath, taskId))[0]
+      const artifacts = await discoverGovernanceArtifacts(governanceDir)
+      const fileCandidates = candidateFilesFromArtifacts(artifacts)
       const referenceLocations = (
         await Promise.all(fileCandidates.map((file) => findTextReferences(file, taskId)))
-      ).flat();
+      ).flat()
 
-      const relatedArtifacts = Array.from(new Set(referenceLocations.map((item) => item.filePath)));
-      const suggestedReadOrder = [markdownPath, ...relatedArtifacts.filter((item) => item !== markdownPath)];
+      const relatedArtifacts = Array.from(new Set(referenceLocations.map((item) => item.filePath)))
+      const suggestedReadOrder = [markdownPath, ...relatedArtifacts.filter((item) => item !== markdownPath)]
 
       // Build summary with subState and blocker info (v1.1.0)
       const summaryLines = [
         `- projectPath: ${normalizedProjectPath}`,
         `- governanceDir: ${governanceDir}`,
+        `- tasksView: ${markdownPath}`,
+        `- roadmapView: ${roadmapViewPath}`,
         `- taskId: ${task.id}`,
         `- title: ${task.title}`,
         `- status: ${task.status}`,
         `- owner: ${task.owner}`,
         `- updatedAt: ${task.updatedAt}`,
-        `- roadmapRefs: ${task.roadmapRefs.join(", ") || "(none)"}`,
+        `- roadmapRefs: ${task.roadmapRefs.join(', ') || '(none)'}`,
         `- taskLocation: ${taskLocation ? `${taskLocation.filePath}#L${taskLocation.line}` : markdownPath}`,
-      ];
+      ]
 
       // Add subState info for IN_PROGRESS tasks (v1.1.0)
-      if (task.subState && task.status === "IN_PROGRESS") {
-        summaryLines.push(`- subState:`);
+      if (task.subState && task.status === 'IN_PROGRESS') {
+        summaryLines.push('- subState:')
         if (task.subState.phase) {
-          summaryLines.push(`  - phase: ${task.subState.phase}`);
+          summaryLines.push(`  - phase: ${task.subState.phase}`)
         }
-        if (typeof task.subState.confidence === "number") {
-          summaryLines.push(`  - confidence: ${task.subState.confidence}`);
+        if (typeof task.subState.confidence === 'number') {
+          summaryLines.push(`  - confidence: ${task.subState.confidence}`)
         }
         if (task.subState.estimatedCompletion) {
-          summaryLines.push(`  - estimatedCompletion: ${task.subState.estimatedCompletion}`);
+          summaryLines.push(`  - estimatedCompletion: ${task.subState.estimatedCompletion}`)
         }
       }
 
       // Add blocker info for BLOCKED tasks (v1.1.0)
-      if (task.blocker && task.status === "BLOCKED") {
-        summaryLines.push(`- blocker:`);
-        summaryLines.push(`  - type: ${task.blocker.type}`);
-        summaryLines.push(`  - description: ${task.blocker.description}`);
+      if (task.blocker && task.status === 'BLOCKED') {
+        summaryLines.push('- blocker:')
+        summaryLines.push(`  - type: ${task.blocker.type}`)
+        summaryLines.push(`  - description: ${task.blocker.description}`)
         if (task.blocker.blockingEntity) {
-          summaryLines.push(`  - blockingEntity: ${task.blocker.blockingEntity}`);
+          summaryLines.push(`  - blockingEntity: ${task.blocker.blockingEntity}`)
         }
         if (task.blocker.unblockCondition) {
-          summaryLines.push(`  - unblockCondition: ${task.blocker.unblockCondition}`);
+          summaryLines.push(`  - unblockCondition: ${task.blocker.unblockCondition}`)
         }
         if (task.blocker.escalationPath) {
-          summaryLines.push(`  - escalationPath: ${task.blocker.escalationPath}`);
+          summaryLines.push(`  - escalationPath: ${task.blocker.escalationPath}`)
         }
       }
 
       const coreMarkdown = renderToolResponseMarkdown({
-        toolName: "taskContext",
+        toolName: 'taskContext',
         sections: [
           summarySection(summaryLines),
           evidenceSection([
-            "### Related Artifacts",
-            ...(relatedArtifacts.length > 0 ? relatedArtifacts.map((file) => `- ${file}`) : ["- (none)"]),
-            "",
-            "### Reference Locations",
+            '### Related Artifacts',
+            ...(relatedArtifacts.length > 0 ? relatedArtifacts.map((file) => `- ${file}`) : ['- (none)']),
+            '',
+            '### Reference Locations',
             ...(referenceLocations.length > 0
               ? referenceLocations.map((item) => `- ${item.filePath}#L${item.line}: ${item.text}`)
-              : ["- (none)"]),
-            "",
-            "### Suggested Read Order",
+              : ['- (none)']),
+            '',
+            '### Suggested Read Order',
             ...suggestedReadOrder.map((item, index) => `${index + 1}. ${item}`),
           ]),
           guidanceSection([
-            "- Read the files in Suggested Read Order.",
-            "",
-            "### Recommended Context Reading",
+            '- Read the files in Suggested Read Order.',
+            '',
+            '### Recommended Context Reading',
             ...contextReadingGuidance,
-            "",
-            "- Verify whether current status and evidence are consistent.",
+            '',
+            '- Verify whether current status and evidence are consistent.',
             ...taskStatusGuidance(task),
-            "- If updates are needed, use tool writes for governance store (`taskUpdate` / `roadmapUpdate`) and keep TASK IDs unchanged.",
-            "- After editing, re-run `taskContext` to verify references and context consistency.",
+            '- If updates are needed, use tool writes for governance store (`taskUpdate` / `roadmapUpdate`) and keep TASK IDs unchanged.',
+            '- After editing, re-run `taskContext` to verify references and context consistency.',
           ]),
           lintSection(lintSuggestions),
-          nextCallSection(`taskContext(projectPath=\"${toProjectPath(governanceDir)}\", taskId=\"${task.id}\")`),
+          nextCallSection(`taskContext(projectPath="${toProjectPath(governanceDir)}", taskId="${task.id}")`),
         ],
-      });
+      })
 
-      return asText(coreMarkdown);
+      return asText(coreMarkdown)
     }
-  );
+  )
 
   // taskUpdate tool - Update task fields including subState and blocker (Spec v1.1.0)
   server.registerTool(
-    "taskUpdate",
+    'taskUpdate',
     {
-      title: "Task Update",
-      description: "Update task fields including status, owner, summary, subState, and blocker metadata",
+      title: 'Task Update',
+      description: 'Update task fields including status, owner, summary, subState, and blocker metadata',
       inputSchema: {
         projectPath: z.string(),
         taskId: z.string(),
         updates: z.object({
-          status: z.enum(["TODO", "IN_PROGRESS", "BLOCKED", "DONE"]).optional(),
+          status: z.enum(['TODO', 'IN_PROGRESS', 'BLOCKED', 'DONE']).optional(),
           owner: z.string().optional(),
           summary: z.string().optional(),
           roadmapRefs: z.array(z.string()).optional(),
           links: z.array(z.string()).optional(),
           subState: z.object({
-            phase: z.enum(["discovery", "design", "implementation", "testing"]).optional(),
+            phase: z.enum(['discovery', 'design', 'implementation', 'testing']).optional(),
             confidence: z.number().min(0).max(1).optional(),
             estimatedCompletion: z.string().optional(),
           }).optional(),
           blocker: z.object({
-            type: z.enum(["internal_dependency", "external_dependency", "resource", "approval"]),
+            type: z.enum(['internal_dependency', 'external_dependency', 'resource', 'approval']),
             description: z.string(),
             blockingEntity: z.string().optional(),
             unblockCondition: z.string().optional(),
@@ -1227,151 +1252,155 @@ export function registerTaskTools(server: McpServer): void {
       if (!isValidTaskId(taskId)) {
         return {
           ...asText(renderErrorMarkdown(
-            "taskUpdate",
+            'taskUpdate',
             `Invalid task ID format: ${taskId}`,
-            ["expected format: TASK-0001", "retry with a valid task ID"],
-            `taskUpdate(projectPath=\"${projectPath}\", taskId=\"TASK-0001\", updates={...})`
+            ['expected format: TASK-1 or TASK-0001', 'retry with a valid task ID'],
+            `taskUpdate(projectPath="${projectPath}", taskId="TASK-0001", updates={...})`
           )),
           isError: true,
-        };
+        }
       }
 
-      const governanceDir = await resolveGovernanceDir(projectPath);
-      const normalizedProjectPath = toProjectPath(governanceDir);
-      const { tasksPath, tasks } = await loadTasksDocument(governanceDir);
-      const taskIndex = tasks.findIndex((item) => item.id === taskId);
+      const governanceDir = await resolveGovernanceDir(projectPath)
+      const normalizedProjectPath = toProjectPath(governanceDir)
+      const { tasksPath, tasks } = await loadTasksDocument(governanceDir)
+      const tasksViewPath = path.join(governanceDir, TASKS_MARKDOWN_FILE)
+      const roadmapViewPath = path.join(governanceDir, 'roadmap.md')
+      const taskIndex = tasks.findIndex((item) => item.id === taskId)
 
       if (taskIndex === -1) {
         return {
           ...asText(renderErrorMarkdown(
-            "taskUpdate",
+            'taskUpdate',
             `Task not found: ${taskId}`,
-            ["run `taskList` to discover available IDs", "retry with an existing task ID"],
-            `taskList(projectPath=\"${toProjectPath(governanceDir)}\")`
+            ['run `taskList` to discover available IDs', 'retry with an existing task ID'],
+            `taskList(projectPath="${toProjectPath(governanceDir)}")`
           )),
           isError: true,
-        };
+        }
       }
 
-      const task = tasks[taskIndex];
-      const originalStatus = task.status;
+      const task = tasks[taskIndex]
+      const originalStatus = task.status
 
       // Validate status transition
       if (updates.status && !validateTransition(originalStatus, updates.status)) {
         return {
           ...asText(renderErrorMarkdown(
-            "taskUpdate",
+            'taskUpdate',
             `Invalid status transition: ${originalStatus} -> ${updates.status}`,
-            ["use `validateTransition` to check allowed transitions", "provide evidence when transitioning to DONE"],
-            `taskContext(projectPath=\"${toProjectPath(governanceDir)}\", taskId=\"${taskId}\")`
+            ['use `validateTransition` to check allowed transitions', 'provide evidence when transitioning to DONE'],
+            `taskContext(projectPath="${toProjectPath(governanceDir)}", taskId="${taskId}")`
           )),
           isError: true,
-        };
+        }
       }
 
       // Apply updates
-      if (updates.status) task.status = updates.status;
-      if (updates.owner !== undefined) task.owner = updates.owner;
-      if (updates.summary !== undefined) task.summary = updates.summary;
-      if (updates.roadmapRefs) task.roadmapRefs = updates.roadmapRefs;
-      if (updates.links) task.links = updates.links;
+      if (updates.status) task.status = updates.status
+      if (updates.owner !== undefined) task.owner = updates.owner
+      if (updates.summary !== undefined) task.summary = updates.summary
+      if (updates.roadmapRefs) task.roadmapRefs = updates.roadmapRefs
+      if (updates.links) task.links = updates.links
 
       // Handle subState (Spec v1.1.0)
       if (updates.subState !== undefined) {
         if (updates.subState === null) {
-          delete task.subState;
+          delete task.subState
         } else {
           task.subState = {
             ...(task.subState || {}),
             ...updates.subState,
-          };
+          }
         }
       }
 
       // Handle blocker (Spec v1.1.0)
       if (updates.blocker !== undefined) {
         if (updates.blocker === null) {
-          delete task.blocker;
+          delete task.blocker
         } else {
-          task.blocker = updates.blocker;
+          task.blocker = updates.blocker
         }
       }
 
       // Update updatedAt
-      task.updatedAt = nowIso();
+      task.updatedAt = nowIso()
 
-      const normalizedTask = normalizeTask(task);
+      const normalizedTask = normalizeTask(task)
 
       // Save task incrementally
-      await upsertTaskInStore(tasksPath, normalizedTask);
-      await loadTasksDocumentWithOptions(governanceDir, true);
+      await upsertTaskInStore(tasksPath, normalizedTask)
+      await loadTasksDocumentWithOptions(governanceDir, true)
 
-      task.status = normalizedTask.status;
-      task.owner = normalizedTask.owner;
-      task.summary = normalizedTask.summary;
-      task.roadmapRefs = normalizedTask.roadmapRefs;
-      task.links = normalizedTask.links;
-      task.updatedAt = normalizedTask.updatedAt;
-      task.subState = normalizedTask.subState;
-      task.blocker = normalizedTask.blocker;
+      task.status = normalizedTask.status
+      task.owner = normalizedTask.owner
+      task.summary = normalizedTask.summary
+      task.roadmapRefs = normalizedTask.roadmapRefs
+      task.links = normalizedTask.links
+      task.updatedAt = normalizedTask.updatedAt
+      task.subState = normalizedTask.subState
+      task.blocker = normalizedTask.blocker
 
       // Build response
       const updateSummary = [
         `- projectPath: ${normalizedProjectPath}`,
         `- governanceDir: ${governanceDir}`,
+        `- tasksView: ${tasksViewPath}`,
+        `- roadmapView: ${roadmapViewPath}`,
         `- taskId: ${taskId}`,
         `- originalStatus: ${originalStatus}`,
         `- newStatus: ${task.status}`,
         `- updatedAt: ${task.updatedAt}`,
-      ];
+      ]
 
       if (task.subState) {
-        updateSummary.push(`- subState:`);
-        if (task.subState.phase) updateSummary.push(`  - phase: ${task.subState.phase}`);
-        if (typeof task.subState.confidence === "number") updateSummary.push(`  - confidence: ${task.subState.confidence}`);
-        if (task.subState.estimatedCompletion) updateSummary.push(`  - estimatedCompletion: ${task.subState.estimatedCompletion}`);
+        updateSummary.push('- subState:')
+        if (task.subState.phase) updateSummary.push(`  - phase: ${task.subState.phase}`)
+        if (typeof task.subState.confidence === 'number') updateSummary.push(`  - confidence: ${task.subState.confidence}`)
+        if (task.subState.estimatedCompletion) updateSummary.push(`  - estimatedCompletion: ${task.subState.estimatedCompletion}`)
       }
 
       if (task.blocker) {
-        updateSummary.push(`- blocker:`);
-        updateSummary.push(`  - type: ${task.blocker.type}`);
-        updateSummary.push(`  - description: ${task.blocker.description}`);
-        if (task.blocker.blockingEntity) updateSummary.push(`  - blockingEntity: ${task.blocker.blockingEntity}`);
-        if (task.blocker.unblockCondition) updateSummary.push(`  - unblockCondition: ${task.blocker.unblockCondition}`);
-        if (task.blocker.escalationPath) updateSummary.push(`  - escalationPath: ${task.blocker.escalationPath}`);
+        updateSummary.push('- blocker:')
+        updateSummary.push(`  - type: ${task.blocker.type}`)
+        updateSummary.push(`  - description: ${task.blocker.description}`)
+        if (task.blocker.blockingEntity) updateSummary.push(`  - blockingEntity: ${task.blocker.blockingEntity}`)
+        if (task.blocker.unblockCondition) updateSummary.push(`  - unblockCondition: ${task.blocker.unblockCondition}`)
+        if (task.blocker.escalationPath) updateSummary.push(`  - escalationPath: ${task.blocker.escalationPath}`)
       }
 
       const markdown = renderToolResponseMarkdown({
-        toolName: "taskUpdate",
+        toolName: 'taskUpdate',
         sections: [
           summarySection(updateSummary),
           evidenceSection([
-            "### Updated Task",
+            '### Updated Task',
             `- ${task.id} | ${task.status} | ${task.title}`,
-            `- owner: ${task.owner || "(none)"}`,
-            `- summary: ${task.summary || "(none)"}`,
-            "",
-            "### Update Details",
+            `- owner: ${task.owner || '(none)'}`,
+            `- summary: ${task.summary || '(none)'}`,
+            '',
+            '### Update Details',
             ...(updates.status ? [`- status: ${originalStatus} → ${updates.status}`] : []),
             ...(updates.owner !== undefined ? [`- owner: ${updates.owner}`] : []),
             ...(updates.summary !== undefined ? [`- summary: ${updates.summary}`] : []),
-            ...(updates.roadmapRefs ? [`- roadmapRefs: ${updates.roadmapRefs.join(", ")}`] : []),
-            ...(updates.links ? [`- links: ${updates.links.join(", ")}`] : []),
+            ...(updates.roadmapRefs ? [`- roadmapRefs: ${updates.roadmapRefs.join(', ')}`] : []),
+            ...(updates.links ? [`- links: ${updates.links.join(', ')}`] : []),
             ...(updates.subState ? [`- subState: ${JSON.stringify(updates.subState)}`] : []),
             ...(updates.blocker ? [`- blocker: ${JSON.stringify(updates.blocker)}`] : []),
           ]),
           guidanceSection([
-            "Task updated successfully and tasks.md has been synced. Run `taskContext` to verify the changes.",
-            "If status changed to DONE, ensure evidence links are added.",
-            "If subState or blocker were updated, verify the metadata is correct.",
-            ".projitive governance store is source of truth; tasks.md is a generated view and may be overwritten.",
+            'Task updated successfully and tasks.md has been synced. Run `taskContext` to verify the changes.',
+            'If status changed to DONE, ensure evidence links are added.',
+            'If subState or blocker were updated, verify the metadata is correct.',
+            '.projitive governance store is source of truth; tasks.md is a generated view and may be overwritten.',
           ]),
           lintSection([]),
-          nextCallSection(`taskContext(projectPath=\"${toProjectPath(governanceDir)}\", taskId=\"${taskId}\")`),
+          nextCallSection(`taskContext(projectPath="${toProjectPath(governanceDir)}", taskId="${taskId}")`),
         ],
-      });
+      })
 
-      return asText(markdown);
+      return asText(markdown)
     }
-  );
+  )
 }

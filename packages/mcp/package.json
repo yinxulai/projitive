@@ -1,6 +1,6 @@
 {
   "name": "@projitive/mcp",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "description": "Projitive MCP Server for project and task discovery/update",
   "license": "ISC",
   "author": "",
@@ -16,7 +16,9 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "benchmark": "vitest bench --run",
-    "lint": "tsc -p tsconfig.json --noEmit",
+    "lint": "npm run lint:types && npm run lint:eslint",
+    "lint:types": "tsc -p tsconfig.json --noEmit",
+    "lint:eslint": "eslint .",
     "build": "rm -rf output && tsc -p tsconfig.json",
     "prepublishOnly": "npm run build",
     "dev": "tsc -p tsconfig.json --watch"
@@ -31,8 +33,12 @@
   "devDependencies": {
     "@types/node": "^24.3.0",
     "@vitest/coverage-v8": "^3.2.4",
+    "@eslint/js": "^9.37.0",
+    "eslint": "^9.37.0",
+    "globals": "^16.4.0",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
+    "typescript-eslint": "^8.45.0",
     "vitest": "^3.2.4"
   }
 }
