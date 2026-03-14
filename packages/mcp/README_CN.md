@@ -21,6 +21,17 @@
 - 更清晰的证据链
 - 更稳定的多 Agent 推进
 
+## 使用后能达到的效果
+
+接入后，通常可以快速获得以下价值：
+
+- 在无可执行任务时，直接用 taskCreate/roadmapCreate 补齐执行入口，减少空转。
+- 任务与路线图状态可持续回查，减少多 Agent 协作中的状态漂移。
+- 通过标准闭环保持推进节奏，减少“做了很多但不可验证”的情况。
+- 新成员可按固定调用链快速进入稳定交付模式。
+
+重点：配合自主推进型 Agent，例如 OpenClaw 效果最佳！
+
 Projitive MCP Server 是一套面向 Agent 的治理执行接口，帮助你在项目中稳定完成：发现上下文、选择任务、读取证据、持续推进。
 
 ## 有什么用
@@ -73,7 +84,7 @@ MCP 客户端配置示例：
 ```mermaid
 flowchart LR
   A[taskNext / projectNext] --> B[taskContext / projectContext]
-  B --> C[更新 sqlite task/roadmap + docs]
+  B --> C[更新治理存储 task/roadmap + docs]
   C --> D[taskContext 回查]
   D --> E{还有可推进任务吗?}
   E -->|是| A
@@ -84,7 +95,7 @@ flowchart LR
 
 1. taskNext
 2. taskContext
-3. taskUpdate 和/或 roadmapUpdate
+3. taskCreate/taskUpdate 和/或 roadmapCreate/roadmapUpdate
 4. taskContext（回查）
 5. taskNext（继续下一轮）
 
@@ -126,9 +137,11 @@ sequenceDiagram
 | Task | taskList | 列任务 |
 | Task | taskNext | 选择最可执行任务 |
 | Task | taskContext | 单任务详情与证据定位 |
+| Task | taskCreate | 创建任务 |
 | Task | taskUpdate | 更新任务状态与元数据 |
 | Roadmap | roadmapList | 列路线图与关联任务 |
 | Roadmap | roadmapContext | 单路线图详情 |
+| Roadmap | roadmapCreate | 创建路线图里程碑 |
 | Roadmap | roadmapUpdate | 更新路线图里程碑 |
 
 ### Resources

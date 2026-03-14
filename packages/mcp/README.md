@@ -21,6 +21,17 @@ Why teams use it:
 - Better evidence traceability
 - More predictable multi-agent delivery
 
+## Outcomes You Can Expect
+
+After onboarding Projitive MCP, teams typically get these outcomes quickly:
+
+- Faster execution bootstrapping: create missing work items with taskCreate/roadmapCreate.
+- Better state integrity: task and roadmap transitions remain traceable and verifiable.
+- Stronger delivery continuity: discover -> execute -> verify -> reprioritize loops stay stable.
+- Easier adoption: new contributors follow a deterministic call sequence.
+
+Key point: best results come from autonomous execution agents such as OpenClaw.
+
 ## What It Is Useful For
 
 Projitive MCP helps agents move work forward in governed projects without losing traceability.
@@ -82,7 +93,7 @@ Recommended minimal sequence:
 
 1. taskNext
 2. taskContext
-3. taskUpdate and/or roadmapUpdate
+3. taskCreate/taskUpdate and/or roadmapCreate/roadmapUpdate
 4. taskContext
 5. taskNext
 
@@ -124,9 +135,11 @@ sequenceDiagram
 | Task | taskList | List tasks |
 | Task | taskNext | Select best actionable task |
 | Task | taskContext | Get task evidence and reading order |
+| Task | taskCreate | Create task |
 | Task | taskUpdate | Update task state and metadata |
 | Roadmap | roadmapList | List roadmaps and linked tasks |
 | Roadmap | roadmapContext | Get roadmap context |
+| Roadmap | roadmapCreate | Create roadmap milestone |
 | Roadmap | roadmapUpdate | Update roadmap milestone fields |
 
 ### Resources

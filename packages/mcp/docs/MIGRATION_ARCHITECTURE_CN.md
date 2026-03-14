@@ -2,7 +2,7 @@
 
 ## 1. 设计目标
 
-为 SQLite 治理库提供可持续的自动升级能力，确保：
+为 .projitive 治理存储提供可持续的自动升级能力，确保：
 
 - 新版本 MCP 启动时可自动识别并升级旧库。
 - 迁移过程具备幂等性、可回滚性、可审计性。
@@ -79,7 +79,7 @@ sequenceDiagram
     participant Tool as MCP Tool
     participant Store as ensureStore
     participant Runner as MigrationRunner
-    participant DB as SQLite
+    participant DB as Governance Store
 
     Tool->>Store: open governance store
     Store->>DB: read meta.store_schema_version

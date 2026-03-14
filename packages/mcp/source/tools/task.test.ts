@@ -187,7 +187,7 @@ describe("tasks module", () => {
     expect(guidanceA).toEqual(guidanceB);
   });
 
-  it("loads and saves tasks from sqlite and keeps newest-first order", async () => {
+  it("loads and saves tasks from governance store and keeps newest-first order", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "projitive-mcp-task-"));
     const governanceDir = path.join(root, ".projitive");
     await fs.mkdir(governanceDir, { recursive: true });
@@ -204,7 +204,7 @@ describe("tasks module", () => {
     expect(loaded.tasks[1].id).toBe("TASK-0001");
 
     const markdown = await fs.readFile(path.join(governanceDir, "tasks.md"), "utf-8");
-    expect(markdown).toContain("generated from .projitive sqlite tables");
+    expect(markdown).toContain("generated from .projitive governance store");
 
     await fs.rm(root, { recursive: true, force: true });
   });

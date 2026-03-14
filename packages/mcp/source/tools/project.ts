@@ -358,9 +358,11 @@ const DEFAULT_TOOL_TEMPLATE_NAMES = [
   "taskList",
   "taskNext",
   "taskContext",
+  "taskCreate",
   "taskUpdate",
   "roadmapList",
   "roadmapContext",
+  "roadmapCreate",
   "roadmapUpdate",
 ];
 
@@ -386,8 +388,8 @@ function defaultReadmeMarkdown(governanceDirName: string): string {
     `This directory (\`${governanceDirName}/\`) is the governance root for this project.`,
     "",
     "## Conventions",
-    "- Keep roadmap/task source of truth in .projitive sqlite tables.",
-    "- Treat roadmap.md/tasks.md as generated views from sqlite.",
+    "- Keep roadmap/task source of truth in .projitive governance store.",
+    "- Treat roadmap.md/tasks.md as generated views from governance store.",
     "- Keep IDs stable (TASK-xxxx / ROADMAP-xxxx).",
     "- Update report evidence before status transitions.",
   ].join("\n");
@@ -566,7 +568,7 @@ export function registerProjectTools(server: McpServer): void {
           ]),
           lintSection([
             "- After init, fill owner/roadmapRefs/links in .projitive task table before marking DONE.",
-            "- Keep task source-of-truth inside sqlite tables.",
+            "- Keep task source-of-truth inside .projitive governance store.",
           ]),
           nextCallSection(`projectContext(projectPath=\"${initialized.projectPath}\")`),
         ],
@@ -586,7 +588,8 @@ export function registerProjectTools(server: McpServer): void {
     async () => {
       const roots = resolveScanRoots();
       const depth = resolveScanDepth();
-      const projects = await discoverProjectsAcrossRoots(roots, depth);
+      const governanceDirs = await discoverProjectsAcrossRoots(roots, depth);
+      const projects = Array.from(new Set(governanceDirs.map((governanceDir) => toProjectPath(governanceDir)))).sort();
 
       const markdown = renderToolResponseMarkdown({
         toolName: "projectScan",
@@ -681,7 +684,7 @@ export function registerProjectTools(server: McpServer): void {
             "- rankedProjects:",
             ...ranked.map(
               (item, index) =>
-                `${index + 1}. ${item.governanceDir} | actionable=${item.actionable} | in_progress=${item.inProgress} | todo=${item.todo} | blocked=${item.blocked} | done=${item.done} | latest=${item.latestUpdatedAt}${item.tasksExists ? "" : " | store=missing"}`
+                `${index + 1}. ${toProjectPath(item.governanceDir)} | actionable=${item.actionable} | in_progress=${item.inProgress} | todo=${item.todo} | blocked=${item.blocked} | done=${item.done} | latest=${item.latestUpdatedAt}${item.tasksExists ? "" : " | store=missing"}`
             ),
           ]),
           guidanceSection([
@@ -736,7 +739,7 @@ export function registerProjectTools(server: McpServer): void {
     "syncViews",
     {
       title: "Sync Views",
-      description: "Materialize markdown views from .projitive sqlite tables (tasks.md / roadmap.md)",
+      description: "Materialize markdown views from .projitive governance store (tasks.md / roadmap.md)",
       inputSchema: {
         projectPath: z.string(),
         views: z.array(z.enum(["tasks", "roadmap"])) .optional(),
@@ -745,6 +748,7 @@ export function registerProjectTools(server: McpServer): void {
     },
     async ({ projectPath, views, force }) => {
       const governanceDir = await resolveGovernanceDir(projectPath);
+      const normalizedProjectPath = toProjectPath(governanceDir);
       const dbPath = path.join(governanceDir, PROJECT_MARKER);
       const selectedViews = views && views.length > 0
         ? Array.from(new Set(views))
@@ -777,6 +781,7 @@ export function registerProjectTools(server: McpServer): void {
         toolName: "syncViews",
         sections: [
           summarySection([
+            `- projectPath: ${normalizedProjectPath}`,
             `- governanceDir: ${governanceDir}`,
             `- views: ${selectedViews.join(", ")}`,
             `- force: ${forceSync ? "true" : "false"}`,
@@ -790,7 +795,7 @@ export function registerProjectTools(server: McpServer): void {
             "Routine workflows can rely on lazy sync and usually do not require force=true.",
           ]),
           lintSection([]),
-          nextCallSection(`projectContext(projectPath="${toProjectPath(governanceDir)}")`),
+          nextCallSection(`projectContext(projectPath="${normalizedProjectPath}")`),
         ],
       });
 

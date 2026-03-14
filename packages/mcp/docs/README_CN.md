@@ -4,15 +4,15 @@
 
 ## 核心语义（先读）
 
-- 数据唯一事实源是 `.projitive`（SQLite）。
-- `taskUpdate` / `roadmapUpdate` 写入 sqlite 表，而不是直接写 `tasks.md` / `roadmap.md`。
+- 数据唯一事实源是 `.projitive`（governance store）。
+- `taskCreate` / `taskUpdate` / `roadmapCreate` / `roadmapUpdate` 写入治理存储，而不是直接写 `tasks.md` / `roadmap.md`。
 - `tasks.md` / `roadmap.md` 是物化视图：默认按需惰性同步，也可通过 `syncViews` 立即同步。
 - 手工编辑 `tasks.md` / `roadmap.md` 不具备权威性，后续同步可能覆盖改动。
 
 ## 文档结构
 
 - `ARCHITECTURE_CN.md`
-  - 当前可运行架构（SQLite-first）
+  - 当前可运行架构（governance-store-first）
   - 模块职责、数据流、读写路径
   - 运行期约束与可观测性建议
 

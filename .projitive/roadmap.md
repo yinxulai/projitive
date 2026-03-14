@@ -1,6 +1,6 @@
 # Roadmap
 
-This file is generated from .projitive sqlite tables by Projitive MCP. Manual edits will be overwritten.
+This file is generated from .projitive governance store by Projitive MCP. Manual edits will be overwritten.
 
 ## Active Milestones
 - [ ] ROADMAP-0001: Phase 1 - validated by smoke (time: 2026-Q1)

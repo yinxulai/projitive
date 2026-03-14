@@ -83,6 +83,7 @@ function taskStatusGuidance(task: Task): string[] {
 
 const DEFAULT_NO_TASK_DISCOVERY_GUIDANCE = [
   "- Recheck project state first: run projectContext and confirm there is truly no TODO/IN_PROGRESS task to execute.",
+  "- Create new tasks via `taskCreate(...)` (do not edit tasks.md directly).",
   "- If all remaining tasks are BLOCKED, create one unblock task with explicit unblock condition and dependency owner.",
   "- Start from active roadmap milestones and split into the smallest executable slices with a single done condition each.",
   "- Prefer slices that unlock multiple downstream tasks before isolated refactors or low-impact cleanups.",
@@ -679,7 +680,7 @@ export function renderTasksMarkdown(tasks: Task[]): string {
   return [
     "# Tasks",
     "",
-    "This file is generated from .projitive sqlite tables by Projitive MCP. Manual edits will be overwritten.",
+    "This file is generated from .projitive governance store by Projitive MCP. Manual edits will be overwritten.",
     "",
     ...(sections.length > 0 ? sections : ["(no tasks)"]),
     "",
@@ -754,6 +755,7 @@ export function registerTaskTools(server: McpServer): void {
     },
     async ({ projectPath, status, limit }) => {
       const governanceDir = await resolveGovernanceDir(projectPath);
+      const normalizedProjectPath = toProjectPath(governanceDir);
       const { tasks } = await loadTasksDocument(governanceDir);
       const filtered = tasks
         .filter((task) => (status ? task.status === status : true))
@@ -774,6 +776,7 @@ export function registerTaskTools(server: McpServer): void {
         toolName: "taskList",
         sections: [
           summarySection([
+            `- projectPath: ${normalizedProjectPath}`,
             `- governanceDir: ${governanceDir}`,
             `- filter.status: ${status ?? "(none)"}`,
             `- returned: ${filtered.length}`,
@@ -787,6 +790,116 @@ export function registerTaskTools(server: McpServer): void {
           nextCallSection(nextTaskId
             ? `taskContext(projectPath=\"${toProjectPath(governanceDir)}\", taskId=\"${nextTaskId}\")`
             : undefined),
+        ],
+      });
+
+      return asText(markdown);
+    }
+  );
+
+  server.registerTool(
+    "taskCreate",
+    {
+      title: "Task Create",
+      description: "Create a new task in governance store with stable TASK-xxxx ID",
+      inputSchema: {
+        projectPath: z.string(),
+        taskId: z.string(),
+        title: z.string(),
+        status: z.enum(["TODO", "IN_PROGRESS", "BLOCKED", "DONE"]).optional(),
+        owner: z.string().optional(),
+        summary: z.string().optional(),
+        roadmapRefs: z.array(z.string()).optional(),
+        links: z.array(z.string()).optional(),
+        subState: z.object({
+          phase: z.enum(["discovery", "design", "implementation", "testing"]).optional(),
+          confidence: z.number().min(0).max(1).optional(),
+          estimatedCompletion: z.string().optional(),
+        }).optional(),
+        blocker: z.object({
+          type: z.enum(["internal_dependency", "external_dependency", "resource", "approval"]),
+          description: z.string(),
+          blockingEntity: z.string().optional(),
+          unblockCondition: z.string().optional(),
+          escalationPath: z.string().optional(),
+        }).optional(),
+      },
+    },
+    async ({ projectPath, taskId, title, status, owner, summary, roadmapRefs, links, subState, blocker }) => {
+      if (!isValidTaskId(taskId)) {
+        return {
+          ...asText(renderErrorMarkdown(
+            "taskCreate",
+            `Invalid task ID format: ${taskId}`,
+            ["expected format: TASK-0001", "retry with a valid task ID"],
+            `taskCreate(projectPath=\"${projectPath}\", taskId=\"TASK-0001\", title=\"Define executable objective\")`
+          )),
+          isError: true,
+        };
+      }
+
+      const governanceDir = await resolveGovernanceDir(projectPath);
+      const normalizedProjectPath = toProjectPath(governanceDir);
+      const { tasksPath, tasks } = await loadTasksDocument(governanceDir);
+      const duplicated = tasks.some((item) => item.id === taskId);
+
+      if (duplicated) {
+        return {
+          ...asText(renderErrorMarkdown(
+            "taskCreate",
+            `Task already exists: ${taskId}`,
+            ["task IDs must be unique", "use taskUpdate for existing tasks"],
+            `taskUpdate(projectPath=\"${normalizedProjectPath}\", taskId=\"${taskId}\", updates={...})`
+          )),
+          isError: true,
+        };
+      }
+
+      const createdTask = normalizeTask({
+        id: taskId,
+        title,
+        status: status ?? "TODO",
+        owner,
+        summary,
+        roadmapRefs,
+        links,
+        subState,
+        blocker,
+        updatedAt: nowIso(),
+      });
+
+      await upsertTaskInStore(tasksPath, createdTask);
+      await loadTasksDocumentWithOptions(governanceDir, true);
+
+      const lintSuggestions = [
+        ...collectSingleTaskLintSuggestions(createdTask),
+        ...(await collectTaskFileLintSuggestions(governanceDir, createdTask)),
+      ];
+
+      const markdown = renderToolResponseMarkdown({
+        toolName: "taskCreate",
+        sections: [
+          summarySection([
+            `- projectPath: ${normalizedProjectPath}`,
+            `- governanceDir: ${governanceDir}`,
+            `- taskId: ${createdTask.id}`,
+            `- status: ${createdTask.status}`,
+            `- owner: ${createdTask.owner || "(none)"}`,
+            `- updatedAt: ${createdTask.updatedAt}`,
+          ]),
+          evidenceSection([
+            "### Created Task",
+            `- ${createdTask.id} | ${createdTask.status} | ${createdTask.title}`,
+            `- summary: ${createdTask.summary || "(none)"}`,
+            `- roadmapRefs: ${createdTask.roadmapRefs.join(", ") || "(none)"}`,
+            `- links: ${createdTask.links.join(", ") || "(none)"}`,
+          ]),
+          guidanceSection([
+            "Task created in governance store successfully and tasks.md has been synced.",
+            "Run taskContext to verify references and lint guidance.",
+          ]),
+          lintSection(lintSuggestions),
+          nextCallSection(`taskContext(projectPath=\"${normalizedProjectPath}\", taskId=\"${createdTask.id}\")`),
         ],
       });
 
@@ -845,7 +958,7 @@ export function registerTaskTools(server: McpServer): void {
               "### Project Snapshots",
               ...(projectSnapshots.length > 0
                 ? projectSnapshots.map(
-                    (item, index) => `${index + 1}. ${item.governanceDir} | total=${item.total} | todo=${item.todo} | in_progress=${item.inProgress} | blocked=${item.blocked} | done=${item.done} | roadmapIds=${item.roadmapIds.join(", ") || "(none)"}`
+                    (item, index) => `${index + 1}. ${toProjectPath(item.governanceDir)} | total=${item.total} | todo=${item.todo} | in_progress=${item.inProgress} | blocked=${item.blocked} | done=${item.done} | roadmapIds=${item.roadmapIds.join(", ") || "(none)"}`
                   )
                 : ["- (none)"]),
               "",
@@ -854,6 +967,7 @@ export function registerTaskTools(server: McpServer): void {
             ]),
             guidanceSection([
               "- No TODO/IN_PROGRESS task is available.",
+              "- Create 1-3 new TODO tasks using `taskCreate(...)` from active roadmap slices.",
               "- Use no-task discovery checklist below to proactively find and create meaningful TODO tasks.",
               "- If roadmap has active milestones, analyze milestone intent and split into 1-3 executable TODO tasks.",
               "",
@@ -869,7 +983,7 @@ export function registerTaskTools(server: McpServer): void {
               "- Ensure each new task has stable TASK-xxxx ID and at least one roadmapRefs item.",
             ]),
             nextCallSection(preferredProject
-              ? `projectContext(projectPath=\"${toProjectPath(preferredProject.governanceDir)}\")`
+              ? `taskCreate(projectPath=\"${toProjectPath(preferredProject.governanceDir)}\", taskId=\"TASK-0001\", title=\"Create first executable slice\", roadmapRefs=[\"${preferredRoadmapRef}\"], summary=\"Derived from active roadmap milestone\")`
               : "projectScan()"),
           ],
         });
@@ -898,7 +1012,7 @@ export function registerTaskTools(server: McpServer): void {
             `- maxDepth: ${depth}`,
             `- matchedProjects: ${projects.length}`,
             `- actionableTasks: ${rankedCandidates.length}`,
-            `- selectedProject: ${selected.governanceDir}`,
+            `- selectedProject: ${toProjectPath(selected.governanceDir)}`,
             `- selectedTaskId: ${selected.task.id}`,
             `- selectedTaskStatus: ${selected.task.status}`,
           ]),
@@ -914,7 +1028,7 @@ export function registerTaskTools(server: McpServer): void {
             "### Top Candidates",
             ...rankedCandidates
               .slice(0, candidateLimit)
-              .map((item, index) => `${index + 1}. ${item.task.id} | ${item.task.status} | ${item.task.title} | project=${item.governanceDir} | projectScore=${item.projectScore} | latest=${item.projectLatestUpdatedAt}`),
+              .map((item, index) => `${index + 1}. ${item.task.id} | ${item.task.status} | ${item.task.title} | projectPath=${toProjectPath(item.governanceDir)} | projectScore=${item.projectScore} | latest=${item.projectLatestUpdatedAt}`),
             "",
             "### Selection Reason",
             "- Rank rule: projectScore DESC -> taskPriority DESC -> taskUpdatedAt DESC.",
@@ -969,6 +1083,7 @@ export function registerTaskTools(server: McpServer): void {
       }
 
       const governanceDir = await resolveGovernanceDir(projectPath);
+      const normalizedProjectPath = toProjectPath(governanceDir);
       const { markdownPath, tasks, markdown: tasksMarkdown } = await loadTasksDocument(governanceDir);
       const task = tasks.find((item) => item.id === taskId);
       if (!task) {
@@ -1001,6 +1116,7 @@ export function registerTaskTools(server: McpServer): void {
 
       // Build summary with subState and blocker info (v1.1.0)
       const summaryLines = [
+        `- projectPath: ${normalizedProjectPath}`,
         `- governanceDir: ${governanceDir}`,
         `- taskId: ${task.id}`,
         `- title: ${task.title}`,
@@ -1065,7 +1181,7 @@ export function registerTaskTools(server: McpServer): void {
             "",
             "- Verify whether current status and evidence are consistent.",
             ...taskStatusGuidance(task),
-            "- If updates are needed, use tool writes for sqlite source (`taskUpdate` / `roadmapUpdate`) and keep TASK IDs unchanged.",
+            "- If updates are needed, use tool writes for governance store (`taskUpdate` / `roadmapUpdate`) and keep TASK IDs unchanged.",
             "- After editing, re-run `taskContext` to verify references and context consistency.",
           ]),
           lintSection(lintSuggestions),
@@ -1121,6 +1237,7 @@ export function registerTaskTools(server: McpServer): void {
       }
 
       const governanceDir = await resolveGovernanceDir(projectPath);
+      const normalizedProjectPath = toProjectPath(governanceDir);
       const { tasksPath, tasks } = await loadTasksDocument(governanceDir);
       const taskIndex = tasks.findIndex((item) => item.id === taskId);
 
@@ -1187,6 +1304,7 @@ export function registerTaskTools(server: McpServer): void {
 
       // Save task incrementally
       await upsertTaskInStore(tasksPath, normalizedTask);
+      await loadTasksDocumentWithOptions(governanceDir, true);
 
       task.status = normalizedTask.status;
       task.owner = normalizedTask.owner;
@@ -1199,6 +1317,8 @@ export function registerTaskTools(server: McpServer): void {
 
       // Build response
       const updateSummary = [
+        `- projectPath: ${normalizedProjectPath}`,
+        `- governanceDir: ${governanceDir}`,
         `- taskId: ${taskId}`,
         `- originalStatus: ${originalStatus}`,
         `- newStatus: ${task.status}`,
@@ -1241,11 +1361,10 @@ export function registerTaskTools(server: McpServer): void {
             ...(updates.blocker ? [`- blocker: ${JSON.stringify(updates.blocker)}`] : []),
           ]),
           guidanceSection([
-            "Task updated successfully. Run `taskContext` to verify the changes.",
+            "Task updated successfully and tasks.md has been synced. Run `taskContext` to verify the changes.",
             "If status changed to DONE, ensure evidence links are added.",
             "If subState or blocker were updated, verify the metadata is correct.",
-            "SQLite is source of truth; tasks.md is a generated view and may be overwritten.",
-            "Call `syncViews(projectPath=..., views=[\"tasks\"], force=true)` when immediate markdown materialization is required.",
+            ".projitive governance store is source of truth; tasks.md is a generated view and may be overwritten.",
           ]),
           lintSection([]),
           nextCallSection(`taskContext(projectPath=\"${toProjectPath(governanceDir)}\", taskId=\"${taskId}\")`),

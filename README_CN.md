@@ -25,6 +25,17 @@ Projitive 是一套面向 Agent 交付的治理模型与 MCP 工具链。
 - 更清晰的证据链
 - 更稳定的多 Agent 推进流程
 
+## 使用后能达到的效果
+
+接入后，团队通常会在第一个迭代周期内获得以下收益：
+
+- 新任务识别和创建更快：无可执行任务时可直接通过 taskCreate/roadmapCreate 补齐执行入口。
+- 状态一致性更高：任务与路线图状态变更可回查、可验证、可追踪。
+- 交付节奏更稳定：发现 -> 执行 -> 验证 -> 再排序形成可持续闭环。
+- 上手门槛更低：新成员可按固定调用序列快速进入稳定执行流。
+
+重点：配合自主推进型 Agent，例如 OpenClaw 效果最佳！
+
 ## 它解决什么问题
 
 多数 Agent 流程的问题不在“不会编码”，而在“无法长期稳定推进项目状态”。
@@ -52,7 +63,7 @@ flowchart LR
 
 1. taskNext
 2. taskContext
-3. taskUpdate 和/或 roadmapUpdate
+3. taskCreate/taskUpdate 和/或 roadmapCreate/roadmapUpdate
 4. taskContext
 5. taskNext
 

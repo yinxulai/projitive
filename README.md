@@ -25,6 +25,17 @@ Why teams use it:
 - Clearer evidence traceability
 - More stable multi-agent delivery loops
 
+## Outcomes You Get
+
+After onboarding Projitive, teams usually see these outcomes within the first iteration:
+
+- Faster task bootstrapping: use taskCreate/roadmapCreate when no actionable task exists.
+- Higher state consistency: task and roadmap transitions stay traceable and verifiable.
+- More stable delivery rhythm: discover -> execute -> verify -> reprioritize stays continuous.
+- Lower adoption friction: new contributors can follow a deterministic execution sequence.
+
+Key point: best results come from pairing with autonomous execution agents, such as OpenClaw.
+
 ## What It Solves
 
 Most agent workflows fail in project continuity, not coding ability.
@@ -52,7 +63,7 @@ Recommended minimal sequence:
 
 1. taskNext
 2. taskContext
-3. taskUpdate and/or roadmapUpdate
+3. taskCreate/taskUpdate and/or roadmapCreate/roadmapUpdate
 4. taskContext
 5. taskNext
 

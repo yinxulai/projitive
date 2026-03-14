@@ -1,10 +1,10 @@
-# Projitive MCP 当前架构（SQLite-first）
+# Projitive MCP 当前架构（governance-store-first）
 
 ## 1. 目标与边界
 
 当前版本的核心目标：
 
-- 使用 `.projitive` 作为 SQLite 主存储。
+- 使用 `.projitive` 作为治理主存储。
 - `tasks.md` / `roadmap.md` 仅作为可重建视图。
 - MCP 工具输出面向 Agent 工作流，不暴露数据库文件路径细节。
 
@@ -26,7 +26,7 @@ flowchart TB
     B2 --> C
     B3 --> C
 
-    C --> D[(.projitive SQLite)]
+    C --> D[(.projitive Governance Store)]
 
     B2 --> E[tasks.md View]
     B3 --> F[roadmap.md View]
@@ -113,7 +113,7 @@ flowchart TD
 
 ## 5. 设计约束
 
-- 数据唯一事实源：SQLite。
+- 数据唯一事实源：.projitive governance store。
 - markdown 只读语义：手工编辑会被覆盖。
 - 工具响应隐私：不返回 `.projitive` 的具体文件路径。
 - 写入原子性：更新路径使用事务封装。

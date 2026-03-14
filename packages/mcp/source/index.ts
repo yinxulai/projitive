@@ -25,7 +25,7 @@ const MCP_RUNTIME_VERSION = typeof packageJson.version === "string" && packageJs
 const server = new McpServer({
   name: "projitive",
   version: MCP_RUNTIME_VERSION,
-  description: "Semantic Projitive MCP for project/task discovery and agent guidance with sqlite-first governance outputs",
+  description: "Semantic Projitive MCP for project/task discovery and agent guidance with governance-store-first outputs",
 })
 
 // 注册所有模块

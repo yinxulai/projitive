@@ -1,6 +1,6 @@
 # Tasks
 
-This file is generated from .projitive sqlite tables by Projitive MCP. Manual edits will be overwritten.
+This file is generated from .projitive governance store by Projitive MCP. Manual edits will be overwritten.
 
 ## TASK-0024 | DONE | Plan Spec v1.2.0 Features
 - owner: ai-copilot

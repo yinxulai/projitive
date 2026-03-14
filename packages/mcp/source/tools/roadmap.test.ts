@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest"
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest"
 import fs from "node:fs/promises"
 import path from "node:path"
 import os from "node:os"
-import { isValidRoadmapId, collectRoadmapLintSuggestions, loadRoadmapDocument, renderRoadmapMarkdown } from "./roadmap.js"
+import { isValidRoadmapId, collectRoadmapLintSuggestions, loadRoadmapDocument, renderRoadmapMarkdown, registerRoadmapTools } from "./roadmap.js"
 
 describe("roadmap module", () => {
   let tempDir: string
@@ -54,7 +54,7 @@ describe("roadmap module", () => {
       expect(suggestions.some(s => s.includes("TASK_REFS_EMPTY"))).toBe(true)
     })
 
-    it("loads from sqlite and rewrites roadmap markdown view", async () => {
+    it("loads from governance store and rewrites roadmap markdown view", async () => {
       const governanceDir = path.join(tempDir, ".projitive-db")
       await fs.mkdir(governanceDir, { recursive: true })
       await fs.writeFile(path.join(governanceDir, ".projitive"), "", "utf-8")
@@ -64,7 +64,7 @@ describe("roadmap module", () => {
       expect(doc.markdownPath.endsWith("roadmap.md")).toBe(true)
 
       const markdown = await fs.readFile(path.join(governanceDir, "roadmap.md"), "utf-8")
-      expect(markdown).toContain("generated from .projitive sqlite tables")
+      expect(markdown).toContain("generated from .projitive governance store")
     })
 
     it("renders milestones in newest-first order", () => {
@@ -75,6 +75,17 @@ describe("roadmap module", () => {
 
       expect(markdown.indexOf("ROADMAP-0002")).toBeLessThan(markdown.indexOf("ROADMAP-0001"))
       expect(markdown).toContain("[x] ROADMAP-0002")
+    })
+
+    it("registers roadmapCreate tool", () => {
+      const mockServer = {
+        registerTool: (..._args: any[]) => undefined,
+      }
+      const spy = vi.spyOn(mockServer, "registerTool")
+
+      registerRoadmapTools(mockServer as any)
+
+      expect(spy.mock.calls.some((call) => call[0] === "roadmapCreate")).toBe(true)
     })
   })
 })

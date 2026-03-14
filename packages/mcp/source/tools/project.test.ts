@@ -428,5 +428,34 @@ describe("projitive module", () => {
       expect(() => registerProjectTools(mockServer as any)).not.toThrow();
       expect(mockServer.registerTool).toHaveBeenCalled();
     });
+
+    it("projectScan lists project root paths instead of governance directories", async () => {
+      const root = await createTempDir();
+      const projectRoot = path.join(root, "app");
+      const governanceDir = path.join(projectRoot, ".projitive");
+      const templateDir = await createTempDir();
+      await fs.mkdir(governanceDir, { recursive: true });
+      await fs.writeFile(path.join(governanceDir, ".projitive"), "", "utf-8");
+
+      vi.stubEnv("PROJITIVE_SCAN_ROOT_PATHS", root);
+      vi.stubEnv("PROJITIVE_SCAN_MAX_DEPTH", "3");
+      vi.stubEnv("PROJITIVE_MESSAGE_TEMPLATE_PATH", templateDir);
+
+      const mockServer = {
+        registerTool: vi.fn(),
+      };
+
+      registerProjectTools(mockServer as any);
+
+      const projectScanCall = mockServer.registerTool.mock.calls.find((call) => call[0] === "projectScan");
+      expect(projectScanCall).toBeTruthy();
+
+      const projectScanHandler = projectScanCall?.[2] as () => Promise<{ content: { type: "text"; text: string }[] }>;
+      const result = await projectScanHandler();
+      const markdown = result.content[0]?.text ?? "";
+
+      expect(markdown).toContain(`1. ${projectRoot}`);
+      expect(markdown).not.toContain(`1. ${governanceDir}`);
+    });
   });
 });
