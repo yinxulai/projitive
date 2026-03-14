@@ -1,7 +1,5 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import initSqlJs from "sql.js";
-import type { SqlJsStatic } from "sql.js";
 import type { BlockerMetadata, RoadmapMilestone, SubStateMetadata, Task, TaskStatus } from "../types.js";
 
 type StoredTask = Task & { recordVersion: number };
@@ -45,8 +43,6 @@ type JsonStore = {
 };
 
 const STORE_SCHEMA_VERSION = 3;
-const SQL_HEADER = Buffer.from("SQLite format 3\0", "utf8");
-const sqlRuntimePromise: Promise<SqlJsStatic> = initSqlJs();
 const storeCache = new Map<string, JsonStore>();
 const storeLocks = new Map<string, Promise<void>>();
 
@@ -97,17 +93,6 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-function parseJsonOr<T>(raw: unknown, fallback: T): T {
-  if (typeof raw !== "string" || raw.trim().length === 0) {
-    return fallback;
-  }
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
-}
-
 function normalizeTaskStatus(status: string): TaskStatus {
   if (status === "IN_PROGRESS" || status === "BLOCKED" || status === "DONE") {
     return status;
@@ -117,13 +102,6 @@ function normalizeTaskStatus(status: string): TaskStatus {
 
 function normalizeRoadmapStatus(status: string): "active" | "done" {
   return status === "done" ? "done" : "active";
-}
-
-function isSqliteBuffer(data: Buffer): boolean {
-  if (data.length < SQL_HEADER.length) {
-    return false;
-  }
-  return data.subarray(0, SQL_HEADER.length).equals(SQL_HEADER);
 }
 
 function normalizeStore(input: Partial<JsonStore>): JsonStore {
@@ -197,112 +175,6 @@ function normalizeStore(input: Partial<JsonStore>): JsonStore {
   };
 }
 
-async function migrateSqliteToJson(data: Buffer): Promise<JsonStore> {
-  const SQL = await sqlRuntimePromise;
-  const db = new SQL.Database(new Uint8Array(data));
-
-  try {
-    const tasksResult = db.exec(`
-      SELECT id, title, status, owner, summary, updated_at, links_json, roadmap_refs_json, sub_state_json, blocker_json, COALESCE(record_version, 1)
-      FROM tasks
-    `);
-
-    const roadmapsResult = db.exec(`
-      SELECT id, title, status, time, updated_at, COALESCE(record_version, 1)
-      FROM roadmaps
-    `);
-
-    const metaResult = db.exec(`
-      SELECT key, value
-      FROM meta
-      WHERE key IN ('tasks_version', 'roadmaps_version', 'store_schema_version')
-    `);
-
-    const viewStateResult = db.exec(`
-      SELECT name, dirty, last_source_version, last_built_at, COALESCE(record_version, 1)
-      FROM view_state
-      WHERE name IN ('tasks_markdown', 'roadmaps_markdown')
-    `);
-
-    const tasks: StoredTask[] = (tasksResult[0]?.values as unknown[][] | undefined)?.map((row) => ({
-      id: String(row[0]),
-      title: String(row[1]),
-      status: normalizeTaskStatus(String(row[2])),
-      owner: String(row[3]),
-      summary: String(row[4]),
-      updatedAt: String(row[5]),
-      links: parseJsonOr<string[]>(row[6], []),
-      roadmapRefs: parseJsonOr<string[]>(row[7], []),
-      subState: parseJsonOr<SubStateMetadata | undefined>(row[8], undefined),
-      blocker: parseJsonOr<BlockerMetadata | undefined>(row[9], undefined),
-      recordVersion: Number(row[10]) || 1,
-    })) ?? [];
-
-    const roadmaps: StoredRoadmap[] = (roadmapsResult[0]?.values as unknown[][] | undefined)?.map((row) => ({
-      id: String(row[0]),
-      title: String(row[1]),
-      status: normalizeRoadmapStatus(String(row[2])),
-      time: row[3] == null ? undefined : String(row[3]),
-      updatedAt: String(row[4]),
-      recordVersion: Number(row[5]) || 1,
-    })) ?? [];
-
-    const meta = defaultStore().meta;
-    const metaRows = (metaResult[0]?.values as unknown[][] | undefined) ?? [];
-    for (const row of metaRows) {
-      const key = String(row[0]);
-      const value = Number.parseInt(String(row[1]), 10);
-      if (!Number.isFinite(value)) {
-        continue;
-      }
-      if (key === "tasks_version") meta.tasks_version = value;
-      if (key === "roadmaps_version") meta.roadmaps_version = value;
-      if (key === "store_schema_version") meta.store_schema_version = value;
-    }
-
-    const tasksView = defaultViewState("tasks_markdown");
-    const roadmapsView = defaultViewState("roadmaps_markdown");
-    const viewRows = (viewStateResult[0]?.values as unknown[][] | undefined) ?? [];
-    for (const row of viewRows) {
-      const name = String(row[0]);
-      const dirty = Number(row[1]) === 1;
-      const lastSourceVersion = Number(row[2]) || 0;
-      const lastBuiltAt = String(row[3] ?? "");
-      const recordVersion = Number(row[4]) || 1;
-      if (name === "tasks_markdown") {
-        tasksView.dirty = dirty;
-        tasksView.lastSourceVersion = lastSourceVersion;
-        tasksView.lastBuiltAt = lastBuiltAt;
-        tasksView.recordVersion = recordVersion;
-      }
-      if (name === "roadmaps_markdown") {
-        roadmapsView.dirty = dirty;
-        roadmapsView.lastSourceVersion = lastSourceVersion;
-        roadmapsView.lastBuiltAt = lastBuiltAt;
-        roadmapsView.recordVersion = recordVersion;
-      }
-    }
-
-    return normalizeStore({
-      schema: "projitive-json-store",
-      tasks,
-      roadmaps,
-      meta: {
-        tasks_version: meta.tasks_version,
-        roadmaps_version: meta.roadmaps_version,
-        store_schema_version: STORE_SCHEMA_VERSION,
-      },
-      view_state: {
-        tasks_markdown: tasksView,
-        roadmaps_markdown: roadmapsView,
-      },
-      migration_history: [],
-    });
-  } finally {
-    db.close();
-  }
-}
-
 async function persistStore(dbPath: string, store: JsonStore): Promise<void> {
   await fs.mkdir(path.dirname(dbPath), { recursive: true });
   const tempPath = `${dbPath}.tmp-${process.pid}-${Date.now()}`;
@@ -315,11 +187,6 @@ async function loadStoreFromDisk(dbPath: string): Promise<{ store: JsonStore; sh
   const file = await fs.readFile(dbPath).catch(() => undefined);
   if (!file || file.length === 0) {
     return { store: defaultStore(), shouldPersist: true };
-  }
-
-  if (isSqliteBuffer(file)) {
-    const migrated = await migrateSqliteToJson(file);
-    return { store: migrated, shouldPersist: true };
   }
 
   const text = file.toString("utf8").trim();
