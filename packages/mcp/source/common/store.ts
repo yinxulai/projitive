@@ -1,6 +1,5 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import duckdb from "@duckdb/node-api";
 import initSqlJs from "sql.js";
 import type { SqlJsStatic } from "sql.js";
 import type { BlockerMetadata, RoadmapMilestone, SubStateMetadata, Task, TaskStatus } from "../types.js";
@@ -50,7 +49,6 @@ const SQL_HEADER = Buffer.from("SQLite format 3\0", "utf8");
 const sqlRuntimePromise: Promise<SqlJsStatic> = initSqlJs();
 const storeCache = new Map<string, JsonStore>();
 const storeLocks = new Map<string, Promise<void>>();
-let duckdbConnectionPromise: Promise<duckdb.DuckDBConnection> | undefined;
 
 export type MarkdownViewState = {
   dirty: boolean;
@@ -424,136 +422,6 @@ function normalizeStatusForSort(status: string): number {
   return 0;
 }
 
-async function getDuckdbConnection(): Promise<duckdb.DuckDBConnection> {
-  if (!duckdbConnectionPromise) {
-    duckdbConnectionPromise = (async () => {
-      const instance = await duckdb.DuckDBInstance.create(":memory:");
-      return instance.connect();
-    })();
-  }
-  return duckdbConnectionPromise;
-}
-
-function normalizeStoredTaskLike(raw: unknown): StoredTask | null {
-  if (!raw || typeof raw !== "object") {
-    return null;
-  }
-
-  const value = raw as Record<string, unknown>;
-  const id = value.id;
-  const title = value.title;
-  if (typeof id !== "string" || typeof title !== "string") {
-    return null;
-  }
-
-  const statusRaw = typeof value.status === "string" ? value.status : "TODO";
-  const owner = typeof value.owner === "string" ? value.owner : "";
-  const summary = typeof value.summary === "string" ? value.summary : "";
-  const updatedAt = typeof value.updatedAt === "string"
-    ? value.updatedAt
-    : (typeof value.updated_at === "string" ? value.updated_at : nowIso());
-
-  const links = Array.isArray(value.links) ? value.links.map((item) => String(item)) : [];
-  const roadmapRefs = Array.isArray(value.roadmapRefs)
-    ? value.roadmapRefs.map((item) => String(item))
-    : (Array.isArray(value.roadmap_refs) ? value.roadmap_refs.map((item) => String(item)) : []);
-
-  const recordVersionRaw = value.recordVersion ?? value.record_version;
-  const recordVersion = Number.isFinite(Number(recordVersionRaw)) ? Number(recordVersionRaw) : 1;
-
-  return {
-    id,
-    title,
-    status: normalizeTaskStatus(statusRaw),
-    owner,
-    summary,
-    updatedAt,
-    links,
-    roadmapRefs,
-    subState: value.subState as SubStateMetadata | undefined,
-    blocker: value.blocker as BlockerMetadata | undefined,
-    recordVersion,
-  };
-}
-
-function normalizeStoredRoadmapLike(raw: unknown): StoredRoadmap | null {
-  if (!raw || typeof raw !== "object") {
-    return null;
-  }
-
-  const value = raw as Record<string, unknown>;
-  const id = value.id;
-  const title = value.title;
-  if (typeof id !== "string" || typeof title !== "string") {
-    return null;
-  }
-
-  const statusRaw = typeof value.status === "string" ? value.status : "active";
-  const time = typeof value.time === "string" ? value.time : undefined;
-  const updatedAt = typeof value.updatedAt === "string"
-    ? value.updatedAt
-    : (typeof value.updated_at === "string" ? value.updated_at : nowIso());
-  const recordVersionRaw = value.recordVersion ?? value.record_version;
-  const recordVersion = Number.isFinite(Number(recordVersionRaw)) ? Number(recordVersionRaw) : 1;
-
-  return {
-    id,
-    title,
-    status: normalizeRoadmapStatus(statusRaw),
-    time,
-    updatedAt,
-    recordVersion,
-  };
-}
-
-async function runDuckdbQuery<T>(sql: string): Promise<T | undefined> {
-  try {
-    const connection = await getDuckdbConnection();
-    const result = await connection.run(sql);
-    const rows = await result.getRowObjectsJS();
-    if (!rows || rows.length === 0) {
-      return undefined;
-    }
-    return rows as T;
-  } catch {
-    return undefined;
-  }
-}
-
-async function loadTasksFromDuckdb(dbPath: string): Promise<StoredTask[] | undefined> {
-  const sql = `SELECT tasks FROM read_json_auto('${dbPath.replace(/'/g, "''")}') LIMIT 1;`;
-  const rows = await runDuckdbQuery<Array<{ tasks?: unknown }>>(sql);
-  if (!rows || rows.length === 0) {
-    return undefined;
-  }
-
-  const rawTasks = rows[0]?.tasks;
-  if (!Array.isArray(rawTasks)) {
-    return undefined;
-  }
-
-  return rawTasks
-    .map((item) => normalizeStoredTaskLike(item))
-    .filter((item): item is StoredTask => item != null);
-}
-
-async function loadRoadmapsFromDuckdb(dbPath: string): Promise<StoredRoadmap[] | undefined> {
-  const sql = `SELECT roadmaps FROM read_json_auto('${dbPath.replace(/'/g, "''")}') LIMIT 1;`;
-  const rows = await runDuckdbQuery<Array<{ roadmaps?: unknown }>>(sql);
-  if (!rows || rows.length === 0) {
-    return undefined;
-  }
-
-  const rawRoadmaps = rows[0]?.roadmaps;
-  if (!Array.isArray(rawRoadmaps)) {
-    return undefined;
-  }
-
-  return rawRoadmaps
-    .map((item) => normalizeStoredRoadmapLike(item))
-    .filter((item): item is StoredRoadmap => item != null);
-}
-
 export async function ensureStore(dbPath: string): Promise<void> {
   await openStore(dbPath);
 }
@@ -604,11 +472,8 @@ export async function markMarkdownViewDirty(
 }
 
 export async function loadTasksFromStore(dbPath: string): Promise<Task[]> {
-  const tasksFromDuckdb = await loadTasksFromDuckdb(dbPath);
-  if (!tasksFromDuckdb) {
-    throw new Error("DuckDB task query failed");
-  }
-  return tasksFromDuckdb.map(toPublicTask);
+  const store = await openStore(dbPath);
+  return store.tasks.map(toPublicTask);
 }
 
 export async function loadTaskStatusStatsFromStore(dbPath: string): Promise<TaskStatusStats> {
@@ -692,11 +557,8 @@ export async function replaceTasksInStore(dbPath: string, tasks: Task[]): Promis
 }
 
 export async function loadRoadmapsFromStore(dbPath: string): Promise<RoadmapMilestone[]> {
-  const roadmapsFromDuckdb = await loadRoadmapsFromDuckdb(dbPath);
-  if (!roadmapsFromDuckdb) {
-    throw new Error("DuckDB roadmap query failed");
-  }
-  return roadmapsFromDuckdb.map(toPublicRoadmap);
+  const store = await openStore(dbPath);
+  return store.roadmaps.map(toPublicRoadmap);
 }
 
 export async function loadRoadmapIdsFromStore(dbPath: string): Promise<string[]> {
