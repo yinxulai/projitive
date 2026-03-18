@@ -15,6 +15,8 @@ describe('taskExecution prompt', () => {
     expect((server.registerPrompt as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe('taskExecution')
     expect(text).toContain('1) Run taskContext(projectPath="/workspace/app", taskId="TASK-0007").')
     expect(text).toContain('Every status transition must have report evidence')
+    expect(text).toContain('Pre-Execution Research Brief (Mandatory Gate)')
+    expect(text).toContain('designs/research/<TASK-ID>.implementation-research.md')
   })
 
   it('falls back to taskNext when task is not provided', async () => {
@@ -28,5 +30,7 @@ describe('taskExecution prompt', () => {
 
     expect(text).toContain('1) Run taskNext().')
     expect(text).toContain('Governance-store-first writes only')
+    expect(text).toContain('TODO -> IN_PROGRESS')
+    expect(text).toContain('research brief is READY')
   })
 })

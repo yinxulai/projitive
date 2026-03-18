@@ -348,6 +348,272 @@ describe('tasks module', () => {
     expect(contextResult.content[0].text).toContain(`roadmapView: ${path.join(governanceDir, 'roadmap.md')}`)
     expect(contextResult.content[0].text).toContain('### Reference Locations')
     expect(contextResult.content[0].text).toContain('README.md')
+    expect(contextResult.content[0].text).toContain('### Pre-Execution Research Brief')
+    expect(contextResult.content[0].text).toContain('researchBriefStatus: MISSING')
+    expect(contextResult.content[0].text).toContain('designs/research/TASK-0001.implementation-research.md')
+    expect(contextResult.content[0].text).toContain('architectureDocsStatus: MISSING')
+    expect(contextResult.content[0].text).toContain('styleDocsStatus: MISSING')
+    expect(contextResult.content[0].text).toContain('Project context docs gate is NOT satisfied')
+    expect(contextResult.content[0].text).toContain('PROJECT_ARCHITECTURE_DOC_MISSING')
+    expect(contextResult.content[0].text).toContain('PROJECT_STYLE_DOC_MISSING')
+
+    await fs.rm(projectRoot, { recursive: true, force: true })
+  })
+
+  it('taskUpdate blocks TODO -> IN_PROGRESS when research brief is missing', async () => {
+    const { projectRoot, dbPath } = await createGovernanceWorkspace()
+    await replaceRoadmapsInStore(dbPath, [
+      { id: 'ROADMAP-0001', title: 'Bootstrap', status: 'active', updatedAt: '2026-03-14T00:00:00.000Z' },
+    ])
+    await saveTasks(dbPath, [
+      normalizeTask({ id: 'TASK-0001', title: 'gate test', status: 'TODO', roadmapRefs: ['ROADMAP-0001'] }),
+    ])
+
+    const mockServer = { registerTool: vi.fn() } as unknown as McpServer & { registerTool: ReturnType<typeof vi.fn> }
+    registerTaskTools(mockServer)
+
+    const taskUpdate = getToolHandler(mockServer, 'taskUpdate')
+    const result = await taskUpdate({
+      projectPath: projectRoot,
+      taskId: 'TASK-0001',
+      updates: { status: 'IN_PROGRESS' },
+    })
+
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toContain('Pre-execution research brief gate failed')
+    expect(result.content[0].text).toContain('designs/research/TASK-0001.implementation-research.md')
+
+    await fs.rm(projectRoot, { recursive: true, force: true })
+  })
+
+  it('taskUpdate allows TODO -> IN_PROGRESS when research brief is ready', async () => {
+    const { projectRoot, dbPath } = await createGovernanceWorkspace()
+    await replaceRoadmapsInStore(dbPath, [
+      { id: 'ROADMAP-0001', title: 'Bootstrap', status: 'active', updatedAt: '2026-03-14T00:00:00.000Z' },
+    ])
+    await saveTasks(dbPath, [
+      normalizeTask({ id: 'TASK-0001', title: 'gate test pass', status: 'TODO', roadmapRefs: ['ROADMAP-0001'] }),
+    ])
+
+    const researchDir = path.join(projectRoot, 'designs', 'research')
+    await fs.mkdir(researchDir, { recursive: true })
+    await fs.writeFile(
+      path.join(researchDir, 'TASK-0001.implementation-research.md'),
+      [
+        '# TASK-0001 Implementation Research Brief',
+        '',
+        '## Design Guidelines and Specs',
+        '- designs/PROJITIVE.md#L10-L20',
+        '',
+        '## Code Architecture and Implementation Findings',
+        '- packages/mcp/source/tools/task.ts#L1-L50',
+      ].join('\n'),
+      'utf-8'
+    )
+
+    const mockServer = { registerTool: vi.fn() } as unknown as McpServer & { registerTool: ReturnType<typeof vi.fn> }
+    registerTaskTools(mockServer)
+
+    const taskUpdate = getToolHandler(mockServer, 'taskUpdate')
+    const result = await taskUpdate({
+      projectPath: projectRoot,
+      taskId: 'TASK-0001',
+      updates: { status: 'IN_PROGRESS' },
+    })
+
+    expect(result.isError).toBeUndefined()
+    expect(result.content[0].text).toContain('newStatus: IN_PROGRESS')
+
+    await fs.rm(projectRoot, { recursive: true, force: true })
+  })
+
+  it('taskContext requires project core docs under designs/core (docs outside core do not satisfy)', async () => {
+    const { projectRoot, dbPath } = await createGovernanceWorkspace()
+    await replaceRoadmapsInStore(dbPath, [
+      { id: 'ROADMAP-0001', title: 'Roadmap', status: 'active', updatedAt: '2026-03-14T00:00:00.000Z' },
+    ])
+    await saveTasks(dbPath, [
+      normalizeTask({ id: 'TASK-0001', title: 'core docs rule', status: 'TODO', roadmapRefs: ['ROADMAP-0001'] }),
+    ])
+
+    await fs.mkdir(path.join(projectRoot, 'designs'), { recursive: true })
+    await fs.writeFile(path.join(projectRoot, 'designs', 'architecture.md'), '# Architecture\n', 'utf-8')
+    await fs.writeFile(path.join(projectRoot, 'designs', 'style-guide.md'), '# Style\n', 'utf-8')
+
+    const mockServer = { registerTool: vi.fn() } as unknown as McpServer & { registerTool: ReturnType<typeof vi.fn> }
+    registerTaskTools(mockServer)
+
+    const taskContext = getToolHandler(mockServer, 'taskContext')
+    const contextResult = await taskContext({ projectPath: projectRoot, taskId: 'TASK-0001' })
+
+    expect(contextResult.content[0].text).toContain('architectureDocsStatus: MISSING')
+    expect(contextResult.content[0].text).toContain('styleDocsStatus: MISSING')
+    expect(contextResult.content[0].text).toContain('designs/core/architecture.md')
+    expect(contextResult.content[0].text).toContain('PROJECT_ARCHITECTURE_DOC_MISSING')
+    expect(contextResult.content[0].text).toContain('PROJECT_STYLE_DOC_MISSING')
+
+    await fs.rm(projectRoot, { recursive: true, force: true })
+  })
+
+  it('taskContext marks project core docs ready when architecture/style docs exist under designs/core', async () => {
+    const { projectRoot, governanceDir, dbPath } = await createGovernanceWorkspace()
+    await replaceRoadmapsInStore(dbPath, [
+      { id: 'ROADMAP-0001', title: 'Roadmap', status: 'active', updatedAt: '2026-03-14T00:00:00.000Z' },
+    ])
+    await saveTasks(dbPath, [
+      normalizeTask({ id: 'TASK-0001', title: 'core docs ready', status: 'TODO', roadmapRefs: ['ROADMAP-0001'] }),
+    ])
+
+    const coreDir = path.join(governanceDir, 'designs', 'core')
+    await fs.mkdir(coreDir, { recursive: true })
+    await fs.writeFile(path.join(coreDir, 'architecture.md'), '# Architecture\n', 'utf-8')
+    await fs.writeFile(path.join(coreDir, 'style-guide.md'), '# Style\n', 'utf-8')
+
+    const mockServer = { registerTool: vi.fn() } as unknown as McpServer & { registerTool: ReturnType<typeof vi.fn> }
+    registerTaskTools(mockServer)
+
+    const taskContext = getToolHandler(mockServer, 'taskContext')
+    const contextResult = await taskContext({ projectPath: projectRoot, taskId: 'TASK-0001' })
+
+    expect(contextResult.content[0].text).toContain('architectureDocsStatus: READY')
+    expect(contextResult.content[0].text).toContain('styleDocsStatus: READY')
+    expect(contextResult.content[0].text).toContain('Project context docs gate satisfied')
+
+    await fs.rm(projectRoot, { recursive: true, force: true })
+  })
+
+  it('taskContext requires fixed core doc filenames even under designs/core', async () => {
+    const { projectRoot, governanceDir, dbPath } = await createGovernanceWorkspace()
+    await replaceRoadmapsInStore(dbPath, [
+      { id: 'ROADMAP-0001', title: 'Roadmap', status: 'active', updatedAt: '2026-03-14T00:00:00.000Z' },
+    ])
+    await saveTasks(dbPath, [
+      normalizeTask({ id: 'TASK-0001', title: 'fixed filename rule', status: 'TODO', roadmapRefs: ['ROADMAP-0001'] }),
+    ])
+
+    const coreDir = path.join(governanceDir, 'designs', 'core')
+    await fs.mkdir(coreDir, { recursive: true })
+    await fs.writeFile(path.join(coreDir, 'system-architecture.md'), '# Architecture\n', 'utf-8')
+    await fs.writeFile(path.join(coreDir, 'visual-style.md'), '# Style\n', 'utf-8')
+
+    const mockServer = { registerTool: vi.fn() } as unknown as McpServer & { registerTool: ReturnType<typeof vi.fn> }
+    registerTaskTools(mockServer)
+
+    const taskContext = getToolHandler(mockServer, 'taskContext')
+    const contextResult = await taskContext({ projectPath: projectRoot, taskId: 'TASK-0001' })
+
+    expect(contextResult.content[0].text).toContain('architectureDocsStatus: MISSING')
+    expect(contextResult.content[0].text).toContain('styleDocsStatus: MISSING')
+    expect(contextResult.content[0].text).toContain('add required file designs/core/architecture.md')
+    expect(contextResult.content[0].text).toContain('add required file designs/core/style-guide.md')
+
+    await fs.rm(projectRoot, { recursive: true, force: true })
+  })
+
+  it('taskUpdate blocks IN_PROGRESS -> DONE when conformance re-check fails', async () => {
+    const { projectRoot, governanceDir, dbPath } = await createGovernanceWorkspace()
+    await replaceRoadmapsInStore(dbPath, [
+      { id: 'ROADMAP-0001', title: 'Roadmap', status: 'active', updatedAt: '2026-03-14T00:00:00.000Z' },
+    ])
+    await saveTasks(dbPath, [
+      normalizeTask({
+        id: 'TASK-0001',
+        title: 'done gate fail',
+        status: 'IN_PROGRESS',
+        owner: 'ai-copilot',
+        roadmapRefs: ['ROADMAP-0001'],
+        links: [],
+      }),
+    ])
+
+    const researchDir = path.join(projectRoot, 'designs', 'research')
+    await fs.mkdir(researchDir, { recursive: true })
+    await fs.writeFile(
+      path.join(researchDir, 'TASK-0001.implementation-research.md'),
+      [
+        '# TASK-0001 Implementation Research Brief',
+        '',
+        '## Design Guidelines and Specs',
+        '- designs/core/architecture.md#L1',
+        '',
+        '## Code Architecture and Implementation Findings',
+        '- packages/mcp/source/tools/task.ts#L1',
+      ].join('\n'),
+      'utf-8'
+    )
+
+    const coreDir = path.join(governanceDir, 'designs', 'core')
+    await fs.mkdir(coreDir, { recursive: true })
+    await fs.writeFile(path.join(coreDir, 'architecture.md'), '# Architecture\n', 'utf-8')
+    await fs.writeFile(path.join(coreDir, 'style-guide.md'), '# Style\n', 'utf-8')
+
+    const mockServer = { registerTool: vi.fn() } as unknown as McpServer & { registerTool: ReturnType<typeof vi.fn> }
+    registerTaskTools(mockServer)
+
+    const taskUpdate = getToolHandler(mockServer, 'taskUpdate')
+    const result = await taskUpdate({
+      projectPath: projectRoot,
+      taskId: 'TASK-0001',
+      updates: { status: 'DONE' },
+    })
+
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toContain('Conformance re-check failed before marking TASK-0001 as DONE')
+    expect(result.content[0].text).toContain('TASK_DONE_LINKS_MISSING')
+
+    await fs.rm(projectRoot, { recursive: true, force: true })
+  })
+
+  it('taskUpdate allows IN_PROGRESS -> DONE when conformance re-check passes', async () => {
+    const { projectRoot, governanceDir, dbPath } = await createGovernanceWorkspace()
+    await replaceRoadmapsInStore(dbPath, [
+      { id: 'ROADMAP-0001', title: 'Roadmap', status: 'active', updatedAt: '2026-03-14T00:00:00.000Z' },
+    ])
+    await fs.writeFile(path.join(projectRoot, 'README.md'), '# Evidence\n', 'utf-8')
+    await saveTasks(dbPath, [
+      normalizeTask({
+        id: 'TASK-0001',
+        title: 'done gate pass',
+        status: 'IN_PROGRESS',
+        owner: 'ai-copilot',
+        roadmapRefs: ['ROADMAP-0001'],
+        links: ['README.md'],
+      }),
+    ])
+
+    const researchDir = path.join(projectRoot, 'designs', 'research')
+    await fs.mkdir(researchDir, { recursive: true })
+    await fs.writeFile(
+      path.join(researchDir, 'TASK-0001.implementation-research.md'),
+      [
+        '# TASK-0001 Implementation Research Brief',
+        '',
+        '## Design Guidelines and Specs',
+        '- designs/core/architecture.md#L1',
+        '',
+        '## Code Architecture and Implementation Findings',
+        '- packages/mcp/source/tools/task.ts#L1',
+      ].join('\n'),
+      'utf-8'
+    )
+
+    const coreDir = path.join(governanceDir, 'designs', 'core')
+    await fs.mkdir(coreDir, { recursive: true })
+    await fs.writeFile(path.join(coreDir, 'architecture.md'), '# Architecture\n', 'utf-8')
+    await fs.writeFile(path.join(coreDir, 'style-guide.md'), '# Style\n', 'utf-8')
+
+    const mockServer = { registerTool: vi.fn() } as unknown as McpServer & { registerTool: ReturnType<typeof vi.fn> }
+    registerTaskTools(mockServer)
+
+    const taskUpdate = getToolHandler(mockServer, 'taskUpdate')
+    const result = await taskUpdate({
+      projectPath: projectRoot,
+      taskId: 'TASK-0001',
+      updates: { status: 'DONE' },
+    })
+
+    expect(result.isError).toBeUndefined()
+    expect(result.content[0].text).toContain('newStatus: DONE')
 
     await fs.rm(projectRoot, { recursive: true, force: true })
   })

@@ -23,18 +23,33 @@ async function fileLineCount(filePath: string): Promise<number> {
 }
 
 async function listMarkdownFiles(dirPath: string): Promise<Array<{ path: string; lineCount: number }>> {
-  const entriesResult = await catchIt(fs.readdir(dirPath, { withFileTypes: true }))
-  if (entriesResult.isError()) {
-    return []
+  const result: Array<{ path: string; lineCount: number }> = []
+  const stack: string[] = [dirPath]
+
+  while (stack.length > 0) {
+    const currentDir = stack.pop()
+    if (!currentDir) {
+      continue
+    }
+
+    const entriesResult = await catchIt(fs.readdir(currentDir, { withFileTypes: true }))
+    if (entriesResult.isError()) {
+      continue
+    }
+
+    for (const entry of entriesResult.value) {
+      const entryPath = path.join(currentDir, entry.name)
+      if (entry.isDirectory()) {
+        stack.push(entryPath)
+        continue
+      }
+
+      if (entry.isFile() && entry.name.toLowerCase().endsWith('.md')) {
+        result.push({ path: entryPath, lineCount: await fileLineCount(entryPath) })
+      }
+    }
   }
 
-  const entries = entriesResult.value
-  const files = entries.filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.md'))
-  const result: Array<{ path: string; lineCount: number }> = []
-  for (const file of files) {
-    const fullPath = path.join(dirPath, file.name)
-    result.push({ path: fullPath, lineCount: await fileLineCount(fullPath) })
-  }
   return result.sort((a, b) => a.path.localeCompare(b.path))
 }
 

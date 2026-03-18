@@ -27,7 +27,7 @@ import {
   renderToolResponseMarkdown,
   summarySection,
 } from '../common/index.js'
-import { TASK_LINT_CODES, renderLintSuggestions, type LintSuggestion } from '../common/index.js'
+import { PROJECT_LINT_CODES, TASK_LINT_CODES, renderLintSuggestions, type LintSuggestion } from '../common/index.js'
 import { resolveGovernanceDir, resolveScanDepth, resolveScanRoots, discoverProjectsAcrossRoots, toProjectPath } from './project.js'
 import { isValidRoadmapId } from './roadmap.js'
 import type {
@@ -44,6 +44,20 @@ export type { Task, TaskStatus, TaskDocument, ActionableTaskCandidate }
 export const ALLOWED_STATUS = ['TODO', 'IN_PROGRESS', 'BLOCKED', 'DONE'] as const
 export const TASK_ID_REGEX = /^TASK-(\d+)$/
 export const TASKS_MARKDOWN_FILE = 'tasks.md'
+export const TASK_RESEARCH_DIR = 'designs/research'
+export const TASK_RESEARCH_FILE_SUFFIX = '.implementation-research.md'
+export const CORE_DESIGN_DOCS_DIR = 'designs/core'
+export const CORE_ARCHITECTURE_DOC_FILE = `${CORE_DESIGN_DOCS_DIR}/architecture.md`
+export const CORE_STYLE_DOC_FILE = `${CORE_DESIGN_DOCS_DIR}/style-guide.md`
+
+type TaskResearchBriefState = {
+  relativePath: string;
+  absolutePath: string;
+  exists: boolean;
+  lineCount: number;
+  hasLineReferences: boolean;
+  ready: boolean;
+};
 
 export type TaskLintSuggestion = LintSuggestion;
 
@@ -163,6 +177,123 @@ function normalizeTaskLink(link: string): string {
 
 function resolveTaskLinkPath(projectPath: string, link: string): string {
   return path.join(projectPath, link)
+}
+
+function taskResearchBriefRelativePath(taskId: string): string {
+  return `${TASK_RESEARCH_DIR}/${taskId}${TASK_RESEARCH_FILE_SUFFIX}`
+}
+
+function renderTaskResearchBriefTemplate(task: Task): string[] {
+  return [
+    `# ${task.id} Implementation Research Brief`,
+    '',
+    `Task: ${task.title}`,
+    `Summary: ${task.summary || '(fill this with a short objective summary)'}`,
+    '',
+    '## Design Guidelines and Specs',
+    '- [ ] List relevant design/governance/spec files with line location',
+    '- Example: designs/ARCHITECTURE.md#L42-L76 - API boundary and constraints',
+    '- Example: roadmap.md#L18 - milestone acceptance criteria',
+    '',
+    '## Code Architecture and Implementation Findings',
+    '- [ ] Document current architecture and extension points with line location',
+    '- Example: packages/mcp/source/tools/task.ts#L1020-L1130 - taskContext response assembly',
+    '- Example: packages/mcp/source/prompts/taskExecution.ts#L25-L130 - execution workflow prompt',
+    '',
+    '## Implementation Plan',
+    '- [ ] Proposed change list with impacted modules',
+    '- [ ] Validation and regression test plan',
+    '',
+    '## Risks and Open Questions',
+    '- [ ] Known risks, assumptions, and unresolved questions',
+  ]
+}
+
+async function inspectTaskResearchBrief(governanceDir: string, task: Task): Promise<TaskResearchBriefState> {
+  const projectPath = toProjectPath(governanceDir)
+  const relativePath = taskResearchBriefRelativePath(task.id)
+  const absolutePath = resolveTaskLinkPath(projectPath, relativePath)
+
+  const content = await fs.readFile(absolutePath, 'utf-8').catch(() => '')
+  const exists = content.length > 0
+  const lineCount = exists ? content.split(/\r?\n/).length : 0
+  const hasLineReferences = /#L\d+/.test(content)
+
+  return {
+    relativePath,
+    absolutePath,
+    exists,
+    lineCount,
+    hasLineReferences,
+    ready: exists && hasLineReferences,
+  }
+}
+
+function collectTaskResearchBriefLintSuggestions(state: TaskResearchBriefState): TaskLintSuggestion[] {
+  const suggestions: TaskLintSuggestion[] = []
+
+  if (!state.exists) {
+    suggestions.push({
+      code: TASK_LINT_CODES.RESEARCH_BRIEF_MISSING,
+      message: `Pre-execution research brief missing: ${state.relativePath}.`,
+      fixHint: 'Create the file and fill required sections before implementation.',
+    })
+    return suggestions
+  }
+
+  if (!state.hasLineReferences) {
+    suggestions.push({
+      code: TASK_LINT_CODES.RESEARCH_BRIEF_INCOMPLETE,
+      message: `Research brief incomplete: ${state.relativePath}.`,
+      fixHint: 'Include at least one file line reference (for example #L42).',
+    })
+  }
+
+  return suggestions
+}
+
+function inspectProjectContextDocsFromArtifacts(files: string[]) {
+  const markdownFiles = files
+    .map((item) => item.replace(/\\/g, '/'))
+    .filter((item) => item.toLowerCase().endsWith('.md'))
+  const architectureDocSuffix = `/${CORE_ARCHITECTURE_DOC_FILE}`.toLowerCase()
+  const styleDocSuffix = `/${CORE_STYLE_DOC_FILE}`.toLowerCase()
+
+  const architectureDocs = markdownFiles.filter((item) => item.toLowerCase().endsWith(architectureDocSuffix))
+  const styleDocs = markdownFiles.filter((item) => item.toLowerCase().endsWith(styleDocSuffix))
+
+  const missingArchitectureDocs = architectureDocs.length === 0
+  const missingStyleDocs = styleDocs.length === 0
+
+  return {
+    architectureDocs,
+    styleDocs,
+    missingArchitectureDocs,
+    missingStyleDocs,
+    ready: !missingArchitectureDocs && !missingStyleDocs,
+  }
+}
+
+function collectProjectContextDocsLintSuggestions(state: ReturnType<typeof inspectProjectContextDocsFromArtifacts>): TaskLintSuggestion[] {
+  const suggestions: TaskLintSuggestion[] = []
+
+  if (state.missingArchitectureDocs) {
+    suggestions.push({
+      code: PROJECT_LINT_CODES.ARCHITECTURE_DOC_MISSING,
+      message: 'Project context is missing architecture design documentation.',
+      fixHint: `Add required file: ${CORE_ARCHITECTURE_DOC_FILE}.`,
+    })
+  }
+
+  if (state.missingStyleDocs) {
+    suggestions.push({
+      code: PROJECT_LINT_CODES.STYLE_DOC_MISSING,
+      message: 'Project context is missing design style documentation.',
+      fixHint: `Add required file: ${CORE_STYLE_DOC_FILE}.`,
+    })
+  }
+
+  return suggestions
 }
 
 async function readActionableTaskCandidates(governanceDirs: string[]): Promise<ActionableTaskCandidate[]> {
@@ -489,7 +620,7 @@ export function collectTaskLintSuggestions(tasks: Task[]): string[] {
   return renderLintSuggestions(collectTaskLintSuggestionItems(tasks))
 }
 
-function collectSingleTaskLintSuggestions(task: Task): string[] {
+function collectSingleTaskLintSuggestionItems(task: Task): TaskLintSuggestion[] {
   const suggestions: TaskLintSuggestion[] = []
 
   if (task.status === 'IN_PROGRESS' && task.owner.trim().length === 0) {
@@ -600,10 +731,14 @@ function collectSingleTaskLintSuggestions(task: Task): string[] {
     })
   }
 
-  return renderLintSuggestions(suggestions)
+  return suggestions
 }
 
-async function collectTaskFileLintSuggestions(governanceDir: string, task: Task): Promise<string[]> {
+function collectSingleTaskLintSuggestions(task: Task): string[] {
+  return renderLintSuggestions(collectSingleTaskLintSuggestionItems(task))
+}
+
+async function collectTaskFileLintSuggestionItems(governanceDir: string, task: Task): Promise<TaskLintSuggestion[]> {
   const suggestions: TaskLintSuggestion[] = []
   const projectPath = toProjectPath(governanceDir)
 
@@ -636,7 +771,28 @@ async function collectTaskFileLintSuggestions(governanceDir: string, task: Task)
     }
   }
 
-  return renderLintSuggestions(suggestions)
+  return suggestions
+}
+
+async function collectTaskFileLintSuggestions(governanceDir: string, task: Task): Promise<string[]> {
+  return renderLintSuggestions(await collectTaskFileLintSuggestionItems(governanceDir, task))
+}
+
+async function collectDoneConformanceSuggestions(governanceDir: string, task: Task): Promise<TaskLintSuggestion[]> {
+  const suggestions: TaskLintSuggestion[] = []
+
+  suggestions.push(...collectSingleTaskLintSuggestionItems(task))
+  suggestions.push(...(await collectTaskFileLintSuggestionItems(governanceDir, task)))
+
+  const researchBriefState = await inspectTaskResearchBrief(governanceDir, task)
+  suggestions.push(...collectTaskResearchBriefLintSuggestions(researchBriefState))
+
+  const artifacts = await discoverGovernanceArtifacts(governanceDir)
+  const fileCandidates = candidateFilesFromArtifacts(artifacts)
+  const projectContextDocsState = inspectProjectContextDocsFromArtifacts(fileCandidates)
+  suggestions.push(...collectProjectContextDocsLintSuggestions(projectContextDocsState))
+
+  return suggestions
 }
 
 export function renderTasksMarkdown(tasks: Task[]): string {
@@ -1017,6 +1173,7 @@ export function registerTaskTools(server: McpServer): void {
       const lintSuggestions = collectTaskLintSuggestions(selectedTaskDocument.tasks)
       const artifacts = await discoverGovernanceArtifacts(selected.governanceDir)
       const fileCandidates = candidateFilesFromArtifacts(artifacts)
+      const projectContextDocsState = inspectProjectContextDocsFromArtifacts(fileCandidates)
       const referenceLocations = (
         await Promise.all(fileCandidates.map((file) => findTextReferences(file, selected.task.id)))
       ).flat()
@@ -1068,11 +1225,25 @@ export function registerTaskTools(server: McpServer): void {
             ...suggestedReadOrder.map((item, index) => `${index + 1}. ${item}`),
           ]),
           guidanceSection([
+            ...(!projectContextDocsState.ready
+              ? [
+                  '- Project context docs are incomplete. Complete missing project architecture/style docs before deep implementation.',
+                  ...(projectContextDocsState.missingArchitectureDocs
+                    ? [`- Missing architecture design doc: create required file ${CORE_ARCHITECTURE_DOC_FILE}.`]
+                    : []),
+                  ...(projectContextDocsState.missingStyleDocs
+                    ? [`- Missing design style doc: create required file ${CORE_STYLE_DOC_FILE}.`]
+                    : []),
+                ]
+              : []),
             '- Start immediately with Suggested Read Order and execute the selected task.',
             '- Update markdown artifacts directly while keeping TASK/ROADMAP IDs unchanged.',
             '- Re-run `taskContext` for the selectedTaskId after edits to verify evidence consistency.',
           ]),
-          lintSection(lintSuggestions),
+          lintSection([
+            ...lintSuggestions,
+            ...renderLintSuggestions(collectProjectContextDocsLintSuggestions(projectContextDocsState)),
+          ]),
           nextCallSection(`taskContext(projectPath="${toProjectPath(selected.governanceDir)}", taskId="${selected.task.id}")`),
         ],
       })
@@ -1125,11 +1296,15 @@ export function registerTaskTools(server: McpServer): void {
         ...collectSingleTaskLintSuggestions(task),
         ...(await collectTaskFileLintSuggestions(governanceDir, task)),
       ]
+      const researchBriefState = await inspectTaskResearchBrief(governanceDir, task)
+      appendLintSuggestions(lintSuggestions, collectTaskResearchBriefLintSuggestions(researchBriefState))
       const contextReadingGuidance = await resolveTaskContextReadingGuidance(governanceDir)
 
       const taskLocation = (await findTextReferences(markdownPath, taskId))[0]
       const artifacts = await discoverGovernanceArtifacts(governanceDir)
       const fileCandidates = candidateFilesFromArtifacts(artifacts)
+      const projectContextDocsState = inspectProjectContextDocsFromArtifacts(fileCandidates)
+      appendLintSuggestions(lintSuggestions, collectProjectContextDocsLintSuggestions(projectContextDocsState))
       const referenceLocations = (
         await Promise.all(fileCandidates.map((file) => findTextReferences(file, taskId)))
       ).flat()
@@ -1149,6 +1324,10 @@ export function registerTaskTools(server: McpServer): void {
         `- owner: ${task.owner}`,
         `- updatedAt: ${task.updatedAt}`,
         `- roadmapRefs: ${task.roadmapRefs.join(', ') || '(none)'}`,
+        `- researchBriefPath: ${researchBriefState.relativePath}`,
+        `- researchBriefStatus: ${researchBriefState.ready ? 'READY' : (researchBriefState.exists ? 'INCOMPLETE' : 'MISSING')}`,
+        `- architectureDocsStatus: ${projectContextDocsState.missingArchitectureDocs ? 'MISSING' : 'READY'}`,
+        `- styleDocsStatus: ${projectContextDocsState.missingStyleDocs ? 'MISSING' : 'READY'}`,
         `- taskLocation: ${taskLocation ? `${taskLocation.filePath}#L${taskLocation.line}` : markdownPath}`,
       ]
 
@@ -1187,6 +1366,30 @@ export function registerTaskTools(server: McpServer): void {
         sections: [
           summarySection(summaryLines),
           evidenceSection([
+            '### Pre-Execution Research Brief',
+            `- path: ${researchBriefState.relativePath}`,
+            `- absolutePath: ${researchBriefState.absolutePath}`,
+            `- status: ${researchBriefState.ready ? 'READY' : (researchBriefState.exists ? 'INCOMPLETE' : 'MISSING')}`,
+            `- lineCount: ${researchBriefState.lineCount}`,
+            `- has file line references (#L<line>): ${researchBriefState.hasLineReferences ? 'yes' : 'no'}`,
+            ...(!researchBriefState.ready
+              ? [
+                  '',
+                  '### Required Research Brief Template',
+                  ...renderTaskResearchBriefTemplate(task).map((line) => `- ${line}`),
+                ]
+              : []),
+            '',
+            '### Project Context Docs Check',
+            `- architecture docs: ${projectContextDocsState.architectureDocs.length > 0 ? 'found' : 'missing'}`,
+            ...(projectContextDocsState.architectureDocs.length > 0
+              ? projectContextDocsState.architectureDocs.map((item) => `- architecture: ${item}`)
+              : [`- architecture: add required file ${CORE_ARCHITECTURE_DOC_FILE}.`]),
+            `- design style docs: ${projectContextDocsState.styleDocs.length > 0 ? 'found' : 'missing'}`,
+            ...(projectContextDocsState.styleDocs.length > 0
+              ? projectContextDocsState.styleDocs.map((item) => `- style: ${item}`)
+              : [`- style: add required file ${CORE_STYLE_DOC_FILE}.`]),
+            '',
             '### Related Artifacts',
             ...(relatedArtifacts.length > 0 ? relatedArtifacts.map((file) => `- ${file}`) : ['- (none)']),
             '',
@@ -1199,9 +1402,34 @@ export function registerTaskTools(server: McpServer): void {
             ...suggestedReadOrder.map((item, index) => `${index + 1}. ${item}`),
           ]),
           guidanceSection([
+            ...(!researchBriefState.ready
+              ? [
+                  '- Pre-execution gate is NOT satisfied. Complete research brief first, then proceed with implementation.',
+                  `- Create or update ${researchBriefState.relativePath} with design guidelines + code architecture findings before code changes.`,
+                  '- Include exact file/line locations in the brief (for example path/to/file.ts#L120).',
+                  '- Re-run taskContext after writing the brief and confirm researchBriefStatus becomes READY.',
+                ]
+              : [
+                  '- Pre-execution gate satisfied. Read the research brief first, then continue implementation.',
+                  `- Must read ${researchBriefState.relativePath} before any task execution changes.`,
+                ]),
+            ...(!projectContextDocsState.ready
+              ? [
+                  '- Project context docs gate is NOT satisfied. Complete missing project architecture/style docs first.',
+                  ...(projectContextDocsState.missingArchitectureDocs
+                    ? [`- Missing architecture design doc. Add required file ${CORE_ARCHITECTURE_DOC_FILE} and include architecture boundaries and module responsibilities.`]
+                    : []),
+                  ...(projectContextDocsState.missingStyleDocs
+                    ? [`- Missing design style doc. Add required file ${CORE_STYLE_DOC_FILE} and include style language, tokens/themes, and UI consistency rules.`]
+                    : []),
+                  '- Re-run taskContext and confirm both architectureDocsStatus/styleDocsStatus are READY.',
+                ]
+              : [
+                  '- Project context docs gate satisfied. Architecture/style docs are available for execution alignment.',
+                ]),
             '- Read the files in Suggested Read Order.',
             '',
-            '### Recommended Context Reading',
+            '### Context Reading',
             ...contextReadingGuidance,
             '',
             '- Verify whether current status and evidence are consistent.',
@@ -1282,6 +1510,56 @@ export function registerTaskTools(server: McpServer): void {
 
       const task = tasks[taskIndex]
       const originalStatus = task.status
+
+      const previewTask: Task = normalizeTask({
+        ...task,
+        ...updates,
+        updatedAt: nowIso(),
+      })
+
+      if (updates.status === 'IN_PROGRESS' && originalStatus === 'TODO') {
+        const researchBriefState = await inspectTaskResearchBrief(governanceDir, task)
+        if (!researchBriefState.ready) {
+          const missingReasons = [
+            !researchBriefState.exists ? `missing file: ${researchBriefState.relativePath}` : undefined,
+            researchBriefState.exists && !researchBriefState.hasLineReferences
+              ? 'missing file line references (for example #L42)'
+              : undefined,
+          ].filter((item): item is string => Boolean(item))
+
+          return {
+            ...asText(renderErrorMarkdown(
+              'taskUpdate',
+              `Pre-execution research brief gate failed for ${taskId}.`,
+              [
+                ...missingReasons,
+                `required file: ${researchBriefState.relativePath}`,
+                'complete the research brief before TODO -> IN_PROGRESS transition',
+              ],
+              `taskContext(projectPath="${toProjectPath(governanceDir)}", taskId="${taskId}")`
+            )),
+            isError: true,
+          }
+        }
+      }
+
+      if (updates.status === 'DONE') {
+        const conformanceSuggestions = await collectDoneConformanceSuggestions(governanceDir, previewTask)
+        if (conformanceSuggestions.length > 0) {
+          return {
+            ...asText(renderErrorMarkdown(
+              'taskUpdate',
+              `Conformance re-check failed before marking ${taskId} as DONE.`,
+              [
+                'Fix all issues below and retry DONE transition:',
+                ...renderLintSuggestions(conformanceSuggestions),
+              ],
+              `taskContext(projectPath="${toProjectPath(governanceDir)}", taskId="${taskId}")`
+            )),
+            isError: true,
+          }
+        }
+      }
 
       // Validate status transition
       if (updates.status && !validateTransition(originalStatus, updates.status)) {
