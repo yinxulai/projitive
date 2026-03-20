@@ -360,7 +360,7 @@ describe('tasks module', () => {
     await fs.rm(projectRoot, { recursive: true, force: true })
   })
 
-  it('taskUpdate blocks TODO -> IN_PROGRESS when research brief is missing', async () => {
+  it('taskUpdate allows TODO -> IN_PROGRESS when research brief is missing, with lint guidance', async () => {
     const { projectRoot, dbPath } = await createGovernanceWorkspace()
     await replaceRoadmapsInStore(dbPath, [
       { id: 'ROADMAP-0001', title: 'Bootstrap', status: 'active', updatedAt: '2026-03-14T00:00:00.000Z' },
@@ -379,9 +379,9 @@ describe('tasks module', () => {
       updates: { status: 'IN_PROGRESS' },
     })
 
-    expect(result.isError).toBe(true)
-    expect(result.content[0].text).toContain('Pre-execution research brief gate failed')
-    expect(result.content[0].text).toContain('designs/research/TASK-0001.implementation-research.md')
+    expect(result.isError).toBeUndefined()
+    expect(result.content[0].text).toContain('newStatus: IN_PROGRESS')
+    expect(result.content[0].text).toContain('TASK_RESEARCH_BRIEF_MISSING')
 
     await fs.rm(projectRoot, { recursive: true, force: true })
   })
@@ -510,7 +510,7 @@ describe('tasks module', () => {
     await fs.rm(projectRoot, { recursive: true, force: true })
   })
 
-  it('taskUpdate blocks IN_PROGRESS -> DONE when conformance re-check fails', async () => {
+  it('taskUpdate allows IN_PROGRESS -> DONE with lint guidance when conformance fails', async () => {
     const { projectRoot, governanceDir, dbPath } = await createGovernanceWorkspace()
     await replaceRoadmapsInStore(dbPath, [
       { id: 'ROADMAP-0001', title: 'Roadmap', status: 'active', updatedAt: '2026-03-14T00:00:00.000Z' },
@@ -557,8 +557,8 @@ describe('tasks module', () => {
       updates: { status: 'DONE' },
     })
 
-    expect(result.isError).toBe(true)
-    expect(result.content[0].text).toContain('Conformance re-check failed before marking TASK-0001 as DONE')
+    expect(result.isError).toBeUndefined()
+    expect(result.content[0].text).toContain('newStatus: DONE')
     expect(result.content[0].text).toContain('TASK_DONE_LINKS_MISSING')
 
     await fs.rm(projectRoot, { recursive: true, force: true })

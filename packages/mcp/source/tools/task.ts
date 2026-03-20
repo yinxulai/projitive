@@ -1366,29 +1366,6 @@ export function registerTaskTools(server: McpServer): void {
         const task = tasks[taskIndex]
         const originalStatus = task.status
         const previewTask: Task = normalizeTask({ ...task, ...updates, updatedAt: nowIso() })
-        if (updates.status === 'IN_PROGRESS' && originalStatus === 'TODO') {
-          const researchBriefState = await inspectTaskResearchBrief(governanceDir, task)
-          if (!researchBriefState.ready) {
-            throw new ToolExecutionError(
-              `Pre-execution research brief gate failed for ${taskId}.`,
-              [
-                `missing file: ${researchBriefState.relativePath}`,
-                'complete the research brief before TODO -> IN_PROGRESS transition',
-              ],
-              `taskContext(projectPath="${toProjectPath(governanceDir)}", taskId="${taskId}")`,
-            )
-          }
-        }
-        if (updates.status === 'DONE') {
-          const conformanceSuggestions = await collectDoneConformanceSuggestions(governanceDir, previewTask)
-          if (conformanceSuggestions.length > 0) {
-            throw new ToolExecutionError(
-              `Conformance re-check failed before marking ${taskId} as DONE.`,
-              ['Fix all issues below and retry DONE transition:', ...renderLintSuggestions(conformanceSuggestions)],
-              `taskContext(projectPath="${toProjectPath(governanceDir)}", taskId="${taskId}")`,
-            )
-          }
-        }
         if (updates.status && !validateTransition(originalStatus, updates.status)) {
           throw new ToolExecutionError(
             `Invalid status transition: ${originalStatus} -> ${updates.status}`,
@@ -1415,7 +1392,7 @@ export function registerTaskTools(server: McpServer): void {
         })
         await upsertTaskInStore(tasksPath, normalizedTask)
         await loadTasksDocumentWithOptions(governanceDir, true)
-        return { normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, taskId, originalStatus, task: normalizedTask, updates }
+        return { normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, taskId, originalStatus, task: normalizedTask, previewTask, updates }
       },
       primary: ({ normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, taskId, originalStatus, task }) => {
         const lines = [
@@ -1459,13 +1436,20 @@ export function registerTaskTools(server: McpServer): void {
         ...(updates.subState ? [`- subState: ${JSON.stringify(updates.subState)}`] : []),
         ...(updates.blocker ? [`- blocker: ${JSON.stringify(updates.blocker)}`] : []),
       ],
-      guidance: () => [
+      guidance: ({ updates, originalStatus }) => [
         'Task updated successfully and tasks.md has been synced. Run `taskContext` to verify the changes.',
-        'If status changed to DONE, ensure evidence links are added.',
-        'If subState or blocker were updated, verify the metadata is correct.',
+        ...(updates.status === 'IN_PROGRESS' && originalStatus === 'TODO'
+          ? ['- Ensure pre-execution research brief exists before deep implementation.']
+          : []),
+        ...(updates.status === 'DONE'
+          ? ['- Verify evidence links are attached and reflect completed work.']
+          : []),
         '.projitive governance store is source of truth; tasks.md is a generated view and may be overwritten.',
       ],
-      lint: () => [],
+      lint: async ({ previewTask, governanceDir }) => [
+        ...collectSingleTaskLintSuggestions(previewTask),
+        ...renderLintSuggestions(await collectDoneConformanceSuggestions(governanceDir, previewTask)),
+      ],
       nextCall: ({ normalizedProjectPath, taskId }) =>
         `taskContext(projectPath="${normalizedProjectPath}", taskId="${taskId}")`,
     })
