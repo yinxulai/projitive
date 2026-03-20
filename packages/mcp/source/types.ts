@@ -117,8 +117,8 @@ export interface TaskDocument {
 }
 
 export interface ActionableTaskCandidate {
-  governanceDir: string;
   task: Task;
+  governanceDir: string;
   projectScore: number;
   projectLatestUpdatedAt: string;
   taskUpdatedAtMs: number;
