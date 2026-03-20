@@ -25,58 +25,50 @@ function baseToolTemplateMarkdown(): string {
   ].join('\n')
 }
 
-function contextGuideTemplateExtra(): string[] {
-  return [
-    '',
-    '## Common Tool Guides To Read First',
-    '- ./CLAUDE.md',
-    '- ./AGENTS.md',
-    '- ./.github/copilot-instructions.md',
-    '- ./.cursorrules',
-    '- ./.github/instructions/*',
-    '- ./.cursor/rules/*',
-  ]
-}
-
-function idleDiscoveryTemplateExtra(): string[] {
-  return [
-    '',
-    '## Idle Discovery Checklist (When No Actionable Task)',
-    '- Scan backlog comments: TODO / FIXME / HACK / XXX.',
-    '- Check lint gaps and create executable fix tasks.',
-    '- Check test quality gaps (missing tests, flaky tests, low-value coverage).',
-    '- Learn current project architecture and consolidate/update design docs in designs/.',
-    '- Re-run {{tool_name}} after creating 1-3 focused TODO tasks.',
-  ]
-}
-
-function commitReminderTemplateExtra(): string[] {
-  return [
-    '',
-    '## Commit Reminder',
-    '- After this update, create a commit to keep progress auditable.',
-    '- Recommended format: type(scope): summary',
-    '- Example: feat(task): complete TASK-0007 validation flow',
-    '- Footer suggestion: Refs: TASK-0007, ROADMAP-0002',
-  ]
-}
-
 export function getDefaultToolTemplateMarkdown(toolName: string): string {
-  const base = baseToolTemplateMarkdown().split('\n')
+  const base = baseToolTemplateMarkdown()
 
   if (toolName === 'taskNext') {
-    return [...base, ...idleDiscoveryTemplateExtra()].join('\n')
+    return [
+      base,
+      '',
+      '## Idle Discovery Checklist (When No Actionable Task)',
+      '- Scan backlog comments: TODO / FIXME / HACK / XXX.',
+      '- Check lint gaps and create executable fix tasks.',
+      '- Check test quality gaps (missing tests, flaky tests, low-value coverage).',
+      '- Learn current project architecture and consolidate/update design docs in designs/.',
+      '- Review and update architecture docs under designs/core/ (architecture.md, style-guide.md) if missing or outdated.',
+      '- Re-run {{tool_name}} after creating 1-3 focused TODO tasks.',
+    ].join('\n')
   }
 
   if (toolName === 'projectContext' || toolName === 'taskContext' || toolName === 'roadmapContext') {
-    return [...base, ...contextGuideTemplateExtra()].join('\n')
+    return [
+      base,
+      '',
+      '## Common Tool Guides To Read First',
+      '- ./CLAUDE.md',
+      '- ./AGENTS.md',
+      '- ./.github/copilot-instructions.md',
+      '- ./.cursorrules',
+      '- ./.github/instructions/*',
+      '- ./.cursor/rules/*',
+    ].join('\n')
   }
 
   if (toolName === 'taskUpdate' || toolName === 'roadmapUpdate') {
-    return [...base, ...commitReminderTemplateExtra()].join('\n')
+    return [
+      base,
+      '',
+      '## Commit Reminder',
+      '- After this update, create a commit to keep progress auditable.',
+      '- Recommended format: type(scope): summary',
+      '- Example: feat(task): complete TASK-0007 validation flow',
+      '- Footer suggestion: Refs: TASK-0007, ROADMAP-0002',
+    ].join('\n')
   }
 
-  return base.join('\n')
+  return base
 }
 
 function loadTemplateFile(templatePath: string): string | undefined {

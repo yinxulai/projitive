@@ -91,6 +91,7 @@ const DEFAULT_NO_TASK_DISCOVERY_GUIDANCE = [
   '- Create TODO tasks only when evidence is clear: each new task must produce at least one report/designs/readme artifact update.',
   '- Skip duplicate scope: do not create tasks that overlap existing TODO/IN_PROGRESS/BLOCKED task intent.',
   '- Use quality gates for discovery candidates: user value, delivery risk reduction, or measurable throughput improvement.',
+  '- Review and update project architecture docs under designs/core/ (architecture.md, style-guide.md) if they are missing or outdated.',
   '- Keep each discovery round small (1-3 tasks), then rerun taskNext immediately for re-ranking and execution.',
 ]
 
