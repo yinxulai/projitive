@@ -2,7 +2,6 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 const MESSAGE_TEMPLATE_ENV = 'PROJITIVE_MESSAGE_TEMPLATE_PATH'
-const CONTENT_TEMPLATE_TOKEN = '{{content}}'
 
 function baseToolTemplateMarkdown(): string {
   return [
@@ -17,66 +16,58 @@ function baseToolTemplateMarkdown(): string {
   '## Agent Guidance',
   '{{guidance}}',
   '',
+  '## Lint Suggestions',
+  '{{suggestions}}',
+  '',
   '## Next Call',
   '{{next_call}}',
-  '',
-  '## Raw Response',
-  '{{content}}',
   ].join('\n')
 }
 
-function contextGuideTemplateExtra(): string[] {
-  return [
-    '',
-    '## Common Tool Guides To Read First',
-    '- ./CLAUDE.md',
-    '- ./AGENTS.md',
-    '- ./.github/copilot-instructions.md',
-    '- ./.cursorrules',
-    '- ./.github/instructions/*',
-    '- ./.cursor/rules/*',
-  ]
-}
-
-function idleDiscoveryTemplateExtra(): string[] {
-  return [
-    '',
-    '## Idle Discovery Checklist (When No Actionable Task)',
-    '- Scan backlog comments: TODO / FIXME / HACK / XXX.',
-    '- Check lint gaps and create executable fix tasks.',
-    '- Check test quality gaps (missing tests, flaky tests, low-value coverage).',
-    '- Learn current project architecture and consolidate/update design docs in designs/.',
-    '- Re-run {{tool_name}} after creating 1-3 focused TODO tasks.',
-  ]
-}
-
-function commitReminderTemplateExtra(): string[] {
-  return [
-    '',
-    '## Commit Reminder',
-    '- After this update, create a commit to keep progress auditable.',
-    '- Recommended format: type(scope): summary',
-    '- Example: feat(task): complete TASK-0007 validation flow',
-    '- Footer suggestion: Refs: TASK-0007, ROADMAP-0002',
-  ]
-}
-
 export function getDefaultToolTemplateMarkdown(toolName: string): string {
-  const base = baseToolTemplateMarkdown().split('\n')
+  const base = baseToolTemplateMarkdown()
 
   if (toolName === 'taskNext') {
-    return [...base, ...idleDiscoveryTemplateExtra()].join('\n')
+    return [
+      base,
+      '',
+      '## Idle Discovery Checklist (When No Actionable Task)',
+      '- Scan backlog comments: TODO / FIXME / HACK / XXX.',
+      '- Check lint gaps and create executable fix tasks.',
+      '- Check test quality gaps (missing tests, flaky tests, low-value coverage).',
+      '- Learn current project architecture and consolidate/update design docs in designs/.',
+      '- Review and update architecture docs under designs/core/ (architecture.md, style-guide.md) if missing or outdated.',
+      '- Re-run {{tool_name}} after creating 1-3 focused TODO tasks.',
+    ].join('\n')
   }
 
   if (toolName === 'projectContext' || toolName === 'taskContext' || toolName === 'roadmapContext') {
-    return [...base, ...contextGuideTemplateExtra()].join('\n')
+    return [
+      base,
+      '',
+      '## Common Tool Guides To Read First',
+      '- ./CLAUDE.md',
+      '- ./AGENTS.md',
+      '- ./.github/copilot-instructions.md',
+      '- ./.cursorrules',
+      '- ./.github/instructions/*',
+      '- ./.cursor/rules/*',
+    ].join('\n')
   }
 
   if (toolName === 'taskUpdate' || toolName === 'roadmapUpdate') {
-    return [...base, ...commitReminderTemplateExtra()].join('\n')
+    return [
+      base,
+      '',
+      '## Commit Reminder',
+      '- After this update, create a commit to keep progress auditable.',
+      '- Recommended format: type(scope): summary',
+      '- Example: feat(task): complete TASK-0007 validation flow',
+      '- Footer suggestion: Refs: TASK-0007, ROADMAP-0002',
+    ].join('\n')
   }
 
-  return base.join('\n')
+  return base
 }
 
 function loadTemplateFile(templatePath: string): string | undefined {
@@ -218,13 +209,13 @@ function resolveSection(payload: ToolResponsePayload, title: ToolSectionTitle): 
   return payload.sections.find((item) => item.title === title)
 }
 
-function buildToolTemplateVariables(payload: ToolResponsePayload, classicMarkdown: string): ToolTemplateVariables {
+function buildToolTemplateVariables(payload: ToolResponsePayload): ToolTemplateVariables {
   return {
     tool_name: payload.toolName,
-    content: classicMarkdown,
     summary: toSectionText(resolveSection(payload, 'Summary')),
     evidence: toSectionText(resolveSection(payload, 'Evidence')),
     guidance: toSectionText(resolveSection(payload, 'Agent Guidance')),
+    suggestions: toSectionText(resolveSection(payload, 'Lint Suggestions')),
     next_call: toSectionText(resolveSection(payload, 'Next Call')),
   }
 }
@@ -234,39 +225,25 @@ function applyTemplateVariables(template: string, variables: ToolTemplateVariabl
   for (const [key, value] of Object.entries(variables)) {
     rendered = rendered.split(`{{${key}}}`).join(value)
   }
-
-  if (!rendered.includes(variables.content) && !template.includes(CONTENT_TEMPLATE_TOKEN)) {
-    rendered = `${rendered}\n\n${variables.content}`
-  }
-
   return rendered.trimEnd()
 }
 
 export function renderToolResponseMarkdown(payload: ToolResponsePayload): string {
-  const body = payload.sections.flatMap((section) => [
-    `## ${section.title}`,
-    ...withFallback(section.lines),
-    '',
-  ])
-
-  const classicMarkdown = [
-    `# ${payload.toolName}`,
-    '',
-    ...body,
-  ].join('\n').trimEnd()
-
   const template = loadMessageTemplate(payload.toolName)
-  const variables = buildToolTemplateVariables(payload, classicMarkdown)
+  const variables = buildToolTemplateVariables(payload)
   return applyTemplateVariables(template, variables)
 }
 
 export function renderErrorMarkdown(toolName: string, cause: string, nextSteps: string[], retryExample?: string): string {
-  return renderToolResponseMarkdown({
-    toolName,
-    sections: [
-      section('Error', [`cause: ${cause}`]),
-      section('Next Step', nextSteps),
-      section('Retry Example', [retryExample ?? '(none)']),
-    ],
-  })
+  const sections = [
+    section('Error', [`cause: ${cause}`]),
+    section('Next Step', nextSteps),
+    section('Retry Example', [retryExample ?? '(none)']),
+  ]
+  const body = sections.flatMap((sec) => [
+    `## ${sec.title}`,
+    ...withFallback(sec.lines),
+    '',
+  ])
+  return [`# ${toolName}`, '', ...body].join('\n').trimEnd()
 }

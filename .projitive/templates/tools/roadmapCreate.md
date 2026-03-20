@@ -9,11 +9,12 @@
 ## Agent Guidance
 {{guidance}}
 
+## Lint Suggestions
+{{suggestions}}
+
 ## Next Call
 {{next_call}}
 
-## Raw Response
-{{content}}
 
 ## Commit Reminder
 - After this update, create a commit to keep progress auditable.

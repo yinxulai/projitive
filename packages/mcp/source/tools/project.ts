@@ -11,18 +11,9 @@ import {
   ensureStore,
   replaceRoadmapsInStore,
   replaceTasksInStore,
-  markMarkdownViewDirty,
   loadTaskStatusStatsFromStore,
-} from '../common/index.js'
-import {
-  asText,
-  evidenceSection,
+  createGovernedTool,
   getDefaultToolTemplateMarkdown,
-  guidanceSection,
-  lintSection,
-  nextCallSection,
-  renderToolResponseMarkdown,
-  summarySection,
 } from '../common/index.js'
 import { collectTaskLintSuggestions, loadTasksDocument, loadTasksDocumentWithOptions, renderTasksMarkdown } from './task.js'
 import { loadRoadmapDocumentWithOptions, renderRoadmapMarkdown } from './roadmap.js'
@@ -430,16 +421,14 @@ function defaultTemplateReadmeMarkdown(): string {
     '- Prefer one template per tool: <toolName>.md (e.g. taskNext.md).',
     '- Template directory mode only loads <toolName>.md files.',
     '- If a tool template file is missing, Projitive will auto-generate that file before rendering.',
-    '- Include {{content}} to render original tool output.',
-    '- If {{content}} is missing, original output is appended after template text.',
     '',
     'Basic Variables:',
     '- {{tool_name}}',
     '- {{summary}}',
     '- {{evidence}}',
     '- {{guidance}}',
+    '- {{lint_suggestions}}',
     '- {{next_call}}',
-    '- {{content}}',
   ].join('\n')
 }
 
@@ -518,8 +507,8 @@ export async function initializeProjectStructure(inputPath: string, governanceDi
 
 export function registerProjectTools(server: McpServer): void {
   server.registerTool(
-    'projectInit',
-    {
+    ...createGovernedTool({
+      name: 'projectInit',
       title: 'Project Init',
       description: 'Bootstrap governance files when a project has no .projitive yet (requires projectPath)',
       inputSchema: {
@@ -527,330 +516,262 @@ export function registerProjectTools(server: McpServer): void {
         governanceDir: z.string().optional(),
         force: z.boolean().optional(),
       },
-    },
-    async ({ projectPath, governanceDir, force }) => {
-      const initialized = await initializeProjectStructure(projectPath, governanceDir, force ?? false)
-
-      const filesByAction = {
-        created: initialized.files.filter((item) => item.action === 'created'),
-        updated: initialized.files.filter((item) => item.action === 'updated'),
-        skipped: initialized.files.filter((item) => item.action === 'skipped'),
-      }
-
-      const markdown = renderToolResponseMarkdown({
-        toolName: 'projectInit',
-        sections: [
-          summarySection([
-            `- projectPath: ${initialized.projectPath}`,
-            `- governanceDir: ${initialized.governanceDir}`,
-            `- force: ${force === true ? 'true' : 'false'}`,
-          ]),
-          evidenceSection([
-            `- createdFiles: ${filesByAction.created.length}`,
-            `- updatedFiles: ${filesByAction.updated.length}`,
-            `- skippedFiles: ${filesByAction.skipped.length}`,
-            '- directories:',
-            ...initialized.directories.map((item) => `  - ${item.action}: ${item.path}`),
-            '- files:',
-            ...initialized.files.map((item) => `  - ${item.action}: ${item.path}`),
-          ]),
-          guidanceSection([
-            '- If files were skipped and you want to overwrite templates, rerun with force=true.',
-            '- Continue with projectContext and taskList for execution.',
-          ]),
-          lintSection([
-            '- After init, fill owner/roadmapRefs/links in .projitive task table before marking DONE.',
-            '- Keep task source-of-truth inside .projitive governance store.',
-          ]),
-          nextCallSection(`projectContext(projectPath="${initialized.projectPath}")`),
-        ],
-      })
-
-      return asText(markdown)
-    }
+      async execute({ projectPath, governanceDir, force }) {
+        const initialized = await initializeProjectStructure(projectPath, governanceDir, force ?? false)
+        const filesByAction = {
+          created: initialized.files.filter((item) => item.action === 'created'),
+          updated: initialized.files.filter((item) => item.action === 'updated'),
+          skipped: initialized.files.filter((item) => item.action === 'skipped'),
+        }
+        return { initialized, filesByAction, force: force ?? false }
+      },
+      summary: ({ initialized, force }) => [
+        `- projectPath: ${initialized.projectPath}`,
+        `- governanceDir: ${initialized.governanceDir}`,
+        `- force: ${force ? 'true' : 'false'}`,
+      ],
+      evidence: ({ initialized, filesByAction }) => [
+        `- createdFiles: ${filesByAction.created.length}`,
+        `- updatedFiles: ${filesByAction.updated.length}`,
+        `- skippedFiles: ${filesByAction.skipped.length}`,
+        '- directories:',
+        ...initialized.directories.map((item) => `  - ${item.action}: ${item.path}`),
+        '- files:',
+        ...initialized.files.map((item) => `  - ${item.action}: ${item.path}`),
+      ],
+      guidance: () => [
+        '- If files were skipped and you want to overwrite templates, rerun with force=true.',
+        '- Continue with projectContext and taskList for execution.',
+      ],
+      suggestions: () => [
+        '- After init, fill owner/roadmapRefs/links in .projitive task table before marking DONE.',
+        '- Keep task source-of-truth inside .projitive governance store.',
+      ],
+      nextCall: ({ initialized }) => `projectContext(projectPath="${initialized.projectPath}")`,
+    })
   )
 
   server.registerTool(
-    'projectScan',
-    {
+    ...createGovernedTool({
+      name: 'projectScan',
       title: 'Project Scan',
       description: 'Start here when project path is unknown; discover all governance roots',
       inputSchema: {},
-    },
-    async () => {
-      const roots = resolveScanRoots()
-      const depth = resolveScanDepth()
-      const governanceDirs = await discoverProjectsAcrossRoots(roots, depth)
-      const projects = Array.from(new Set(governanceDirs.map((governanceDir) => toProjectPath(governanceDir)))).sort()
-
-      const markdown = renderToolResponseMarkdown({
-        toolName: 'projectScan',
-        sections: [
-          summarySection([
-            `- rootPaths: ${roots.join(', ')}`,
-            `- rootCount: ${roots.length}`,
-            `- maxDepth: ${depth}`,
-            `- discoveredCount: ${projects.length}`,
-          ]),
-          evidenceSection([
-            '- projects:',
-            ...projects.map((project, index) => `${index + 1}. ${project}`),
-          ]),
-          guidanceSection([
-            '- Use one discovered project path and call `projectLocate` to lock governance root.',
-            '- Then call `projectContext` to inspect current governance state.',
-          ]),
-          lintSection(projects.length === 0
-            ? ['- No governance root discovered. Add `.projitive` marker and baseline artifacts before execution.']
-            : ['- Run `projectContext` on a discovered project to receive module-level lint suggestions.']),
-          nextCallSection(projects[0]
-            ? `projectLocate(inputPath="${projects[0]}")`
-            : undefined),
-        ],
-      })
-
-      return asText(markdown)
-    }
+      async execute() {
+        const roots = resolveScanRoots()
+        const depth = resolveScanDepth()
+        const governanceDirs = await discoverProjectsAcrossRoots(roots, depth)
+        const projects = Array.from(new Set(governanceDirs.map((governanceDir) => toProjectPath(governanceDir)))).sort()
+        return { roots, depth, projects }
+      },
+      summary: ({ roots, depth, projects }) => [
+        `- rootPaths: ${roots.join(', ')}`,
+        `- rootCount: ${roots.length}`,
+        `- maxDepth: ${depth}`,
+        `- discoveredCount: ${projects.length}`,
+      ],
+      evidence: ({ projects }) => [
+        '- projects:',
+        ...projects.map((project, index) => `${index + 1}. ${project}`),
+      ],
+      guidance: () => [
+        '- Use one discovered project path and call `projectLocate` to lock governance root.',
+        '- Then call `projectContext` to inspect current governance state.',
+      ],
+      suggestions: ({ projects }) =>
+        projects.length === 0
+          ? ['- No governance root discovered. Add `.projitive` marker and baseline artifacts before execution.']
+          : ['- Run `projectContext` on a discovered project to receive module-level lint suggestions.'],
+      nextCall: ({ projects }) =>
+        projects[0] ? `projectLocate(inputPath="${projects[0]}")` : undefined,
+    })
   )
 
   server.registerTool(
-    'projectNext',
-    {
+    ...createGovernedTool({
+      name: 'projectNext',
       title: 'Project Next',
       description: 'Rank actionable projects and return the best execution target',
       inputSchema: {
         limit: z.number().int().min(1).max(50).optional(),
       },
-    },
-    async ({ limit }) => {
-      const roots = resolveScanRoots()
-      const depth = resolveScanDepth()
-      const projects = await discoverProjectsAcrossRoots(roots, depth)
-      const snapshots = await Promise.all(
-        projects.map(async (governanceDir) => {
-          const snapshot = await readTasksSnapshot(governanceDir)
-          const actionable = snapshot.inProgress + snapshot.todo
-
-          return {
-            governanceDir,
-            tasksExists: snapshot.exists,
-            lintSuggestions: snapshot.lintSuggestions,
-            inProgress: snapshot.inProgress,
-            todo: snapshot.todo,
-            blocked: snapshot.blocked,
-            done: snapshot.done,
-            actionable,
-            latestUpdatedAt: snapshot.latestUpdatedAt,
-            score: snapshot.score,
-          }
-        })
-      )
-
-      const ranked = snapshots
-        .filter((item) => item.actionable > 0)
-        .sort((a, b) => {
-          if (b.score !== a.score) {
-            return b.score - a.score
-          }
-          return b.latestUpdatedAt.localeCompare(a.latestUpdatedAt)
-        })
-        .slice(0, limit ?? 10)
-
-      if (ranked[0]) {
-        const topDoc = await loadTasksDocument(ranked[0].governanceDir)
-        ranked[0].lintSuggestions = collectTaskLintSuggestions(topDoc.tasks)
-      }
-
-      const markdown = renderToolResponseMarkdown({
-        toolName: 'projectNext',
-        sections: [
-          summarySection([
-            `- rootPaths: ${roots.join(', ')}`,
-            `- rootCount: ${roots.length}`,
-            `- maxDepth: ${depth}`,
-            `- matchedProjects: ${projects.length}`,
-            `- actionableProjects: ${ranked.length}`,
-            `- limit: ${limit ?? 10}`,
-          ]),
-          evidenceSection([
-            '- rankedProjects:',
-            ...ranked.map(
-              (item, index) =>
-                `${index + 1}. ${toProjectPath(item.governanceDir)} | actionable=${item.actionable} | in_progress=${item.inProgress} | todo=${item.todo} | blocked=${item.blocked} | done=${item.done} | latest=${item.latestUpdatedAt}${item.tasksExists ? '' : ' | store=missing'}`
-            ),
-          ]),
-          guidanceSection([
-            '- Pick top 1 project and call `projectContext` with its projectPath.',
-            '- Then call `taskList` and `taskContext` to continue execution.',
-            '- If governance store is missing, initialize governance before task-level operations.',
-          ]),
-          lintSection(ranked[0]?.lintSuggestions ?? []),
-          nextCallSection(ranked[0]
-            ? `projectContext(projectPath="${toProjectPath(ranked[0].governanceDir)}")`
-            : undefined),
-        ],
-      })
-
-      return asText(markdown)
-    }
+      async execute({ limit }) {
+        const roots = resolveScanRoots()
+        const depth = resolveScanDepth()
+        const projects = await discoverProjectsAcrossRoots(roots, depth)
+        const snapshots = await Promise.all(
+          projects.map(async (governanceDir) => {
+            const snapshot = await readTasksSnapshot(governanceDir)
+            const actionable = snapshot.inProgress + snapshot.todo
+            return {
+              governanceDir,
+              tasksExists: snapshot.exists,
+              lintSuggestions: snapshot.lintSuggestions,
+              inProgress: snapshot.inProgress,
+              todo: snapshot.todo,
+              blocked: snapshot.blocked,
+              done: snapshot.done,
+              actionable,
+              latestUpdatedAt: snapshot.latestUpdatedAt,
+              score: snapshot.score,
+            }
+          })
+        )
+        const ranked = snapshots
+          .filter((item) => item.actionable > 0)
+          .sort((a, b) => {
+            if (b.score !== a.score) return b.score - a.score
+            return b.latestUpdatedAt.localeCompare(a.latestUpdatedAt)
+          })
+          .slice(0, limit ?? 10)
+        const topTasks = ranked[0] ? (await loadTasksDocument(ranked[0].governanceDir)).tasks : undefined
+        return { roots, depth, projects, ranked, limit: limit ?? 10, topTasks }
+      },
+      summary: ({ roots, depth, projects, ranked, limit }) => [
+        `- rootPaths: ${roots.join(', ')}`,
+        `- rootCount: ${roots.length}`,
+        `- maxDepth: ${depth}`,
+        `- matchedProjects: ${projects.length}`,
+        `- actionableProjects: ${ranked.length}`,
+        `- limit: ${limit}`,
+      ],
+      evidence: ({ ranked }) => [
+        '- rankedProjects:',
+        ...ranked.map(
+          (item, index) =>
+            `${index + 1}. ${toProjectPath(item.governanceDir)} | actionable=${item.actionable} | in_progress=${item.inProgress} | todo=${item.todo} | blocked=${item.blocked} | done=${item.done} | latest=${item.latestUpdatedAt}${item.tasksExists ? '' : ' | store=missing'}`,
+        ),
+      ],
+      guidance: () => [
+        '- Pick top 1 project and call `projectContext` with its projectPath.',
+        '- Then call `taskList` and `taskContext` to continue execution.',
+        '- If governance store is missing, initialize governance before task-level operations.',
+      ],
+      suggestions: ({ topTasks }) => topTasks ? collectTaskLintSuggestions(topTasks) : [],
+      nextCall: ({ ranked }) =>
+        ranked[0] ? `projectContext(projectPath="${toProjectPath(ranked[0].governanceDir)}")` : undefined,
+    })
   )
 
   server.registerTool(
-    'projectLocate',
-    {
+    ...createGovernedTool({
+      name: 'projectLocate',
       title: 'Project Locate',
       description: 'Resolve the nearest governance root from any in-project path',
       inputSchema: {
         inputPath: z.string(),
       },
-    },
-    async ({ inputPath }) => {
-      const resolvedFrom = normalizePath(inputPath)
-      const governanceDir = await resolveGovernanceDir(resolvedFrom)
-      const projectPath = toProjectPath(governanceDir)
-
-      const markdown = renderToolResponseMarkdown({
-        toolName: 'projectLocate',
-        sections: [
-          summarySection([
-            `- resolvedFrom: ${resolvedFrom}`,
-            `- projectPath: ${projectPath}`,
-            `- governanceDir: ${governanceDir}`,
-          ]),
-          guidanceSection(['- Call `projectContext` with this projectPath to get task and roadmap summaries.']),
-          lintSection(['- Run `projectContext` to get governance/module lint suggestions for this project.']),
-          nextCallSection(`projectContext(projectPath="${projectPath}")`),
-        ],
-      })
-
-      return asText(markdown)
-    }
+      async execute({ inputPath }) {
+        const resolvedFrom = normalizePath(inputPath)
+        const governanceDir = await resolveGovernanceDir(resolvedFrom)
+        const projectPath = toProjectPath(governanceDir)
+        return { resolvedFrom, governanceDir, projectPath }
+      },
+      summary: ({ resolvedFrom, projectPath, governanceDir }) => [
+        `- resolvedFrom: ${resolvedFrom}`,
+        `- projectPath: ${projectPath}`,
+        `- governanceDir: ${governanceDir}`,
+      ],
+      guidance: () => ['- Call `projectContext` with this projectPath to get task and roadmap summaries.'],
+      suggestions: () => ['- Run `projectContext` to get governance/module lint suggestions for this project.'],
+      nextCall: ({ projectPath }) => `projectContext(projectPath="${projectPath}")`,
+    })
   )
 
   server.registerTool(
-    'syncViews',
-    {
+    ...createGovernedTool({
+      name: 'syncViews',
       title: 'Sync Views',
       description: 'Materialize markdown views from .projitive governance store (tasks.md / roadmap.md)',
       inputSchema: {
         projectPath: z.string(),
-        views: z.array(z.enum(['tasks', 'roadmap'])) .optional(),
+        views: z.array(z.enum(['tasks', 'roadmap'])).optional(),
         force: z.boolean().optional(),
       },
-    },
-    async ({ projectPath, views, force }) => {
-      const governanceDir = await resolveGovernanceDir(projectPath)
-      const normalizedProjectPath = toProjectPath(governanceDir)
-      const tasksViewPath = path.join(governanceDir, 'tasks.md')
-      const roadmapViewPath = path.join(governanceDir, 'roadmap.md')
-      const dbPath = path.join(governanceDir, PROJECT_MARKER)
-      const selectedViews = views && views.length > 0
-        ? Array.from(new Set(views))
-        : ['tasks', 'roadmap']
-      const forceSync = force === true
-
-      if (forceSync) {
+      async execute({ projectPath, views, force }) {
+        const governanceDir = await resolveGovernanceDir(projectPath)
+        const normalizedProjectPath = toProjectPath(governanceDir)
+        const tasksViewPath = path.join(governanceDir, 'tasks.md')
+        const roadmapViewPath = path.join(governanceDir, 'roadmap.md')
+        const selectedViews = views && views.length > 0 ? Array.from(new Set(views)) : ['tasks', 'roadmap']
+        const forceSync = force === true
+        let taskCount: number | undefined
+        let roadmapCount: number | undefined
         if (selectedViews.includes('tasks')) {
-          await markMarkdownViewDirty(dbPath, 'tasks_markdown')
+          const taskDoc = await loadTasksDocumentWithOptions(governanceDir, forceSync)
+          taskCount = taskDoc.tasks.length
         }
         if (selectedViews.includes('roadmap')) {
-          await markMarkdownViewDirty(dbPath, 'roadmaps_markdown')
+          const roadmapDoc = await loadRoadmapDocumentWithOptions(governanceDir, forceSync)
+          roadmapCount = roadmapDoc.milestones.length
         }
-      }
-
-      let taskCount: number | undefined
-      let roadmapCount: number | undefined
-
-      if (selectedViews.includes('tasks')) {
-        const taskDoc = await loadTasksDocumentWithOptions(governanceDir, forceSync)
-        taskCount = taskDoc.tasks.length
-      }
-
-      if (selectedViews.includes('roadmap')) {
-        const roadmapDoc = await loadRoadmapDocumentWithOptions(governanceDir, forceSync)
-        roadmapCount = roadmapDoc.milestones.length
-      }
-
-      const markdown = renderToolResponseMarkdown({
-        toolName: 'syncViews',
-        sections: [
-          summarySection([
-            `- projectPath: ${normalizedProjectPath}`,
-            `- governanceDir: ${governanceDir}`,
-            `- tasksView: ${tasksViewPath}`,
-            `- roadmapView: ${roadmapViewPath}`,
-            `- views: ${selectedViews.join(', ')}`,
-            `- force: ${forceSync ? 'true' : 'false'}`,
-          ]),
-          evidenceSection([
-            ...(typeof taskCount === 'number' ? [`- tasks.md synced | taskCount=${taskCount}`] : []),
-            ...(typeof roadmapCount === 'number' ? [`- roadmap.md synced | roadmapCount=${roadmapCount}`] : []),
-          ]),
-          guidanceSection([
-            'Use this tool after batch updates when you need immediate markdown materialization.',
-            'Routine workflows can rely on lazy sync and usually do not require force=true.',
-          ]),
-          lintSection([]),
-          nextCallSection(`projectContext(projectPath="${normalizedProjectPath}")`),
-        ],
-      })
-
-      return asText(markdown)
-    }
+        return { normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, selectedViews, forceSync, taskCount, roadmapCount }
+      },
+      summary: ({ normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, selectedViews, forceSync }) => [
+        `- projectPath: ${normalizedProjectPath}`,
+        `- governanceDir: ${governanceDir}`,
+        `- tasksView: ${tasksViewPath}`,
+        `- roadmapView: ${roadmapViewPath}`,
+        `- views: ${selectedViews.join(', ')}`,
+        `- force: ${forceSync ? 'true' : 'false'}`,
+      ],
+      evidence: ({ taskCount, roadmapCount }) => [
+        ...(typeof taskCount === 'number' ? [`- tasks.md synced | taskCount=${taskCount}`] : []),
+        ...(typeof roadmapCount === 'number' ? [`- roadmap.md synced | roadmapCount=${roadmapCount}`] : []),
+      ],
+      guidance: () => [
+        'Use this tool after batch updates when you need immediate markdown materialization.',
+        'Routine workflows can rely on lazy sync and usually do not require force=true.',
+      ],
+      suggestions: () => [],
+      nextCall: ({ normalizedProjectPath }) => `projectContext(projectPath="${normalizedProjectPath}")`,
+    })
   )
 
   server.registerTool(
-    'projectContext',
-    {
+    ...createGovernedTool({
+      name: 'projectContext',
       title: 'Project Context',
       description: 'Get project-level summary before selecting or executing a task',
       inputSchema: {
         projectPath: z.string(),
       },
-    },
-    async ({ projectPath }) => {
-      const governanceDir = await resolveGovernanceDir(projectPath)
-      const normalizedProjectPath = toProjectPath(governanceDir)
-      const artifacts = await discoverGovernanceArtifacts(governanceDir)
-      const dbPath = path.join(governanceDir, PROJECT_MARKER)
-      await ensureStore(dbPath)
-      const taskStats = await loadTaskStatusStatsFromStore(dbPath)
-      const { markdownPath: tasksMarkdownPath, tasks } = await loadTasksDocument(governanceDir)
-      const { markdownPath: roadmapMarkdownPath, milestones } = await loadRoadmapDocumentWithOptions(governanceDir, false)
-      const roadmapIds = milestones.map((item) => item.id)
-      const lintSuggestions = collectTaskLintSuggestions(tasks)
-
-      const markdown = renderToolResponseMarkdown({
-        toolName: 'projectContext',
-        sections: [
-          summarySection([
-            `- projectPath: ${normalizedProjectPath}`,
-            `- governanceDir: ${governanceDir}`,
-            `- tasksView: ${tasksMarkdownPath}`,
-            `- roadmapView: ${roadmapMarkdownPath}`,
-            `- roadmapIds: ${roadmapIds.length}`,
-          ]),
-          evidenceSection([
-            '### Task Summary',
-            `- total: ${taskStats.total}`,
-            `- TODO: ${taskStats.todo}`,
-            `- IN_PROGRESS: ${taskStats.inProgress}`,
-            `- BLOCKED: ${taskStats.blocked}`,
-            `- DONE: ${taskStats.done}`,
-            '',
-            '### Artifacts',
-            renderArtifactsMarkdown(artifacts),
-          ]),
-          guidanceSection([
-            '- Start from `taskList` to choose a target task.',
-            '- Then call `taskContext` with a task ID to retrieve evidence locations and reading order.',
-          ]),
-          lintSection(lintSuggestions),
-          nextCallSection(`taskList(projectPath="${normalizedProjectPath}")`),
-        ],
-      })
-
-      return asText(markdown)
-    }
+      async execute({ projectPath }) {
+        const governanceDir = await resolveGovernanceDir(projectPath)
+        const normalizedProjectPath = toProjectPath(governanceDir)
+        const artifacts = await discoverGovernanceArtifacts(governanceDir)
+        const dbPath = path.join(governanceDir, PROJECT_MARKER)
+        await ensureStore(dbPath)
+        const taskStats = await loadTaskStatusStatsFromStore(dbPath)
+        const { markdownPath: tasksMarkdownPath, tasks } = await loadTasksDocument(governanceDir)
+        const { markdownPath: roadmapMarkdownPath, milestones } = await loadRoadmapDocumentWithOptions(governanceDir, false)
+        const roadmapIds = milestones.map((item) => item.id)
+        return { normalizedProjectPath, governanceDir, tasksMarkdownPath, roadmapMarkdownPath, roadmapIds, taskStats, artifacts, tasks }
+      },
+      summary: ({ normalizedProjectPath, governanceDir, tasksMarkdownPath, roadmapMarkdownPath, roadmapIds }) => [
+        `- projectPath: ${normalizedProjectPath}`,
+        `- governanceDir: ${governanceDir}`,
+        `- tasksView: ${tasksMarkdownPath}`,
+        `- roadmapView: ${roadmapMarkdownPath}`,
+        `- roadmapIds: ${roadmapIds.length}`,
+      ],
+      evidence: ({ taskStats, artifacts }) => [
+        '### Task Summary',
+        `- total: ${taskStats.total}`,
+        `- TODO: ${taskStats.todo}`,
+        `- IN_PROGRESS: ${taskStats.inProgress}`,
+        `- BLOCKED: ${taskStats.blocked}`,
+        `- DONE: ${taskStats.done}`,
+        '',
+        '### Artifacts',
+        renderArtifactsMarkdown(artifacts),
+      ],
+      guidance: () => [
+        '- Start from `taskList` to choose a target task.',
+        '- Then call `taskContext` with a task ID to retrieve evidence locations and reading order.',
+      ],
+      suggestions: ({ tasks }) => collectTaskLintSuggestions(tasks),
+      nextCall: ({ normalizedProjectPath }) => `taskList(projectPath="${normalizedProjectPath}")`,
+    })
   )
 }

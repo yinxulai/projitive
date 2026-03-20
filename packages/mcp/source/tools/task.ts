@@ -16,18 +16,13 @@ import {
   getStoreVersion,
   getMarkdownViewState,
   markMarkdownViewBuilt,
+  createGovernedTool,
+  ToolExecutionError,
+  PROJECT_LINT_CODES,
+  TASK_LINT_CODES,
+  renderLintSuggestions,
+  type LintSuggestion,
 } from '../common/index.js'
-import {
-  asText,
-  evidenceSection,
-  guidanceSection,
-  lintSection,
-  nextCallSection,
-  renderErrorMarkdown,
-  renderToolResponseMarkdown,
-  summarySection,
-} from '../common/index.js'
-import { TASK_LINT_CODES, renderLintSuggestions, type LintSuggestion } from '../common/index.js'
 import { resolveGovernanceDir, resolveScanDepth, resolveScanRoots, discoverProjectsAcrossRoots, toProjectPath } from './project.js'
 import { isValidRoadmapId } from './roadmap.js'
 import type {
@@ -44,12 +39,20 @@ export type { Task, TaskStatus, TaskDocument, ActionableTaskCandidate }
 export const ALLOWED_STATUS = ['TODO', 'IN_PROGRESS', 'BLOCKED', 'DONE'] as const
 export const TASK_ID_REGEX = /^TASK-(\d+)$/
 export const TASKS_MARKDOWN_FILE = 'tasks.md'
+export const TASK_RESEARCH_DIR = 'designs/research'
+export const TASK_RESEARCH_FILE_SUFFIX = '.implementation-research.md'
+export const CORE_DESIGN_DOCS_DIR = 'designs/core'
+export const CORE_ARCHITECTURE_DOC_FILE = `${CORE_DESIGN_DOCS_DIR}/architecture.md`
+export const CORE_STYLE_DOC_FILE = `${CORE_DESIGN_DOCS_DIR}/style-guide.md`
+
+type TaskResearchBriefState = {
+  relativePath: string;
+  absolutePath: string;
+  exists: boolean;
+  ready: boolean;
+};
 
 export type TaskLintSuggestion = LintSuggestion;
-
-function appendLintSuggestions(target: string[], suggestions: LintSuggestion[]): void {
-  target.push(...renderLintSuggestions(suggestions))
-}
 
 function taskStatusGuidance(task: Task): string[] {
   if (task.status === 'TODO') {
@@ -88,6 +91,7 @@ const DEFAULT_NO_TASK_DISCOVERY_GUIDANCE = [
   '- Create TODO tasks only when evidence is clear: each new task must produce at least one report/designs/readme artifact update.',
   '- Skip duplicate scope: do not create tasks that overlap existing TODO/IN_PROGRESS/BLOCKED task intent.',
   '- Use quality gates for discovery candidates: user value, delivery risk reduction, or measurable throughput improvement.',
+  '- Review and update project architecture docs under designs/core/ (architecture.md, style-guide.md) if they are missing or outdated.',
   '- Keep each discovery round small (1-3 tasks), then rerun taskNext immediately for re-ranking and execution.',
 ]
 
@@ -163,6 +167,99 @@ function normalizeTaskLink(link: string): string {
 
 function resolveTaskLinkPath(projectPath: string, link: string): string {
   return path.join(projectPath, link)
+}
+
+function taskResearchBriefRelativePath(taskId: string): string {
+  return `${TASK_RESEARCH_DIR}/${taskId}${TASK_RESEARCH_FILE_SUFFIX}`
+}
+
+function renderTaskResearchBriefTemplate(task: Task): string[] {
+  return [
+    `# ${task.id} Implementation Research Brief`,
+    '',
+    `Task: ${task.title}`,
+    `Summary: ${task.summary || '(fill this with a short objective summary)'}`,
+    '',
+    '## Design Guidelines and Specs',
+    '- [ ] List relevant design/governance/spec files with line location',
+    '- Example: designs/ARCHITECTURE.md#L42-L76 - API boundary and constraints',
+    '- Example: roadmap.md#L18 - milestone acceptance criteria',
+    '',
+    '## Code Architecture and Implementation Findings',
+    '- [ ] Document current architecture and extension points with line location',
+    '- Example: packages/mcp/source/tools/task.ts#L1020-L1130 - taskContext response assembly',
+    '- Example: packages/mcp/source/prompts/taskExecution.ts#L25-L130 - execution workflow prompt',
+    '',
+    '## Implementation Plan',
+    '- [ ] Proposed change list with impacted modules',
+    '- [ ] Validation and regression test plan',
+    '',
+    '## Risks and Open Questions',
+    '- [ ] Known risks, assumptions, and unresolved questions',
+  ]
+}
+
+async function inspectTaskResearchBrief(governanceDir: string, task: Task): Promise<TaskResearchBriefState> {
+  const projectPath = toProjectPath(governanceDir)
+  const relativePath = taskResearchBriefRelativePath(task.id)
+  const absolutePath = resolveTaskLinkPath(projectPath, relativePath)
+  const exists = await fs.access(absolutePath).then(() => true).catch(() => false)
+  return { relativePath, absolutePath, exists, ready: exists }
+}
+
+function collectTaskResearchBriefLintSuggestions(state: TaskResearchBriefState): TaskLintSuggestion[] {
+  if (!state.exists) {
+    return [{
+      code: TASK_LINT_CODES.RESEARCH_BRIEF_MISSING,
+      message: `Pre-execution research brief missing: ${state.relativePath}.`,
+      fixHint: 'Create the file and fill required sections before implementation.',
+    }]
+  }
+  return []
+}
+
+function inspectProjectContextDocsFromArtifacts(files: string[]) {
+  const markdownFiles = files
+    .map((item) => item.replace(/\\/g, '/'))
+    .filter((item) => item.toLowerCase().endsWith('.md'))
+  const architectureDocSuffix = `/${CORE_ARCHITECTURE_DOC_FILE}`.toLowerCase()
+  const styleDocSuffix = `/${CORE_STYLE_DOC_FILE}`.toLowerCase()
+
+  const architectureDocs = markdownFiles.filter((item) => item.toLowerCase().endsWith(architectureDocSuffix))
+  const styleDocs = markdownFiles.filter((item) => item.toLowerCase().endsWith(styleDocSuffix))
+
+  const missingArchitectureDocs = architectureDocs.length === 0
+  const missingStyleDocs = styleDocs.length === 0
+
+  return {
+    architectureDocs,
+    styleDocs,
+    missingArchitectureDocs,
+    missingStyleDocs,
+    ready: !missingArchitectureDocs && !missingStyleDocs,
+  }
+}
+
+function collectProjectContextDocsLintSuggestions(state: ReturnType<typeof inspectProjectContextDocsFromArtifacts>): TaskLintSuggestion[] {
+  const suggestions: TaskLintSuggestion[] = []
+
+  if (state.missingArchitectureDocs) {
+    suggestions.push({
+      code: PROJECT_LINT_CODES.ARCHITECTURE_DOC_MISSING,
+      message: 'Project context is missing architecture design documentation.',
+      fixHint: `Add required file: ${CORE_ARCHITECTURE_DOC_FILE}.`,
+    })
+  }
+
+  if (state.missingStyleDocs) {
+    suggestions.push({
+      code: PROJECT_LINT_CODES.STYLE_DOC_MISSING,
+      message: 'Project context is missing design style documentation.',
+      fixHint: `Add required file: ${CORE_STYLE_DOC_FILE}.`,
+    })
+  }
+
+  return suggestions
 }
 
 async function readActionableTaskCandidates(governanceDirs: string[]): Promise<ActionableTaskCandidate[]> {
@@ -489,7 +586,7 @@ export function collectTaskLintSuggestions(tasks: Task[]): string[] {
   return renderLintSuggestions(collectTaskLintSuggestionItems(tasks))
 }
 
-function collectSingleTaskLintSuggestions(task: Task): string[] {
+function collectSingleTaskLintSuggestionItems(task: Task): TaskLintSuggestion[] {
   const suggestions: TaskLintSuggestion[] = []
 
   if (task.status === 'IN_PROGRESS' && task.owner.trim().length === 0) {
@@ -600,43 +697,23 @@ function collectSingleTaskLintSuggestions(task: Task): string[] {
     })
   }
 
-  return renderLintSuggestions(suggestions)
+  return suggestions
 }
 
-async function collectTaskFileLintSuggestions(governanceDir: string, task: Task): Promise<string[]> {
-  const suggestions: TaskLintSuggestion[] = []
-  const projectPath = toProjectPath(governanceDir)
+function collectSingleTaskLintSuggestions(task: Task): string[] {
+  return renderLintSuggestions(collectSingleTaskLintSuggestionItems(task))
+}
 
-  for (const link of task.links) {
-    const normalized = link.trim()
-    if (normalized.length === 0) {
-      continue
-    }
-
-    if (/^https?:\/\//i.test(normalized)) {
-      continue
-    }
-
-    if (!isProjectRootRelativePath(normalized)) {
-      suggestions.push({
-        code: TASK_LINT_CODES.LINK_PATH_FORMAT_INVALID,
-        message: `Link path should be project-root-relative without leading slash: ${normalized}.`,
-        fixHint: 'Use path/from/project/root format.',
-      })
-      continue
-    }
-
-    const resolvedPath = resolveTaskLinkPath(projectPath, normalized)
-    const exists = await fs.access(resolvedPath).then(() => true).catch(() => false)
-    if (!exists) {
-      suggestions.push({
-        code: TASK_LINT_CODES.LINK_TARGET_MISSING,
-        message: `Link target not found: ${normalized} (resolved: ${resolvedPath}).`,
-      })
-    }
-  }
-
-  return renderLintSuggestions(suggestions)
+async function collectDoneConformanceSuggestions(governanceDir: string, task: Task): Promise<TaskLintSuggestion[]> {
+  const researchBriefState = await inspectTaskResearchBrief(governanceDir, task)
+  const artifacts = await discoverGovernanceArtifacts(governanceDir)
+  const fileCandidates = candidateFilesFromArtifacts(artifacts)
+  const projectContextDocsState = inspectProjectContextDocsFromArtifacts(fileCandidates)
+  return [
+    ...collectSingleTaskLintSuggestionItems(task),
+    ...collectTaskResearchBriefLintSuggestions(researchBriefState),
+    ...collectProjectContextDocsLintSuggestions(projectContextDocsState),
+  ]
 }
 
 export function renderTasksMarkdown(tasks: Task[]): string {
@@ -758,8 +835,8 @@ export function validateTransition(from: TaskStatus, to: TaskStatus): boolean {
 
 export function registerTaskTools(server: McpServer): void {
   server.registerTool(
-    'taskList',
-    {
+    ...createGovernedTool({
+      name: 'taskList',
       title: 'Task List',
       description: 'List tasks for a known project and optionally filter by status',
       inputSchema: {
@@ -767,57 +844,52 @@ export function registerTaskTools(server: McpServer): void {
         status: z.enum(['TODO', 'IN_PROGRESS', 'BLOCKED', 'DONE']).optional(),
         limit: z.number().int().min(1).max(200).optional(),
       },
-    },
-    async ({ projectPath, status, limit }) => {
-      const governanceDir = await resolveGovernanceDir(projectPath)
-      const normalizedProjectPath = toProjectPath(governanceDir)
-      const { tasks, markdownPath: tasksViewPath } = await loadTasksDocument(governanceDir)
-      const roadmapViewPath = path.join(governanceDir, 'roadmap.md')
-      const filtered = tasks
-        .filter((task) => (status ? task.status === status : true))
-        .slice(0, limit ?? 100)
-      const lintSuggestions = collectTaskLintSuggestions(filtered)
-      if (status && filtered.length === 0) {
-        appendLintSuggestions(lintSuggestions, [
-          {
-            code: TASK_LINT_CODES.FILTER_EMPTY,
-            message: `No tasks matched status=${status}.`,
-            fixHint: 'Confirm status values or update task states.',
-          },
-        ])
-      }
-      const nextTaskId = filtered[0]?.id
-
-      const markdown = renderToolResponseMarkdown({
-        toolName: 'taskList',
-        sections: [
-          summarySection([
-            `- projectPath: ${normalizedProjectPath}`,
-            `- governanceDir: ${governanceDir}`,
-            `- tasksView: ${tasksViewPath}`,
-            `- roadmapView: ${roadmapViewPath}`,
-            `- filter.status: ${status ?? '(none)'}`,
-            `- returned: ${filtered.length}`,
-          ]),
-          evidenceSection([
-            '- tasks:',
-            ...filtered.map((task) => `- ${task.id} | ${task.status} | ${task.title} | owner=${task.owner || ''} | updatedAt=${task.updatedAt}`),
-          ]),
-          guidanceSection(['- Pick one task ID and call `taskContext`.' ]),
-          lintSection(lintSuggestions),
-          nextCallSection(nextTaskId
-            ? `taskContext(projectPath="${toProjectPath(governanceDir)}", taskId="${nextTaskId}")`
-            : undefined),
-        ],
-      })
-
-      return asText(markdown)
-    }
+      async execute({ projectPath, status, limit }) {
+        const governanceDir = await resolveGovernanceDir(projectPath)
+        const normalizedProjectPath = toProjectPath(governanceDir)
+        const { tasks, markdownPath: tasksViewPath } = await loadTasksDocument(governanceDir)
+        const roadmapViewPath = path.join(governanceDir, 'roadmap.md')
+        const filtered = tasks
+          .filter((task) => (status ? task.status === status : true))
+          .slice(0, limit ?? 100)
+        return { normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, filtered, status }
+      },
+      summary: ({ normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, filtered, status }) => [
+        `- projectPath: ${normalizedProjectPath}`,
+        `- governanceDir: ${governanceDir}`,
+        `- tasksView: ${tasksViewPath}`,
+        `- roadmapView: ${roadmapViewPath}`,
+        `- filter.status: ${status ?? '(none)'}`,
+        `- returned: ${filtered.length}`,
+      ],
+      evidence: ({ filtered }) => [
+        '- tasks:',
+        ...filtered.map((task) => `- ${task.id} | ${task.status} | ${task.title} | owner=${task.owner || ''} | updatedAt=${task.updatedAt}`),
+      ],
+      guidance: () => ['- Pick one task ID and call `taskContext`.'],
+      suggestions: ({ filtered, status }) => {
+        const suggestions = collectTaskLintSuggestions(filtered)
+        if (status && filtered.length === 0) {
+          suggestions.push(...renderLintSuggestions([
+            {
+              code: TASK_LINT_CODES.FILTER_EMPTY,
+              message: `No tasks matched status=${status}.`,
+              fixHint: 'Confirm status values or update task states.',
+            },
+          ]))
+        }
+        return suggestions
+      },
+      nextCall: ({ filtered, normalizedProjectPath }) =>
+        filtered[0]
+          ? `taskContext(projectPath="${normalizedProjectPath}", taskId="${filtered[0].id}")`
+          : undefined,
+    })
   )
 
   server.registerTool(
-    'taskCreate',
-    {
+    ...createGovernedTool({
+      name: 'taskCreate',
       title: 'Task Create',
       description: 'Create a new task in governance store with stable TASK-<number> ID',
       inputSchema: {
@@ -842,386 +914,410 @@ export function registerTaskTools(server: McpServer): void {
           escalationPath: z.string().optional(),
         }).optional(),
       },
-    },
-    async ({ projectPath, taskId, title, status, owner, summary, roadmapRefs, links, subState, blocker }) => {
-      if (taskId && !isValidTaskId(taskId)) {
-        return {
-          ...asText(renderErrorMarkdown(
-            'taskCreate',
+      async execute({ projectPath, taskId, title, status, owner, summary, roadmapRefs, links, subState, blocker }) {
+        if (taskId && !isValidTaskId(taskId)) {
+          throw new ToolExecutionError(
             `Invalid task ID format: ${taskId}`,
             ['expected format: TASK-1 or TASK-0001', 'omit taskId to auto-generate next ID'],
-            `taskCreate(projectPath="${projectPath}", title="Define executable objective")`
-          )),
-          isError: true,
+            `taskCreate(projectPath="${projectPath}", title="Define executable objective")`,
+          )
         }
-      }
-
-      const governanceDir = await resolveGovernanceDir(projectPath)
-      const normalizedProjectPath = toProjectPath(governanceDir)
-      const { tasksPath, tasks, markdownPath: tasksViewPath } = await loadTasksDocument(governanceDir)
-      const roadmapViewPath = path.join(governanceDir, 'roadmap.md')
-      const finalTaskId = taskId ?? nextTaskId(tasks)
-      const duplicated = tasks.some((item) => item.id === finalTaskId)
-
-      if (duplicated) {
-        return {
-          ...asText(renderErrorMarkdown(
-            'taskCreate',
+        const governanceDir = await resolveGovernanceDir(projectPath)
+        const normalizedProjectPath = toProjectPath(governanceDir)
+        const { tasksPath, tasks, markdownPath: tasksViewPath } = await loadTasksDocument(governanceDir)
+        const roadmapViewPath = path.join(governanceDir, 'roadmap.md')
+        const finalTaskId = taskId ?? nextTaskId(tasks)
+        const duplicated = tasks.some((item) => item.id === finalTaskId)
+        if (duplicated) {
+          throw new ToolExecutionError(
             `Task already exists: ${finalTaskId}`,
             ['task IDs must be unique', 'use taskUpdate for existing tasks'],
-            `taskUpdate(projectPath="${normalizedProjectPath}", taskId="${finalTaskId}", updates={...})`
-          )),
-          isError: true,
+            `taskUpdate(projectPath="${normalizedProjectPath}", taskId="${finalTaskId}", updates={...})`,
+          )
         }
-      }
-
-      const createdTask = normalizeTask({
-        id: finalTaskId,
-        title,
-        status: status ?? 'TODO',
-        owner,
-        summary,
-        roadmapRefs,
-        links,
-        subState,
-        blocker,
-        updatedAt: nowIso(),
-      })
-
-      await upsertTaskInStore(tasksPath, createdTask)
-      await loadTasksDocumentWithOptions(governanceDir, true)
-
-      const lintSuggestions = [
-        ...collectSingleTaskLintSuggestions(createdTask),
-        ...(await collectTaskFileLintSuggestions(governanceDir, createdTask)),
-      ]
-
-      const markdown = renderToolResponseMarkdown({
-        toolName: 'taskCreate',
-        sections: [
-          summarySection([
-            `- projectPath: ${normalizedProjectPath}`,
-            `- governanceDir: ${governanceDir}`,
-            `- tasksView: ${tasksViewPath}`,
-            `- roadmapView: ${roadmapViewPath}`,
-            `- taskId: ${createdTask.id}`,
-            `- status: ${createdTask.status}`,
-            `- owner: ${createdTask.owner || '(none)'}`,
-            `- updatedAt: ${createdTask.updatedAt}`,
-          ]),
-          evidenceSection([
-            '### Created Task',
-            `- ${createdTask.id} | ${createdTask.status} | ${createdTask.title}`,
-            `- summary: ${createdTask.summary || '(none)'}`,
-            `- roadmapRefs: ${createdTask.roadmapRefs.join(', ') || '(none)'}`,
-            `- links: ${createdTask.links.join(', ') || '(none)'}`,
-          ]),
-          guidanceSection([
-            'Task created in governance store successfully and tasks.md has been synced.',
-            'Run taskContext to verify references and lint guidance.',
-          ]),
-          lintSection(lintSuggestions),
-          nextCallSection(`taskContext(projectPath="${normalizedProjectPath}", taskId="${createdTask.id}")`),
-        ],
-      })
-
-      return asText(markdown)
-    }
+        const createdTask = normalizeTask({
+          id: finalTaskId,
+          title,
+          status: status ?? 'TODO',
+          owner,
+          summary,
+          roadmapRefs,
+          links,
+          subState,
+          blocker,
+          updatedAt: nowIso(),
+        })
+        await upsertTaskInStore(tasksPath, createdTask)
+        await loadTasksDocumentWithOptions(governanceDir, true)
+        return { normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, createdTask }
+      },
+      summary: ({ normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, createdTask }) => [
+        `- projectPath: ${normalizedProjectPath}`,
+        `- governanceDir: ${governanceDir}`,
+        `- tasksView: ${tasksViewPath}`,
+        `- roadmapView: ${roadmapViewPath}`,
+        `- taskId: ${createdTask.id}`,
+        `- status: ${createdTask.status}`,
+        `- owner: ${createdTask.owner || '(none)'}`,
+        `- updatedAt: ${createdTask.updatedAt}`,
+      ],
+      evidence: ({ createdTask }) => [
+        '### Created Task',
+        `- ${createdTask.id} | ${createdTask.status} | ${createdTask.title}`,
+        `- summary: ${createdTask.summary || '(none)'}`,
+        `- roadmapRefs: ${createdTask.roadmapRefs.join(', ') || '(none)'}`,
+        `- links: ${createdTask.links.join(', ') || '(none)'}`,
+      ],
+      guidance: () => [
+        'Task created in governance store successfully and tasks.md has been synced.',
+        'Run taskContext to verify references and lint guidance.',
+      ],
+      suggestions: ({ createdTask }) => collectSingleTaskLintSuggestions(createdTask),
+      nextCall: ({ normalizedProjectPath, createdTask }) =>
+        `taskContext(projectPath="${normalizedProjectPath}", taskId="${createdTask.id}")`,
+    })
   )
 
   server.registerTool(
-    'taskNext',
-    {
+    ...createGovernedTool({
+      name: 'taskNext',
       title: 'Task Next',
       description: 'Start here to auto-select the highest-priority actionable task',
       inputSchema: {
         limit: z.number().int().min(1).max(20).optional(),
       },
-    },
-    async ({ limit }) => {
-      const roots = resolveScanRoots()
-      const depth = resolveScanDepth()
-      const projects = await discoverProjectsAcrossRoots(roots, depth)
-      const rankedCandidates = rankActionableTaskCandidates(await readActionableTaskCandidates(projects))
+      async execute({ limit }) {
+        const roots = resolveScanRoots()
+        const depth = resolveScanDepth()
+        const projects = await discoverProjectsAcrossRoots(roots, depth)
+        const rankedCandidates = rankActionableTaskCandidates(await readActionableTaskCandidates(projects))
 
-      if (rankedCandidates.length === 0) {
-        const projectSnapshots = await Promise.all(
-          projects.map(async (governanceDir) => {
-            const tasksPath = path.join(governanceDir, '.projitive')
-            await ensureStore(tasksPath)
-            const stats = await loadTaskStatusStatsFromStore(tasksPath)
-            const roadmapIds = await readRoadmapIds(governanceDir)
-            return {
-              governanceDir,
-              roadmapIds,
-              total: stats.total,
-              todo: stats.todo,
-              inProgress: stats.inProgress,
-              blocked: stats.blocked,
-              done: stats.done,
-            }
-          })
-        )
+        if (rankedCandidates.length === 0) {
+          const projectSnapshots = await Promise.all(
+            projects.map(async (governanceDir) => {
+              const tasksPath = path.join(governanceDir, '.projitive')
+              await ensureStore(tasksPath)
+              const stats = await loadTaskStatusStatsFromStore(tasksPath)
+              const roadmapIds = await readRoadmapIds(governanceDir)
+              return { governanceDir, roadmapIds, total: stats.total, todo: stats.todo, inProgress: stats.inProgress, blocked: stats.blocked, done: stats.done }
+            })
+          )
+          const preferredProject = projectSnapshots[0]
+          const preferredRoadmapRef = preferredProject?.roadmapIds[0] ?? 'ROADMAP-0001'
+          const noTaskDiscoveryGuidance = await resolveNoTaskDiscoveryGuidance(preferredProject?.governanceDir)
+          return { isEmpty: true as const, roots, depth, projects, projectSnapshots, preferredProject, preferredRoadmapRef, noTaskDiscoveryGuidance }
+        }
 
-        const preferredProject = projectSnapshots[0]
-        const preferredRoadmapRef = preferredProject?.roadmapIds[0] ?? 'ROADMAP-0001'
-        const noTaskDiscoveryGuidance = await resolveNoTaskDiscoveryGuidance(preferredProject?.governanceDir)
-        const markdown = renderToolResponseMarkdown({
-          toolName: 'taskNext',
-          sections: [
-            summarySection([
-              `- rootPaths: ${roots.join(', ')}`,
-              `- rootCount: ${roots.length}`,
-              `- maxDepth: ${depth}`,
-              `- matchedProjects: ${projects.length}`,
-              '- actionableTasks: 0',
-            ]),
-            evidenceSection([
-              '### Project Snapshots',
-              ...(projectSnapshots.length > 0
-                ? projectSnapshots.map(
-                    (item, index) => `${index + 1}. ${toProjectPath(item.governanceDir)} | total=${item.total} | todo=${item.todo} | in_progress=${item.inProgress} | blocked=${item.blocked} | done=${item.done} | roadmapIds=${item.roadmapIds.join(', ') || '(none)'}`
-                  )
-                : ['- (none)']),
-              '',
-              '### Seed Task Template',
-              ...renderTaskSeedTemplate(preferredRoadmapRef),
-            ]),
-            guidanceSection([
-              '- No TODO/IN_PROGRESS task is available.',
-              '- Create 1-3 new TODO tasks using `taskCreate(...)` from active roadmap slices.',
-              '- Use no-task discovery checklist below to proactively find and create meaningful TODO tasks.',
-              '- If roadmap has active milestones, analyze milestone intent and split into 1-3 executable TODO tasks.',
-              '',
-              '### No-Task Discovery Checklist',
-              ...noTaskDiscoveryGuidance,
-              '',
-              '- If no tasks exist, derive 1-3 TODO tasks from roadmap milestones, README scope, or unresolved report gaps.',
-              '- If only BLOCKED/DONE tasks exist, reopen one blocked item or create a follow-up TODO task.',
-              '- After creating tasks, rerun `taskNext` to re-rank actionable work.',
-            ]),
-            lintSection([
-              '- No actionable tasks found. Verify task statuses and required fields in .projitive task table.',
-              '- Ensure each new task has stable TASK-<number> ID and at least one roadmapRefs item.',
-            ]),
-            nextCallSection(preferredProject
-                ? `taskCreate(projectPath="${toProjectPath(preferredProject.governanceDir)}", title="Create first executable slice", roadmapRefs=["${preferredRoadmapRef}"], summary="Derived from active roadmap milestone")`
-              : 'projectScan()'),
-          ],
-        })
-        return asText(markdown)
-      }
-
-      const selected = rankedCandidates[0]
-      const selectedTaskDocument = await loadTasksDocument(selected.governanceDir)
-      const lintSuggestions = collectTaskLintSuggestions(selectedTaskDocument.tasks)
-      const artifacts = await discoverGovernanceArtifacts(selected.governanceDir)
-      const fileCandidates = candidateFilesFromArtifacts(artifacts)
-      const referenceLocations = (
-        await Promise.all(fileCandidates.map((file) => findTextReferences(file, selected.task.id)))
-      ).flat()
-      const taskLocation = (await findTextReferences(selectedTaskDocument.markdownPath, selected.task.id))[0]
-      const relatedArtifacts = Array.from(new Set(referenceLocations.map((item) => item.filePath)))
-      const suggestedReadOrder = [selectedTaskDocument.markdownPath, ...relatedArtifacts.filter((item) => item !== selectedTaskDocument.markdownPath)]
-      const candidateLimit = limit ?? 5
-
-      const markdown = renderToolResponseMarkdown({
-        toolName: 'taskNext',
-        sections: [
-          summarySection([
-            `- rootPaths: ${roots.join(', ')}`,
-            `- rootCount: ${roots.length}`,
-            `- maxDepth: ${depth}`,
-            `- matchedProjects: ${projects.length}`,
-            `- actionableTasks: ${rankedCandidates.length}`,
-            `- selectedProject: ${toProjectPath(selected.governanceDir)}`,
-            `- selectedTaskId: ${selected.task.id}`,
-            `- selectedTaskStatus: ${selected.task.status}`,
-          ]),
-          evidenceSection([
-            '### Selected Task',
-            `- id: ${selected.task.id}`,
-            `- title: ${selected.task.title}`,
-            `- owner: ${selected.task.owner || '(none)'}`,
-            `- updatedAt: ${selected.task.updatedAt}`,
-            `- roadmapRefs: ${selected.task.roadmapRefs.join(', ') || '(none)'}`,
-            `- taskLocation: ${taskLocation ? `${taskLocation.filePath}#L${taskLocation.line}` : selectedTaskDocument.markdownPath}`,
-            '',
-            '### Top Candidates',
-            ...rankedCandidates
-              .slice(0, candidateLimit)
-              .map((item, index) => `${index + 1}. ${item.task.id} | ${item.task.status} | ${item.task.title} | projectPath=${toProjectPath(item.governanceDir)} | projectScore=${item.projectScore} | latest=${item.projectLatestUpdatedAt}`),
-            '',
-            '### Selection Reason',
-            '- Rank rule: projectScore DESC -> taskPriority DESC -> taskUpdatedAt DESC.',
-            `- Selected candidate scores: projectScore=${selected.projectScore}, taskPriority=${selected.taskPriority}, taskUpdatedAtMs=${selected.taskUpdatedAtMs}.`,
-            '',
-            '### Related Artifacts',
-            ...(relatedArtifacts.length > 0 ? relatedArtifacts.map((file) => `- ${file}`) : ['- (none)']),
-            '',
-            '### Reference Locations',
-            ...(referenceLocations.length > 0
-              ? referenceLocations.map((item) => `- ${item.filePath}#L${item.line}: ${item.text}`)
+        const selected = rankedCandidates[0]
+        const selectedTaskDocument = await loadTasksDocument(selected.governanceDir)
+        const artifacts = await discoverGovernanceArtifacts(selected.governanceDir)
+        const fileCandidates = candidateFilesFromArtifacts(artifacts)
+        const projectContextDocsState = inspectProjectContextDocsFromArtifacts(fileCandidates)
+        const referenceLocations = (
+          await Promise.all(fileCandidates.map((file) => findTextReferences(file, selected.task.id)))
+        ).flat()
+        const taskLocation = (await findTextReferences(selectedTaskDocument.markdownPath, selected.task.id))[0]
+        const relatedArtifacts = Array.from(new Set(referenceLocations.map((item) => item.filePath)))
+        const suggestedReadOrder = [selectedTaskDocument.markdownPath, ...relatedArtifacts.filter((item) => item !== selectedTaskDocument.markdownPath)]
+        const candidateLimit = limit ?? 5
+        return {
+          isEmpty: false as const,
+          roots, depth, projects,
+          rankedCandidates, selected, selectedTaskDocument,
+          relatedArtifacts, referenceLocations,
+          suggestedReadOrder, projectContextDocsState, taskLocation, candidateLimit,
+        }
+      },
+      summary: (data) => {
+        if (data.isEmpty) {
+          return [
+            `- rootPaths: ${data.roots.join(', ')}`,
+            `- rootCount: ${data.roots.length}`,
+            `- maxDepth: ${data.depth}`,
+            `- matchedProjects: ${data.projects.length}`,
+            '- actionableTasks: 0',
+          ]
+        }
+        return [
+          `- rootPaths: ${data.roots.join(', ')}`,
+          `- rootCount: ${data.roots.length}`,
+          `- maxDepth: ${data.depth}`,
+          `- matchedProjects: ${data.projects.length}`,
+          `- actionableTasks: ${data.rankedCandidates.length}`,
+          `- selectedProject: ${toProjectPath(data.selected.governanceDir)}`,
+          `- selectedTaskId: ${data.selected.task.id}`,
+          `- selectedTaskStatus: ${data.selected.task.status}`,
+        ]
+      },
+      evidence: (data) => {
+        if (data.isEmpty) {
+          return [
+            '### Project Snapshots',
+            ...(data.projectSnapshots.length > 0
+              ? data.projectSnapshots.map(
+                  (item, index) => `${index + 1}. ${toProjectPath(item.governanceDir)} | total=${item.total} | todo=${item.todo} | in_progress=${item.inProgress} | blocked=${item.blocked} | done=${item.done} | roadmapIds=${item.roadmapIds.join(', ') || '(none)'}`,
+                )
               : ['- (none)']),
             '',
-            '### Suggested Read Order',
-            ...suggestedReadOrder.map((item, index) => `${index + 1}. ${item}`),
-          ]),
-          guidanceSection([
-            '- Start immediately with Suggested Read Order and execute the selected task.',
-            '- Update markdown artifacts directly while keeping TASK/ROADMAP IDs unchanged.',
-            '- Re-run `taskContext` for the selectedTaskId after edits to verify evidence consistency.',
-          ]),
-          lintSection(lintSuggestions),
-          nextCallSection(`taskContext(projectPath="${toProjectPath(selected.governanceDir)}", taskId="${selected.task.id}")`),
-        ],
-      })
-
-      return asText(markdown)
-    }
+            '### Seed Task Template',
+            ...renderTaskSeedTemplate(data.preferredRoadmapRef),
+          ]
+        }
+        const { taskLocation, selectedTaskDocument, rankedCandidates, candidateLimit, relatedArtifacts, referenceLocations, suggestedReadOrder } = data
+        const taskLocationStr = taskLocation
+          ? `${taskLocation.filePath}#L${taskLocation.line}`
+          : selectedTaskDocument.markdownPath
+        return [
+          '### Selected Task',
+          `- id: ${data.selected.task.id}`,
+          `- title: ${data.selected.task.title}`,
+          `- owner: ${data.selected.task.owner || '(none)'}`,
+          `- updatedAt: ${data.selected.task.updatedAt}`,
+          `- roadmapRefs: ${data.selected.task.roadmapRefs.join(', ') || '(none)'}`,
+          `- taskLocation: ${taskLocationStr}`,
+          '',
+          '### Top Candidates',
+          ...rankedCandidates
+            .slice(0, candidateLimit)
+            .map((item, index) => `${index + 1}. ${item.task.id} | ${item.task.status} | ${item.task.title} | projectPath=${toProjectPath(item.governanceDir)} | projectScore=${item.projectScore} | latest=${item.projectLatestUpdatedAt}`),
+          '',
+          '### Selection Reason',
+          '- Rank rule: projectScore DESC -> taskPriority DESC -> taskUpdatedAt DESC.',
+          `- Selected candidate scores: projectScore=${data.selected.projectScore}, taskPriority=${data.selected.taskPriority}, taskUpdatedAtMs=${data.selected.taskUpdatedAtMs}.`,
+          '',
+          '### Related Artifacts',
+          ...(relatedArtifacts.length > 0 ? relatedArtifacts.map((file) => `- ${file}`) : ['- (none)']),
+          '',
+          '### Reference Locations',
+          ...(referenceLocations.length > 0
+            ? referenceLocations.map((item) => `- ${item.filePath}#L${item.line}: ${item.text}`)
+            : ['- (none)']),
+          '',
+          '### Suggested Read Order',
+          ...suggestedReadOrder.map((item, index) => `${index + 1}. ${item}`),
+        ]
+      },
+      guidance: (data) => {
+        if (data.isEmpty) {
+          return [
+            '- No TODO/IN_PROGRESS task is available.',
+            '- Create 1-3 new TODO tasks using `taskCreate(...)` from active roadmap slices.',
+            '- Use no-task discovery checklist below to proactively find and create meaningful TODO tasks.',
+            '- If roadmap has active milestones, analyze milestone intent and split into 1-3 executable TODO tasks.',
+            '',
+            '### No-Task Discovery Checklist',
+            ...data.noTaskDiscoveryGuidance,
+            '',
+            '- If no tasks exist, derive 1-3 TODO tasks from roadmap milestones, README scope, or unresolved report gaps.',
+            '- If only BLOCKED/DONE tasks exist, reopen one blocked item or create a follow-up TODO task.',
+            '- After creating tasks, rerun `taskNext` to re-rank actionable work.',
+          ]
+        }
+        return [
+          ...(!data.projectContextDocsState.ready
+            ? [
+                '- Project context docs are incomplete. Complete missing project architecture/style docs before deep implementation.',
+                ...(data.projectContextDocsState.missingArchitectureDocs
+                  ? [`- Missing architecture design doc: create required file ${CORE_ARCHITECTURE_DOC_FILE}.`]
+                  : []),
+                ...(data.projectContextDocsState.missingStyleDocs
+                  ? [`- Missing design style doc: create required file ${CORE_STYLE_DOC_FILE}.`]
+                  : []),
+              ]
+            : []),
+          '- Start immediately with Suggested Read Order and execute the selected task.',
+          '- Update markdown artifacts directly while keeping TASK/ROADMAP IDs unchanged.',
+          '- Re-run `taskContext` for the selectedTaskId after edits to verify evidence consistency.',
+        ]
+      },
+      suggestions: (data) => {
+        if (data.isEmpty) {
+          return [
+            '- No actionable tasks found. Verify task statuses and required fields in .projitive task table.',
+            '- Ensure each new task has stable TASK-<number> ID and at least one roadmapRefs item.',
+          ]
+        }
+        return [
+          ...collectTaskLintSuggestions(data.selectedTaskDocument.tasks),
+          ...renderLintSuggestions(collectProjectContextDocsLintSuggestions(data.projectContextDocsState)),
+        ]
+      },
+      nextCall: (data) => {
+        if (data.isEmpty) {
+          return data.preferredProject
+            ? `taskCreate(projectPath="${toProjectPath(data.preferredProject.governanceDir)}", title="Create first executable slice", roadmapRefs=["${data.preferredRoadmapRef}"], summary="Derived from active roadmap milestone")`
+            : 'projectScan()'
+        }
+        return `taskContext(projectPath="${toProjectPath(data.selected.governanceDir)}", taskId="${data.selected.task.id}")`
+      },
+    })
   )
 
   server.registerTool(
-    'taskContext',
-    {
+    ...createGovernedTool({
+      name: 'taskContext',
       title: 'Task Context',
       description: 'Get deep context, evidence links, and read order for one task',
       inputSchema: {
         projectPath: z.string(),
         taskId: z.string(),
       },
-    },
-    async ({ projectPath, taskId }) => {
-      if (!isValidTaskId(taskId)) {
-        return {
-          ...asText(renderErrorMarkdown(
-            'taskContext',
+      async execute({ projectPath, taskId }) {
+        if (!isValidTaskId(taskId)) {
+          throw new ToolExecutionError(
             `Invalid task ID format: ${taskId}`,
             ['expected format: TASK-1 or TASK-0001', 'retry with a valid task ID'],
-            `taskContext(projectPath="${projectPath}", taskId="TASK-0001")`
-          )),
-          isError: true,
+            `taskContext(projectPath="${projectPath}", taskId="TASK-0001")`,
+          )
         }
-      }
-
-      const governanceDir = await resolveGovernanceDir(projectPath)
-      const normalizedProjectPath = toProjectPath(governanceDir)
-      const { markdownPath, tasks } = await loadTasksDocument(governanceDir)
-      const roadmapViewPath = path.join(governanceDir, 'roadmap.md')
-      const task = tasks.find((item) => item.id === taskId)
-      if (!task) {
-        return {
-          ...asText(renderErrorMarkdown(
-            'taskContext',
+        const governanceDir = await resolveGovernanceDir(projectPath)
+        const normalizedProjectPath = toProjectPath(governanceDir)
+        const { markdownPath, tasks } = await loadTasksDocument(governanceDir)
+        const roadmapViewPath = path.join(governanceDir, 'roadmap.md')
+        const task = tasks.find((item) => item.id === taskId)
+        if (!task) {
+          throw new ToolExecutionError(
             `Task not found: ${taskId}`,
             ['run `taskList` to discover available IDs', 'retry with an existing task ID'],
-            `taskList(projectPath="${toProjectPath(governanceDir)}")`
-          )),
-          isError: true,
+            `taskList(projectPath="${toProjectPath(governanceDir)}")`,
+          )
         }
-      }
-
-      const lintSuggestions = [
+        const researchBriefState = await inspectTaskResearchBrief(governanceDir, task)
+        const contextReadingGuidance = await resolveTaskContextReadingGuidance(governanceDir)
+        const taskLocation = (await findTextReferences(markdownPath, taskId))[0]
+        const artifacts = await discoverGovernanceArtifacts(governanceDir)
+        const fileCandidates = candidateFilesFromArtifacts(artifacts)
+        const projectContextDocsState = inspectProjectContextDocsFromArtifacts(fileCandidates)
+        const referenceLocations = (
+          await Promise.all(fileCandidates.map((file) => findTextReferences(file, taskId)))
+        ).flat()
+        const relatedArtifacts = Array.from(new Set(referenceLocations.map((item) => item.filePath)))
+        const suggestedReadOrder = [markdownPath, ...relatedArtifacts.filter((item) => item !== markdownPath)]
+        return {
+          normalizedProjectPath, governanceDir, markdownPath, roadmapViewPath,
+          task, researchBriefState, contextReadingGuidance,
+          taskLocation, referenceLocations, relatedArtifacts, suggestedReadOrder,
+          projectContextDocsState,
+        }
+      },
+      summary: ({ normalizedProjectPath, governanceDir, markdownPath, roadmapViewPath, task, researchBriefState, projectContextDocsState, taskLocation }) => {
+        const lines = [
+          `- projectPath: ${normalizedProjectPath}`,
+          `- governanceDir: ${governanceDir}`,
+          `- tasksView: ${markdownPath}`,
+          `- roadmapView: ${roadmapViewPath}`,
+          `- taskId: ${task.id}`,
+          `- title: ${task.title}`,
+          `- status: ${task.status}`,
+          `- owner: ${task.owner}`,
+          `- updatedAt: ${task.updatedAt}`,
+          `- roadmapRefs: ${task.roadmapRefs.join(', ') || '(none)'}`,
+          `- researchBriefPath: ${researchBriefState.relativePath}`,
+          `- researchBriefStatus: ${researchBriefState.ready ? 'READY' : 'MISSING'}`,
+          `- architectureDocsStatus: ${projectContextDocsState.missingArchitectureDocs ? 'MISSING' : 'READY'}`,
+          `- styleDocsStatus: ${projectContextDocsState.missingStyleDocs ? 'MISSING' : 'READY'}`,
+          `- taskLocation: ${taskLocation ? `${taskLocation.filePath}#L${taskLocation.line}` : markdownPath}`,
+        ]
+        if (task.subState && task.status === 'IN_PROGRESS') {
+          lines.push('- subState:')
+          if (task.subState.phase) lines.push(`  - phase: ${task.subState.phase}`)
+          if (typeof task.subState.confidence === 'number') lines.push(`  - confidence: ${task.subState.confidence}`)
+          if (task.subState.estimatedCompletion) lines.push(`  - estimatedCompletion: ${task.subState.estimatedCompletion}`)
+        }
+        if (task.blocker && task.status === 'BLOCKED') {
+          lines.push('- blocker:')
+          lines.push(`  - type: ${task.blocker.type}`)
+          lines.push(`  - description: ${task.blocker.description}`)
+          if (task.blocker.blockingEntity) lines.push(`  - blockingEntity: ${task.blocker.blockingEntity}`)
+          if (task.blocker.unblockCondition) lines.push(`  - unblockCondition: ${task.blocker.unblockCondition}`)
+          if (task.blocker.escalationPath) lines.push(`  - escalationPath: ${task.blocker.escalationPath}`)
+        }
+        return lines
+      },
+      evidence: ({ task, researchBriefState, projectContextDocsState, relatedArtifacts, referenceLocations, suggestedReadOrder }) => [
+        '### Pre-Execution Research Brief',
+        `- path: ${researchBriefState.relativePath}`,
+        `- absolutePath: ${researchBriefState.absolutePath}`,
+        `- status: ${researchBriefState.ready ? 'READY' : 'MISSING'}`,
+        ...(!researchBriefState.ready
+          ? [
+              '',
+              '### Required Research Brief Template',
+              ...renderTaskResearchBriefTemplate(task).map((line) => `- ${line}`),
+            ]
+          : []),
+        '',
+        '### Project Context Docs Check',
+        `- architecture docs: ${projectContextDocsState.architectureDocs.length > 0 ? 'found' : 'missing'}`,
+        ...(projectContextDocsState.architectureDocs.length > 0
+          ? projectContextDocsState.architectureDocs.map((item) => `- architecture: ${item}`)
+          : [`- architecture: add required file ${CORE_ARCHITECTURE_DOC_FILE}.`]),
+        `- design style docs: ${projectContextDocsState.styleDocs.length > 0 ? 'found' : 'missing'}`,
+        ...(projectContextDocsState.styleDocs.length > 0
+          ? projectContextDocsState.styleDocs.map((item) => `- style: ${item}`)
+          : [`- style: add required file ${CORE_STYLE_DOC_FILE}.`]),
+        '',
+        '### Related Artifacts',
+        ...(relatedArtifacts.length > 0 ? relatedArtifacts.map((file) => `- ${file}`) : ['- (none)']),
+        '',
+        '### Reference Locations',
+        ...(referenceLocations.length > 0
+          ? referenceLocations.map((item) => `- ${item.filePath}#L${item.line}: ${item.text}`)
+          : ['- (none)']),
+        '',
+        '### Suggested Read Order',
+        ...suggestedReadOrder.map((item, index) => `${index + 1}. ${item}`),
+      ],
+      guidance: ({ researchBriefState, projectContextDocsState, contextReadingGuidance, task }) => [
+        ...(!researchBriefState.ready
+          ? [
+              '- Pre-execution gate is NOT satisfied. Complete research brief first, then proceed with implementation.',
+              `- Create or update ${researchBriefState.relativePath} with design guidelines + code architecture findings before code changes.`,
+              '- Include exact file/line locations in the brief (for example path/to/file.ts#L120).',
+              '- Re-run taskContext after writing the brief and confirm researchBriefStatus becomes READY.',
+            ]
+          : [
+              '- Pre-execution gate satisfied. Read the research brief first, then continue implementation.',
+              `- Must read ${researchBriefState.relativePath} before any task execution changes.`,
+            ]),
+        ...(!projectContextDocsState.ready
+          ? [
+              '- Project context docs gate is NOT satisfied. Complete missing project architecture/style docs first.',
+              ...(projectContextDocsState.missingArchitectureDocs
+                ? [`- Missing architecture design doc. Add required file ${CORE_ARCHITECTURE_DOC_FILE} and include architecture boundaries and module responsibilities.`]
+                : []),
+              ...(projectContextDocsState.missingStyleDocs
+                ? [`- Missing design style doc. Add required file ${CORE_STYLE_DOC_FILE} and include style language, tokens/themes, and UI consistency rules.`]
+                : []),
+              '- Re-run taskContext and confirm both architectureDocsStatus/styleDocsStatus are READY.',
+            ]
+          : [
+              '- Project context docs gate satisfied. Architecture/style docs are available for execution alignment.',
+            ]),
+        '- Read the files in Suggested Read Order.',
+        '',
+        '### Context Reading',
+        ...contextReadingGuidance,
+        '',
+        '- Verify whether current status and evidence are consistent.',
+        ...taskStatusGuidance(task),
+        '- If updates are needed, use tool writes for governance store (`taskUpdate` / `roadmapUpdate`) and keep TASK IDs unchanged.',
+        '- After editing, re-run `taskContext` to verify references and context consistency.',
+      ],
+      suggestions: ({ task, researchBriefState, projectContextDocsState }) => [
         ...collectSingleTaskLintSuggestions(task),
-        ...(await collectTaskFileLintSuggestions(governanceDir, task)),
-      ]
-      const contextReadingGuidance = await resolveTaskContextReadingGuidance(governanceDir)
-
-      const taskLocation = (await findTextReferences(markdownPath, taskId))[0]
-      const artifacts = await discoverGovernanceArtifacts(governanceDir)
-      const fileCandidates = candidateFilesFromArtifacts(artifacts)
-      const referenceLocations = (
-        await Promise.all(fileCandidates.map((file) => findTextReferences(file, taskId)))
-      ).flat()
-
-      const relatedArtifacts = Array.from(new Set(referenceLocations.map((item) => item.filePath)))
-      const suggestedReadOrder = [markdownPath, ...relatedArtifacts.filter((item) => item !== markdownPath)]
-
-      // Build summary with subState and blocker info (v1.1.0)
-      const summaryLines = [
-        `- projectPath: ${normalizedProjectPath}`,
-        `- governanceDir: ${governanceDir}`,
-        `- tasksView: ${markdownPath}`,
-        `- roadmapView: ${roadmapViewPath}`,
-        `- taskId: ${task.id}`,
-        `- title: ${task.title}`,
-        `- status: ${task.status}`,
-        `- owner: ${task.owner}`,
-        `- updatedAt: ${task.updatedAt}`,
-        `- roadmapRefs: ${task.roadmapRefs.join(', ') || '(none)'}`,
-        `- taskLocation: ${taskLocation ? `${taskLocation.filePath}#L${taskLocation.line}` : markdownPath}`,
-      ]
-
-      // Add subState info for IN_PROGRESS tasks (v1.1.0)
-      if (task.subState && task.status === 'IN_PROGRESS') {
-        summaryLines.push('- subState:')
-        if (task.subState.phase) {
-          summaryLines.push(`  - phase: ${task.subState.phase}`)
-        }
-        if (typeof task.subState.confidence === 'number') {
-          summaryLines.push(`  - confidence: ${task.subState.confidence}`)
-        }
-        if (task.subState.estimatedCompletion) {
-          summaryLines.push(`  - estimatedCompletion: ${task.subState.estimatedCompletion}`)
-        }
-      }
-
-      // Add blocker info for BLOCKED tasks (v1.1.0)
-      if (task.blocker && task.status === 'BLOCKED') {
-        summaryLines.push('- blocker:')
-        summaryLines.push(`  - type: ${task.blocker.type}`)
-        summaryLines.push(`  - description: ${task.blocker.description}`)
-        if (task.blocker.blockingEntity) {
-          summaryLines.push(`  - blockingEntity: ${task.blocker.blockingEntity}`)
-        }
-        if (task.blocker.unblockCondition) {
-          summaryLines.push(`  - unblockCondition: ${task.blocker.unblockCondition}`)
-        }
-        if (task.blocker.escalationPath) {
-          summaryLines.push(`  - escalationPath: ${task.blocker.escalationPath}`)
-        }
-      }
-
-      const coreMarkdown = renderToolResponseMarkdown({
-        toolName: 'taskContext',
-        sections: [
-          summarySection(summaryLines),
-          evidenceSection([
-            '### Related Artifacts',
-            ...(relatedArtifacts.length > 0 ? relatedArtifacts.map((file) => `- ${file}`) : ['- (none)']),
-            '',
-            '### Reference Locations',
-            ...(referenceLocations.length > 0
-              ? referenceLocations.map((item) => `- ${item.filePath}#L${item.line}: ${item.text}`)
-              : ['- (none)']),
-            '',
-            '### Suggested Read Order',
-            ...suggestedReadOrder.map((item, index) => `${index + 1}. ${item}`),
-          ]),
-          guidanceSection([
-            '- Read the files in Suggested Read Order.',
-            '',
-            '### Recommended Context Reading',
-            ...contextReadingGuidance,
-            '',
-            '- Verify whether current status and evidence are consistent.',
-            ...taskStatusGuidance(task),
-            '- If updates are needed, use tool writes for governance store (`taskUpdate` / `roadmapUpdate`) and keep TASK IDs unchanged.',
-            '- After editing, re-run `taskContext` to verify references and context consistency.',
-          ]),
-          lintSection(lintSuggestions),
-          nextCallSection(`taskContext(projectPath="${toProjectPath(governanceDir)}", taskId="${task.id}")`),
-        ],
-      })
-
-      return asText(coreMarkdown)
-    }
+        ...renderLintSuggestions(collectTaskResearchBriefLintSuggestions(researchBriefState)),
+        ...renderLintSuggestions(collectProjectContextDocsLintSuggestions(projectContextDocsState)),
+      ],
+      nextCall: ({ normalizedProjectPath, task }) =>
+        `taskContext(projectPath="${normalizedProjectPath}", taskId="${task.id}")`,
+    })
   )
 
   // taskUpdate tool - Update task fields including subState and blocker (Spec v1.1.0)
   server.registerTool(
-    'taskUpdate',
-    {
+    ...createGovernedTool({
+      name: 'taskUpdate',
       title: 'Task Update',
       description: 'Update task fields including status, owner, summary, subState, and blocker metadata',
       inputSchema: {
@@ -1247,160 +1343,116 @@ export function registerTaskTools(server: McpServer): void {
           }).optional(),
         }),
       },
-    },
-    async ({ projectPath, taskId, updates }) => {
-      if (!isValidTaskId(taskId)) {
-        return {
-          ...asText(renderErrorMarkdown(
-            'taskUpdate',
+      async execute({ projectPath, taskId, updates }) {
+        if (!isValidTaskId(taskId)) {
+          throw new ToolExecutionError(
             `Invalid task ID format: ${taskId}`,
             ['expected format: TASK-1 or TASK-0001', 'retry with a valid task ID'],
-            `taskUpdate(projectPath="${projectPath}", taskId="TASK-0001", updates={...})`
-          )),
-          isError: true,
+            `taskUpdate(projectPath="${projectPath}", taskId="TASK-0001", updates={...})`,
+          )
         }
-      }
-
-      const governanceDir = await resolveGovernanceDir(projectPath)
-      const normalizedProjectPath = toProjectPath(governanceDir)
-      const { tasksPath, tasks } = await loadTasksDocument(governanceDir)
-      const tasksViewPath = path.join(governanceDir, TASKS_MARKDOWN_FILE)
-      const roadmapViewPath = path.join(governanceDir, 'roadmap.md')
-      const taskIndex = tasks.findIndex((item) => item.id === taskId)
-
-      if (taskIndex === -1) {
-        return {
-          ...asText(renderErrorMarkdown(
-            'taskUpdate',
+        const governanceDir = await resolveGovernanceDir(projectPath)
+        const normalizedProjectPath = toProjectPath(governanceDir)
+        const { tasksPath, tasks } = await loadTasksDocument(governanceDir)
+        const tasksViewPath = path.join(governanceDir, TASKS_MARKDOWN_FILE)
+        const roadmapViewPath = path.join(governanceDir, 'roadmap.md')
+        const taskIndex = tasks.findIndex((item) => item.id === taskId)
+        if (taskIndex === -1) {
+          throw new ToolExecutionError(
             `Task not found: ${taskId}`,
             ['run `taskList` to discover available IDs', 'retry with an existing task ID'],
-            `taskList(projectPath="${toProjectPath(governanceDir)}")`
-          )),
-          isError: true,
+            `taskList(projectPath="${toProjectPath(governanceDir)}")`,
+          )
         }
-      }
-
-      const task = tasks[taskIndex]
-      const originalStatus = task.status
-
-      // Validate status transition
-      if (updates.status && !validateTransition(originalStatus, updates.status)) {
-        return {
-          ...asText(renderErrorMarkdown(
-            'taskUpdate',
+        const task = tasks[taskIndex]
+        const originalStatus = task.status
+        const previewTask: Task = normalizeTask({ ...task, ...updates, updatedAt: nowIso() })
+        if (updates.status && !validateTransition(originalStatus, updates.status)) {
+          throw new ToolExecutionError(
             `Invalid status transition: ${originalStatus} -> ${updates.status}`,
             ['use `validateTransition` to check allowed transitions', 'provide evidence when transitioning to DONE'],
-            `taskContext(projectPath="${toProjectPath(governanceDir)}", taskId="${taskId}")`
-          )),
-          isError: true,
+            `taskContext(projectPath="${toProjectPath(governanceDir)}", taskId="${taskId}")`,
+          )
         }
-      }
-
-      // Apply updates
-      if (updates.status) task.status = updates.status
-      if (updates.owner !== undefined) task.owner = updates.owner
-      if (updates.summary !== undefined) task.summary = updates.summary
-      if (updates.roadmapRefs) task.roadmapRefs = updates.roadmapRefs
-      if (updates.links) task.links = updates.links
-
-      // Handle subState (Spec v1.1.0)
-      if (updates.subState !== undefined) {
-        if (updates.subState === null) {
-          delete task.subState
-        } else {
-          task.subState = {
-            ...(task.subState || {}),
-            ...updates.subState,
-          }
+        const updatedSubState = updates.subState === null ? undefined
+          : updates.subState !== undefined ? { ...(task.subState ?? {}), ...updates.subState }
+          : task.subState
+        const updatedBlocker = updates.blocker === null ? undefined
+          : updates.blocker !== undefined ? updates.blocker
+          : task.blocker
+        const normalizedTask = normalizeTask({
+          ...task,
+          ...(updates.status ? { status: updates.status } : {}),
+          ...(updates.owner !== undefined ? { owner: updates.owner } : {}),
+          ...(updates.summary !== undefined ? { summary: updates.summary } : {}),
+          ...(updates.roadmapRefs ? { roadmapRefs: updates.roadmapRefs } : {}),
+          ...(updates.links ? { links: updates.links } : {}),
+          subState: updatedSubState,
+          blocker: updatedBlocker,
+          updatedAt: nowIso(),
+        })
+        await upsertTaskInStore(tasksPath, normalizedTask)
+        await loadTasksDocumentWithOptions(governanceDir, true)
+        return { normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, taskId, originalStatus, task: normalizedTask, previewTask, updates }
+      },
+      summary: ({ normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, taskId, originalStatus, task }) => {
+        const lines = [
+          `- projectPath: ${normalizedProjectPath}`,
+          `- governanceDir: ${governanceDir}`,
+          `- tasksView: ${tasksViewPath}`,
+          `- roadmapView: ${roadmapViewPath}`,
+          `- taskId: ${taskId}`,
+          `- originalStatus: ${originalStatus}`,
+          `- newStatus: ${task.status}`,
+          `- updatedAt: ${task.updatedAt}`,
+        ]
+        if (task.subState) {
+          lines.push('- subState:')
+          if (task.subState.phase) lines.push(`  - phase: ${task.subState.phase}`)
+          if (typeof task.subState.confidence === 'number') lines.push(`  - confidence: ${task.subState.confidence}`)
+          if (task.subState.estimatedCompletion) lines.push(`  - estimatedCompletion: ${task.subState.estimatedCompletion}`)
         }
-      }
-
-      // Handle blocker (Spec v1.1.0)
-      if (updates.blocker !== undefined) {
-        if (updates.blocker === null) {
-          delete task.blocker
-        } else {
-          task.blocker = updates.blocker
+        if (task.blocker) {
+          lines.push('- blocker:')
+          lines.push(`  - type: ${task.blocker.type}`)
+          lines.push(`  - description: ${task.blocker.description}`)
+          if (task.blocker.blockingEntity) lines.push(`  - blockingEntity: ${task.blocker.blockingEntity}`)
+          if (task.blocker.unblockCondition) lines.push(`  - unblockCondition: ${task.blocker.unblockCondition}`)
+          if (task.blocker.escalationPath) lines.push(`  - escalationPath: ${task.blocker.escalationPath}`)
         }
-      }
-
-      // Update updatedAt
-      task.updatedAt = nowIso()
-
-      const normalizedTask = normalizeTask(task)
-
-      // Save task incrementally
-      await upsertTaskInStore(tasksPath, normalizedTask)
-      await loadTasksDocumentWithOptions(governanceDir, true)
-
-      task.status = normalizedTask.status
-      task.owner = normalizedTask.owner
-      task.summary = normalizedTask.summary
-      task.roadmapRefs = normalizedTask.roadmapRefs
-      task.links = normalizedTask.links
-      task.updatedAt = normalizedTask.updatedAt
-      task.subState = normalizedTask.subState
-      task.blocker = normalizedTask.blocker
-
-      // Build response
-      const updateSummary = [
-        `- projectPath: ${normalizedProjectPath}`,
-        `- governanceDir: ${governanceDir}`,
-        `- tasksView: ${tasksViewPath}`,
-        `- roadmapView: ${roadmapViewPath}`,
-        `- taskId: ${taskId}`,
-        `- originalStatus: ${originalStatus}`,
-        `- newStatus: ${task.status}`,
-        `- updatedAt: ${task.updatedAt}`,
-      ]
-
-      if (task.subState) {
-        updateSummary.push('- subState:')
-        if (task.subState.phase) updateSummary.push(`  - phase: ${task.subState.phase}`)
-        if (typeof task.subState.confidence === 'number') updateSummary.push(`  - confidence: ${task.subState.confidence}`)
-        if (task.subState.estimatedCompletion) updateSummary.push(`  - estimatedCompletion: ${task.subState.estimatedCompletion}`)
-      }
-
-      if (task.blocker) {
-        updateSummary.push('- blocker:')
-        updateSummary.push(`  - type: ${task.blocker.type}`)
-        updateSummary.push(`  - description: ${task.blocker.description}`)
-        if (task.blocker.blockingEntity) updateSummary.push(`  - blockingEntity: ${task.blocker.blockingEntity}`)
-        if (task.blocker.unblockCondition) updateSummary.push(`  - unblockCondition: ${task.blocker.unblockCondition}`)
-        if (task.blocker.escalationPath) updateSummary.push(`  - escalationPath: ${task.blocker.escalationPath}`)
-      }
-
-      const markdown = renderToolResponseMarkdown({
-        toolName: 'taskUpdate',
-        sections: [
-          summarySection(updateSummary),
-          evidenceSection([
-            '### Updated Task',
-            `- ${task.id} | ${task.status} | ${task.title}`,
-            `- owner: ${task.owner || '(none)'}`,
-            `- summary: ${task.summary || '(none)'}`,
-            '',
-            '### Update Details',
-            ...(updates.status ? [`- status: ${originalStatus} → ${updates.status}`] : []),
-            ...(updates.owner !== undefined ? [`- owner: ${updates.owner}`] : []),
-            ...(updates.summary !== undefined ? [`- summary: ${updates.summary}`] : []),
-            ...(updates.roadmapRefs ? [`- roadmapRefs: ${updates.roadmapRefs.join(', ')}`] : []),
-            ...(updates.links ? [`- links: ${updates.links.join(', ')}`] : []),
-            ...(updates.subState ? [`- subState: ${JSON.stringify(updates.subState)}`] : []),
-            ...(updates.blocker ? [`- blocker: ${JSON.stringify(updates.blocker)}`] : []),
-          ]),
-          guidanceSection([
-            'Task updated successfully and tasks.md has been synced. Run `taskContext` to verify the changes.',
-            'If status changed to DONE, ensure evidence links are added.',
-            'If subState or blocker were updated, verify the metadata is correct.',
-            '.projitive governance store is source of truth; tasks.md is a generated view and may be overwritten.',
-          ]),
-          lintSection([]),
-          nextCallSection(`taskContext(projectPath="${toProjectPath(governanceDir)}", taskId="${taskId}")`),
-        ],
-      })
-
-      return asText(markdown)
-    }
+        return lines
+      },
+      evidence: ({ task, originalStatus, updates }) => [
+        '### Updated Task',
+        `- ${task.id} | ${task.status} | ${task.title}`,
+        `- owner: ${task.owner || '(none)'}`,
+        `- summary: ${task.summary || '(none)'}`,
+        '',
+        '### Update Details',
+        ...(updates.status ? [`- status: ${originalStatus} → ${updates.status}`] : []),
+        ...(updates.owner !== undefined ? [`- owner: ${updates.owner}`] : []),
+        ...(updates.summary !== undefined ? [`- summary: ${updates.summary}`] : []),
+        ...(updates.roadmapRefs ? [`- roadmapRefs: ${updates.roadmapRefs.join(', ')}`] : []),
+        ...(updates.links ? [`- links: ${updates.links.join(', ')}`] : []),
+        ...(updates.subState ? [`- subState: ${JSON.stringify(updates.subState)}`] : []),
+        ...(updates.blocker ? [`- blocker: ${JSON.stringify(updates.blocker)}`] : []),
+      ],
+      guidance: ({ updates, originalStatus }) => [
+        'Task updated successfully and tasks.md has been synced. Run `taskContext` to verify the changes.',
+        ...(updates.status === 'IN_PROGRESS' && originalStatus === 'TODO'
+          ? ['- Ensure pre-execution research brief exists before deep implementation.']
+          : []),
+        ...(updates.status === 'DONE'
+          ? ['- Verify evidence links are attached and reflect completed work.']
+          : []),
+        '.projitive governance store is source of truth; tasks.md is a generated view and may be overwritten.',
+      ],
+      suggestions: async ({ previewTask, governanceDir }) => [
+        ...collectSingleTaskLintSuggestions(previewTask),
+        ...renderLintSuggestions(await collectDoneConformanceSuggestions(governanceDir, previewTask)),
+      ],
+      nextCall: ({ normalizedProjectPath, taskId }) =>
+        `taskContext(projectPath="${normalizedProjectPath}", taskId="${taskId}")`,
+    })
   )
 }

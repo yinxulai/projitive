@@ -10,6 +10,7 @@ import {
   initializeProjectStructure,
   resolveGovernanceDir,
   resolveScanRoots,
+  resolveScanRoot,
   resolveScanDepth,
   toProjectPath,
   registerProjectTools
@@ -21,6 +22,12 @@ async function createTempDir(): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'projitive-mcp-test-'))
   tempPaths.push(dir)
   return dir
+}
+
+function getProjectToolHandler(mockServer: { registerTool: ReturnType<typeof vi.fn> }, toolName: string) {
+  const call = mockServer.registerTool.mock.calls.find((entry) => entry[0] === toolName)
+  expect(call).toBeTruthy()
+  return call?.[2] as (args?: Record<string, unknown>) => Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }>
 }
 
 afterEach(async () => {
@@ -114,6 +121,19 @@ describe('projitive module', () => {
       await fs.mkdir(deepDir, { recursive: true })
       
       await expect(resolveGovernanceDir(deepDir)).rejects.toThrow('No .projitive marker found')
+    })
+
+    it('throws when multiple non-default governance roots exist under same parent', async () => {
+      const root = await createTempDir()
+      const childDir = path.join(root, 'child')
+      const gov1 = path.join(childDir, 'governance-a')
+      const gov2 = path.join(childDir, 'governance-b')
+      await fs.mkdir(gov1, { recursive: true })
+      await fs.mkdir(gov2, { recursive: true })
+      await fs.writeFile(path.join(gov1, '.projitive'), '', 'utf-8')
+      await fs.writeFile(path.join(gov2, '.projitive'), '', 'utf-8')
+
+      await expect(resolveGovernanceDir(childDir)).rejects.toThrow('Multiple governance roots found')
     })
 
     it('prefers default .projitive directory when multiple governance roots found as children', async () => {
@@ -348,6 +368,22 @@ describe('projitive module', () => {
       expect(initialized.directories.some(d => d.path.includes('reports'))).toBe(true)
       expect(initialized.directories.some(d => d.path.includes('templates'))).toBe(true)
     })
+
+    it('throws when governanceDir is an absolute path', async () => {
+      const root = await createTempDir()
+      await expect(initializeProjectStructure(root, '/absolute/path')).rejects.toThrow('relative directory name')
+    })
+
+    it('throws when governanceDir contains path separators', async () => {
+      const root = await createTempDir()
+      await expect(initializeProjectStructure(root, 'path/with/slash')).rejects.toThrow('path separators')
+    })
+
+    it('throws when governanceDir is a dot or double-dot', async () => {
+      const root = await createTempDir()
+      await expect(initializeProjectStructure(root, '.')).rejects.toThrow('normal directory name')
+      await expect(initializeProjectStructure(root, '..')).rejects.toThrow('normal directory name')
+    })
   })
 
   describe('utility functions', () => {
@@ -417,6 +453,25 @@ describe('projitive module', () => {
         expect(() => resolveScanDepth()).toThrow('Invalid PROJITIVE_SCAN_MAX_DEPTH')
         vi.unstubAllEnvs()
       })
+
+      it('throws when PROJITIVE_SCAN_MAX_DEPTH env var is missing', () => {
+        vi.unstubAllEnvs()
+        expect(() => resolveScanDepth()).toThrow('Missing required environment variable: PROJITIVE_SCAN_MAX_DEPTH')
+      })
+    })
+
+    describe('resolveScanRoot', () => {
+      it('returns first scan root from env', () => {
+        vi.stubEnv('PROJITIVE_SCAN_ROOT_PATH', '/test/root')
+        expect(resolveScanRoot()).toBe('/test/root')
+        vi.unstubAllEnvs()
+      })
+
+      it('returns normalized path when inputPath is provided', () => {
+        vi.stubEnv('PROJITIVE_SCAN_ROOT_PATH', '/fallback')
+        expect(resolveScanRoot('/custom/path')).toBe('/custom/path')
+        vi.unstubAllEnvs()
+      })
     })
   })
 
@@ -458,6 +513,126 @@ describe('projitive module', () => {
 
       expect(markdown).toContain(`1. ${projectRoot}`)
       expect(markdown).not.toContain(`1. ${governanceDir}`)
+    })
+
+    it('projectScan returns no-project guidance when scan root is empty', async () => {
+      const emptyRoot = await createTempDir()
+
+      vi.stubEnv('PROJITIVE_SCAN_ROOT_PATHS', emptyRoot)
+      vi.stubEnv('PROJITIVE_SCAN_MAX_DEPTH', '2')
+
+      const mockServer = { registerTool: vi.fn() }
+      registerProjectTools(mockServer as unknown as McpServer)
+
+      const projectScan = getProjectToolHandler(mockServer, 'projectScan')
+      const result = await projectScan()
+
+      expect(result.isError).toBeUndefined()
+      expect(result.content[0].text).toContain('No governance root discovered')
+    })
+
+    it('projectNext ranks multiple actionable projects by score', async () => {
+      const scanRoot = await createTempDir()
+      const projectA = path.join(scanRoot, 'app-a')
+      const projectB = path.join(scanRoot, 'app-b')
+      await fs.mkdir(projectA, { recursive: true })
+      await fs.mkdir(projectB, { recursive: true })
+      await initializeProjectStructure(projectA)
+      await initializeProjectStructure(projectB)
+
+      vi.stubEnv('PROJITIVE_SCAN_ROOT_PATHS', scanRoot)
+      vi.stubEnv('PROJITIVE_SCAN_MAX_DEPTH', '3')
+
+      const mockServer = { registerTool: vi.fn() }
+      registerProjectTools(mockServer as unknown as McpServer)
+
+      const projectNext = getProjectToolHandler(mockServer, 'projectNext')
+      const result = await projectNext({})
+
+      expect(result.isError).toBeUndefined()
+      expect(result.content[0].text).toContain('actionableProjects:')
+    })
+
+    it('projectInit handler initializes project structure', async () => {
+      const root = await createTempDir()
+
+      const mockServer = { registerTool: vi.fn() }
+      registerProjectTools(mockServer as unknown as McpServer)
+
+      const projectInit = getProjectToolHandler(mockServer, 'projectInit')
+      const result = await projectInit({ projectPath: root })
+
+      expect(result.isError).toBeUndefined()
+      expect(result.content[0].text).toContain('governanceDir:')
+      expect(result.content[0].text).toContain('createdFiles:')
+    })
+
+    it('projectLocate resolves governance dir from any inner path', async () => {
+      const root = await createTempDir()
+      const projectRoot = path.join(root, 'myapp')
+      const governanceDir = path.join(projectRoot, '.projitive')
+      await fs.mkdir(governanceDir, { recursive: true })
+      await fs.writeFile(path.join(governanceDir, '.projitive'), '', 'utf-8')
+
+      const mockServer = { registerTool: vi.fn() }
+      registerProjectTools(mockServer as unknown as McpServer)
+
+      const projectLocate = getProjectToolHandler(mockServer, 'projectLocate')
+      const result = await projectLocate({ inputPath: governanceDir })
+
+      expect(result.isError).toBeUndefined()
+      expect(result.content[0].text).toContain(`projectPath: ${projectRoot}`)
+      expect(result.content[0].text).toContain(`governanceDir: ${governanceDir}`)
+    })
+
+    it('projectNext ranks actionable projects by score', async () => {
+      const scanRoot = await createTempDir()
+      const projectRoot = path.join(scanRoot, 'myapp')
+      await fs.mkdir(projectRoot, { recursive: true })
+      await initializeProjectStructure(projectRoot)
+
+      vi.stubEnv('PROJITIVE_SCAN_ROOT_PATHS', scanRoot)
+      vi.stubEnv('PROJITIVE_SCAN_MAX_DEPTH', '3')
+
+      const mockServer = { registerTool: vi.fn() }
+      registerProjectTools(mockServer as unknown as McpServer)
+
+      const projectNext = getProjectToolHandler(mockServer, 'projectNext')
+      const result = await projectNext({})
+
+      expect(result.isError).toBeUndefined()
+      expect(result.content[0].text).toContain('actionableProjects:')
+      expect(result.content[0].text).toContain('myapp')
+    })
+
+    it('projectContext shows task stats and governance artifacts', async () => {
+      const root = await createTempDir()
+      await initializeProjectStructure(root)
+
+      const mockServer = { registerTool: vi.fn() }
+      registerProjectTools(mockServer as unknown as McpServer)
+
+      const projectContext = getProjectToolHandler(mockServer, 'projectContext')
+      const result = await projectContext({ projectPath: root })
+
+      expect(result.isError).toBeUndefined()
+      expect(result.content[0].text).toContain('Task Summary')
+      expect(result.content[0].text).toContain('Artifacts')
+    })
+
+    it('syncViews materializes both tasks and roadmap markdown views', async () => {
+      const root = await createTempDir()
+      await initializeProjectStructure(root)
+
+      const mockServer = { registerTool: vi.fn() }
+      registerProjectTools(mockServer as unknown as McpServer)
+
+      const syncViews = getProjectToolHandler(mockServer, 'syncViews')
+      const result = await syncViews({ projectPath: root, views: ['tasks', 'roadmap'], force: true })
+
+      expect(result.isError).toBeUndefined()
+      expect(result.content[0].text).toContain('tasks.md synced')
+      expect(result.content[0].text).toContain('roadmap.md synced')
     })
   })
 })

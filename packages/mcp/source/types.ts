@@ -117,8 +117,8 @@ export interface TaskDocument {
 }
 
 export interface ActionableTaskCandidate {
-  governanceDir: string;
   task: Task;
+  governanceDir: string;
   projectScore: number;
   projectLatestUpdatedAt: string;
   taskUpdatedAtMs: number;
@@ -156,4 +156,11 @@ export const TASK_LINT_CODES = {
   IN_PROGRESS_WITHOUT_SUBSTATE: 'TASK_IN_PROGRESS_WITHOUT_SUBSTATE',
   SUBSTATE_PHASE_INVALID: 'TASK_SUBSTATE_PHASE_INVALID',
   SUBSTATE_CONFIDENCE_INVALID: 'TASK_SUBSTATE_CONFIDENCE_INVALID',
+  RESEARCH_BRIEF_MISSING: 'TASK_RESEARCH_BRIEF_MISSING',
+  RESEARCH_BRIEF_INCOMPLETE: 'TASK_RESEARCH_BRIEF_INCOMPLETE',
+} as const
+
+export const PROJECT_LINT_CODES = {
+  ARCHITECTURE_DOC_MISSING: 'PROJECT_ARCHITECTURE_DOC_MISSING',
+  STYLE_DOC_MISSING: 'PROJECT_STYLE_DOC_MISSING',
 } as const

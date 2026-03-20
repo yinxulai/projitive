@@ -9,8 +9,9 @@
 ## Agent Guidance
 {{guidance}}
 
+## Lint Suggestions
+{{suggestions}}
+
 ## Next Call
 {{next_call}}
 
-## Raw Response
-{{content}}
