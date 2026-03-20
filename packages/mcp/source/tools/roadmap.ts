@@ -17,14 +17,8 @@ import {
   markMarkdownViewBuilt,
 } from '../common/index.js'
 import {
-  asText,
-  evidenceSection,
-  guidanceSection,
-  lintSection,
-  nextCallSection,
-  renderErrorMarkdown,
-  renderToolResponseMarkdown,
-  summarySection,
+  createGovernedTool,
+  ToolExecutionError,
 } from '../common/index.js'
 import { resolveGovernanceDir, toProjectPath } from './project.js'
 import { loadTasks, loadTasksDocument } from './task.js'
@@ -237,132 +231,114 @@ export function isValidRoadmapId(id: string): boolean {
 
 export function registerRoadmapTools(server: McpServer): void {
   server.registerTool(
-    'roadmapList',
-    {
+    ...createGovernedTool({
+      name: 'roadmapList',
       title: 'Roadmap List',
       description: 'List roadmap IDs and task linkage for planning or traceability',
       inputSchema: {
         projectPath: z.string(),
       },
-    },
-    async ({ projectPath }) => {
-      const governanceDir = await resolveGovernanceDir(projectPath)
-      const normalizedProjectPath = toProjectPath(governanceDir)
-      const { milestones, markdownPath: roadmapViewPath } = await loadRoadmapDocument(governanceDir)
-      const roadmapIds = milestones.map((item) => item.id)
-      const { tasks, markdownPath: tasksViewPath } = await loadTasksDocument(governanceDir)
-      const lintSuggestions = collectRoadmapLintSuggestions(roadmapIds, tasks)
-
-      const markdown = renderToolResponseMarkdown({
-        toolName: 'roadmapList',
-        sections: [
-          summarySection([
-            `- projectPath: ${normalizedProjectPath}`,
-            `- governanceDir: ${governanceDir}`,
-            `- tasksView: ${tasksViewPath}`,
-            `- roadmapView: ${roadmapViewPath}`,
-            `- roadmapCount: ${roadmapIds.length}`,
-          ]),
-          evidenceSection([
-            '- roadmaps:',
-            ...roadmapIds.map((id) => {
-              const linkedTasks = tasks.filter((task) => task.roadmapRefs.includes(id))
-              return `- ${id} | linkedTasks=${linkedTasks.length}`
-            }),
-          ]),
-          guidanceSection(['- Pick one roadmap ID and call `roadmapContext`.']),
-          lintSection(lintSuggestions),
-          nextCallSection(roadmapIds[0]
-            ? `roadmapContext(projectPath="${toProjectPath(governanceDir)}", roadmapId="${roadmapIds[0]}")`
-            : undefined),
-        ],
-      })
-
-      return asText(markdown)
-    }
+      async execute({ projectPath }) {
+        const governanceDir = await resolveGovernanceDir(projectPath)
+        const normalizedProjectPath = toProjectPath(governanceDir)
+        const { milestones, markdownPath: roadmapViewPath } = await loadRoadmapDocument(governanceDir)
+        const roadmapIds = milestones.map((item) => item.id)
+        const { tasks, markdownPath: tasksViewPath } = await loadTasksDocument(governanceDir)
+        const lintSuggestions = collectRoadmapLintSuggestions(roadmapIds, tasks)
+        return { normalizedProjectPath, governanceDir, roadmapIds, roadmapViewPath, tasksViewPath, tasks, lintSuggestions }
+      },
+      primary: ({ normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, roadmapIds }) => [
+        `- projectPath: ${normalizedProjectPath}`,
+        `- governanceDir: ${governanceDir}`,
+        `- tasksView: ${tasksViewPath}`,
+        `- roadmapView: ${roadmapViewPath}`,
+        `- roadmapCount: ${roadmapIds.length}`,
+      ],
+      evidence: ({ roadmapIds, tasks }) => [
+        '- roadmaps:',
+        ...roadmapIds.map((id) => {
+          const linkedTasks = tasks.filter((task) => task.roadmapRefs.includes(id))
+          return `- ${id} | linkedTasks=${linkedTasks.length}`
+        }),
+      ],
+      guidance: () => ['- Pick one roadmap ID and call `roadmapContext`.'],
+      lint: ({ lintSuggestions }) => lintSuggestions,
+      nextCall: ({ roadmapIds, normalizedProjectPath }) =>
+        roadmapIds[0]
+          ? `roadmapContext(projectPath="${normalizedProjectPath}", roadmapId="${roadmapIds[0]}")`
+          : undefined,
+    })
   )
 
   server.registerTool(
-    'roadmapContext',
-    {
+    ...createGovernedTool({
+      name: 'roadmapContext',
       title: 'Roadmap Context',
       description: 'Inspect one roadmap with linked tasks and reference locations',
       inputSchema: {
         projectPath: z.string(),
         roadmapId: z.string(),
       },
-    },
-    async ({ projectPath, roadmapId }) => {
-      if (!isValidRoadmapId(roadmapId)) {
-        return {
-          ...asText(renderErrorMarkdown(
-            'roadmapContext',
+      async execute({ projectPath, roadmapId }) {
+        if (!isValidRoadmapId(roadmapId)) {
+          throw new ToolExecutionError(
             `Invalid roadmap ID format: ${roadmapId}`,
             ['expected format: ROADMAP-1 or ROADMAP-0001', 'retry with a valid roadmap ID'],
-            `roadmapContext(projectPath="${projectPath}", roadmapId="ROADMAP-0001")`
-          )),
-          isError: true,
+            `roadmapContext(projectPath="${projectPath}", roadmapId="ROADMAP-0001")`,
+          )
         }
-      }
-
-      const governanceDir = await resolveGovernanceDir(projectPath)
-      const normalizedProjectPath = toProjectPath(governanceDir)
-      const { markdownPath: roadmapViewPath } = resolveRoadmapArtifactPaths(governanceDir)
-      const artifacts = await discoverGovernanceArtifacts(governanceDir)
-      const fileCandidates = candidateFilesFromArtifacts(artifacts)
-      const referenceLocations = (
-        await Promise.all(fileCandidates.map((file) => findTextReferences(file, roadmapId)))
-      ).flat()
-
-      const { tasks, markdownPath: tasksViewPath } = await loadTasksDocument(governanceDir)
-      const relatedTasks = tasks.filter((task) => task.roadmapRefs.includes(roadmapId))
-      const roadmapIds = await loadRoadmapIds(governanceDir)
-      const lintSuggestionItems = collectRoadmapLintSuggestionItems(roadmapIds, tasks)
-      if (relatedTasks.length === 0) {
-        lintSuggestionItems.push({
-          code: ROADMAP_LINT_CODES.CONTEXT_RELATED_TASKS_EMPTY,
-          message: `relatedTasks=0 for ${roadmapId}.`,
-          fixHint: 'Batch bind task roadmapRefs to improve execution traceability.',
-        })
-      }
-      const lintSuggestions = renderLintSuggestions(lintSuggestionItems)
-
-      const markdown = renderToolResponseMarkdown({
-        toolName: 'roadmapContext',
-        sections: [
-          summarySection([
-            `- projectPath: ${normalizedProjectPath}`,
-            `- governanceDir: ${governanceDir}`,
-            `- tasksView: ${tasksViewPath}`,
-            `- roadmapView: ${roadmapViewPath}`,
-            `- roadmapId: ${roadmapId}`,
-            `- relatedTasks: ${relatedTasks.length}`,
-            `- references: ${referenceLocations.length}`,
-          ]),
-          evidenceSection([
-            '### Related Tasks',
-            ...relatedTasks.map((task) => `- ${task.id} | ${task.status} | ${task.title}`),
-            '',
-            '### Reference Locations',
-            ...referenceLocations.map((item) => `- ${item.filePath}#L${item.line}: ${item.text}`),
-          ]),
-          guidanceSection([
-            '- Read roadmap references first, then related tasks.',
-            '- Keep ROADMAP/TASK IDs unchanged while updating markdown files.',
-            '- Re-run `roadmapContext` after edits to confirm references remain consistent.',
-          ]),
-          lintSection(lintSuggestions),
-          nextCallSection(`roadmapContext(projectPath="${toProjectPath(governanceDir)}", roadmapId="${roadmapId}")`),
-        ],
-      })
-
-      return asText(markdown)
-    }
+        const governanceDir = await resolveGovernanceDir(projectPath)
+        const normalizedProjectPath = toProjectPath(governanceDir)
+        const { markdownPath: roadmapViewPath } = resolveRoadmapArtifactPaths(governanceDir)
+        const artifacts = await discoverGovernanceArtifacts(governanceDir)
+        const fileCandidates = candidateFilesFromArtifacts(artifacts)
+        const referenceLocations = (
+          await Promise.all(fileCandidates.map((file) => findTextReferences(file, roadmapId)))
+        ).flat()
+        const { tasks, markdownPath: tasksViewPath } = await loadTasksDocument(governanceDir)
+        const relatedTasks = tasks.filter((task) => task.roadmapRefs.includes(roadmapId))
+        const roadmapIds = await loadRoadmapIds(governanceDir)
+        const lintSuggestionItems = collectRoadmapLintSuggestionItems(roadmapIds, tasks)
+        if (relatedTasks.length === 0) {
+          lintSuggestionItems.push({
+            code: ROADMAP_LINT_CODES.CONTEXT_RELATED_TASKS_EMPTY,
+            message: `relatedTasks=0 for ${roadmapId}.`,
+            fixHint: 'Batch bind task roadmapRefs to improve execution traceability.',
+          })
+        }
+        const lintSuggestions = renderLintSuggestions(lintSuggestionItems)
+        return { normalizedProjectPath, governanceDir, roadmapId, roadmapViewPath, tasksViewPath, relatedTasks, referenceLocations, lintSuggestions }
+      },
+      primary: ({ normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, roadmapId, relatedTasks, referenceLocations }) => [
+        `- projectPath: ${normalizedProjectPath}`,
+        `- governanceDir: ${governanceDir}`,
+        `- tasksView: ${tasksViewPath}`,
+        `- roadmapView: ${roadmapViewPath}`,
+        `- roadmapId: ${roadmapId}`,
+        `- relatedTasks: ${relatedTasks.length}`,
+        `- references: ${referenceLocations.length}`,
+      ],
+      evidence: ({ relatedTasks, referenceLocations }) => [
+        '### Related Tasks',
+        ...relatedTasks.map((task) => `- ${task.id} | ${task.status} | ${task.title}`),
+        '',
+        '### Reference Locations',
+        ...referenceLocations.map((item) => `- ${item.filePath}#L${item.line}: ${item.text}`),
+      ],
+      guidance: () => [
+        '- Read roadmap references first, then related tasks.',
+        '- Keep ROADMAP/TASK IDs unchanged while updating markdown files.',
+        '- Re-run `roadmapContext` after edits to confirm references remain consistent.',
+      ],
+      lint: ({ lintSuggestions }) => lintSuggestions,
+      nextCall: ({ normalizedProjectPath, roadmapId }) =>
+        `roadmapContext(projectPath="${normalizedProjectPath}", roadmapId="${roadmapId}")`,
+    })
   )
 
   server.registerTool(
-    'roadmapCreate',
-    {
+    ...createGovernedTool({
+      name: 'roadmapCreate',
       title: 'Roadmap Create',
       description: 'Create one roadmap milestone in governance store',
       inputSchema: {
@@ -372,87 +348,69 @@ export function registerRoadmapTools(server: McpServer): void {
         status: z.enum(['active', 'done']).optional(),
         time: z.string().optional(),
       },
-    },
-    async ({ projectPath, roadmapId, title, status, time }) => {
-      if (roadmapId && !isValidRoadmapId(roadmapId)) {
-        return {
-          ...asText(renderErrorMarkdown(
-            'roadmapCreate',
+      async execute({ projectPath, roadmapId, title, status, time }) {
+        if (roadmapId && !isValidRoadmapId(roadmapId)) {
+          throw new ToolExecutionError(
             `Invalid roadmap ID format: ${roadmapId}`,
             ['expected format: ROADMAP-1 or ROADMAP-0001', 'omit roadmapId to auto-generate next ID'],
-            `roadmapCreate(projectPath="${projectPath}", title="Define milestone", time="2026-Q2")`
-          )),
-          isError: true,
+            `roadmapCreate(projectPath="${projectPath}", title="Define milestone", time="2026-Q2")`,
+          )
         }
-      }
-
-      const governanceDir = await resolveGovernanceDir(projectPath)
-      const normalizedProjectPath = toProjectPath(governanceDir)
-      const doc = await loadRoadmapDocument(governanceDir)
-      const { markdownPath: tasksViewPath } = await loadTasksDocument(governanceDir)
-
-      const finalRoadmapId = roadmapId ?? nextRoadmapId(doc.milestones)
-      const duplicated = doc.milestones.some((item) => item.id === finalRoadmapId)
-      if (duplicated) {
-        return {
-          ...asText(renderErrorMarkdown(
-            'roadmapCreate',
+        const governanceDir = await resolveGovernanceDir(projectPath)
+        const normalizedProjectPath = toProjectPath(governanceDir)
+        const doc = await loadRoadmapDocument(governanceDir)
+        const { markdownPath: tasksViewPath } = await loadTasksDocument(governanceDir)
+        const finalRoadmapId = roadmapId ?? nextRoadmapId(doc.milestones)
+        const duplicated = doc.milestones.some((item) => item.id === finalRoadmapId)
+        if (duplicated) {
+          throw new ToolExecutionError(
             `Roadmap milestone already exists: ${finalRoadmapId}`,
             ['roadmap IDs must be unique', 'use roadmapUpdate for existing milestone'],
-            `roadmapUpdate(projectPath="${normalizedProjectPath}", roadmapId="${finalRoadmapId}", updates={...})`
-          )),
-          isError: true,
+            `roadmapUpdate(projectPath="${normalizedProjectPath}", roadmapId="${finalRoadmapId}", updates={...})`,
+          )
         }
-      }
-
-      const created: RoadmapMilestone = normalizeMilestone({
-        id: finalRoadmapId,
-        title,
-        status: status ?? 'active',
-        time,
-        updatedAt: nowIso(),
-      })
-
-      await upsertRoadmapInStore(doc.roadmapPath, created)
-      const refreshed = await loadRoadmapDocumentWithOptions(governanceDir, true)
-      const { tasks } = await loadTasks(governanceDir)
-      const lintSuggestions = collectRoadmapLintSuggestions(refreshed.milestones.map((item) => item.id), tasks)
-
-      const markdown = renderToolResponseMarkdown({
-        toolName: 'roadmapCreate',
-        sections: [
-          summarySection([
-            `- projectPath: ${normalizedProjectPath}`,
-            `- governanceDir: ${governanceDir}`,
-            `- tasksView: ${tasksViewPath}`,
-            `- roadmapView: ${refreshed.markdownPath}`,
-            `- roadmapId: ${created.id}`,
-            `- status: ${created.status}`,
-            `- updatedAt: ${created.updatedAt}`,
-          ]),
-          evidenceSection([
-            '### Created Milestone',
-            `- ${created.id} | ${created.status} | ${created.title}${created.time ? ` | time=${created.time}` : ''}`,
-            '',
-            '### Roadmap Count',
-            `- total: ${refreshed.milestones.length}`,
-          ]),
-          guidanceSection([
-            'Milestone created successfully and roadmap.md has been synced.',
-            'Re-run roadmapContext to verify linked task traceability.',
-          ]),
-          lintSection(lintSuggestions),
-          nextCallSection(`roadmapContext(projectPath="${normalizedProjectPath}", roadmapId="${created.id}")`),
-        ],
-      })
-
-      return asText(markdown)
-    }
+        const created: RoadmapMilestone = normalizeMilestone({
+          id: finalRoadmapId,
+          title,
+          status: status ?? 'active',
+          time,
+          updatedAt: nowIso(),
+        })
+        await upsertRoadmapInStore(doc.roadmapPath, created)
+        const refreshed = await loadRoadmapDocumentWithOptions(governanceDir, true)
+        const { tasks } = await loadTasks(governanceDir)
+        const lintSuggestions = collectRoadmapLintSuggestions(refreshed.milestones.map((item) => item.id), tasks)
+        return { normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath: refreshed.markdownPath, created, refreshed, lintSuggestions }
+      },
+      primary: ({ normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, created }) => [
+        `- projectPath: ${normalizedProjectPath}`,
+        `- governanceDir: ${governanceDir}`,
+        `- tasksView: ${tasksViewPath}`,
+        `- roadmapView: ${roadmapViewPath}`,
+        `- roadmapId: ${created.id}`,
+        `- status: ${created.status}`,
+        `- updatedAt: ${created.updatedAt}`,
+      ],
+      evidence: ({ created, refreshed }) => [
+        '### Created Milestone',
+        `- ${created.id} | ${created.status} | ${created.title}${created.time ? ` | time=${created.time}` : ''}`,
+        '',
+        '### Roadmap Count',
+        `- total: ${refreshed.milestones.length}`,
+      ],
+      guidance: () => [
+        'Milestone created successfully and roadmap.md has been synced.',
+        'Re-run roadmapContext to verify linked task traceability.',
+      ],
+      lint: ({ lintSuggestions }) => lintSuggestions,
+      nextCall: ({ normalizedProjectPath, created }) =>
+        `roadmapContext(projectPath="${normalizedProjectPath}", roadmapId="${created.id}")`,
+    })
   )
 
   server.registerTool(
-    'roadmapUpdate',
-    {
+    ...createGovernedTool({
+      name: 'roadmapUpdate',
       title: 'Roadmap Update',
       description: 'Update one roadmap milestone fields incrementally in governance store',
       inputSchema: {
@@ -464,78 +422,61 @@ export function registerRoadmapTools(server: McpServer): void {
           time: z.string().optional(),
         }),
       },
-    },
-    async ({ projectPath, roadmapId, updates }) => {
-      if (!isValidRoadmapId(roadmapId)) {
-        return {
-          ...asText(renderErrorMarkdown(
-            'roadmapUpdate',
+      async execute({ projectPath, roadmapId, updates }) {
+        if (!isValidRoadmapId(roadmapId)) {
+          throw new ToolExecutionError(
             `Invalid roadmap ID format: ${roadmapId}`,
             ['expected format: ROADMAP-1 or ROADMAP-0001', 'retry with a valid roadmap ID'],
-            `roadmapUpdate(projectPath="${projectPath}", roadmapId="ROADMAP-0001", updates={...})`
-          )),
-          isError: true,
+            `roadmapUpdate(projectPath="${projectPath}", roadmapId="ROADMAP-0001", updates={...})`,
+          )
         }
-      }
-
-      const governanceDir = await resolveGovernanceDir(projectPath)
-      const normalizedProjectPath = toProjectPath(governanceDir)
-      const doc = await loadRoadmapDocument(governanceDir)
-      const { markdownPath: tasksViewPath } = await loadTasksDocument(governanceDir)
-      const existing = doc.milestones.find((item) => item.id === roadmapId)
-      if (!existing) {
-        return {
-          ...asText(renderErrorMarkdown(
-            'roadmapUpdate',
+        const governanceDir = await resolveGovernanceDir(projectPath)
+        const normalizedProjectPath = toProjectPath(governanceDir)
+        const doc = await loadRoadmapDocument(governanceDir)
+        const { markdownPath: tasksViewPath } = await loadTasksDocument(governanceDir)
+        const existing = doc.milestones.find((item) => item.id === roadmapId)
+        if (!existing) {
+          throw new ToolExecutionError(
             `Roadmap milestone not found: ${roadmapId}`,
             ['run roadmapList to discover existing roadmap IDs', 'retry with an existing roadmap ID'],
-            `roadmapList(projectPath="${toProjectPath(governanceDir)}")`
-          )),
-          isError: true,
+            `roadmapList(projectPath="${toProjectPath(governanceDir)}")`,
+          )
         }
-      }
-
-      const updated: RoadmapMilestone = {
-        ...existing,
-        title: updates.title ?? existing.title,
-        status: updates.status ?? existing.status,
-        time: updates.time ?? existing.time,
-        updatedAt: nowIso(),
-      }
-
-      await upsertRoadmapInStore(doc.roadmapPath, updated)
-      const refreshed = await loadRoadmapDocumentWithOptions(governanceDir, true)
-
-      const markdown = renderToolResponseMarkdown({
-        toolName: 'roadmapUpdate',
-        sections: [
-          summarySection([
-            `- projectPath: ${normalizedProjectPath}`,
-            `- governanceDir: ${governanceDir}`,
-            `- tasksView: ${tasksViewPath}`,
-            `- roadmapView: ${refreshed.markdownPath}`,
-            `- roadmapId: ${roadmapId}`,
-            `- newStatus: ${updated.status}`,
-            `- updatedAt: ${updated.updatedAt}`,
-          ]),
-          evidenceSection([
-            '### Updated Milestone',
-            `- ${updated.id} | ${updated.status} | ${updated.title}${updated.time ? ` | time=${updated.time}` : ''}`,
-            '',
-            '### Roadmap Count',
-            `- total: ${refreshed.milestones.length}`,
-          ]),
-          guidanceSection([
-            'Milestone updated successfully and roadmap.md has been synced.',
-            'Re-run roadmapContext to verify linked task traceability.',
-            '.projitive governance store is source of truth; roadmap.md is a generated view and may be overwritten.',
-          ]),
-          lintSection([]),
-          nextCallSection(`roadmapContext(projectPath="${toProjectPath(governanceDir)}", roadmapId="${roadmapId}")`),
-        ],
-      })
-
-      return asText(markdown)
-    }
+        const updated: RoadmapMilestone = {
+          ...existing,
+          title: updates.title ?? existing.title,
+          status: updates.status ?? existing.status,
+          time: updates.time ?? existing.time,
+          updatedAt: nowIso(),
+        }
+        await upsertRoadmapInStore(doc.roadmapPath, updated)
+        const refreshed = await loadRoadmapDocumentWithOptions(governanceDir, true)
+        return { normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath: refreshed.markdownPath, roadmapId, updated, refreshed }
+      },
+      primary: ({ normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, roadmapId, updated }) => [
+        `- projectPath: ${normalizedProjectPath}`,
+        `- governanceDir: ${governanceDir}`,
+        `- tasksView: ${tasksViewPath}`,
+        `- roadmapView: ${roadmapViewPath}`,
+        `- roadmapId: ${roadmapId}`,
+        `- newStatus: ${updated.status}`,
+        `- updatedAt: ${updated.updatedAt}`,
+      ],
+      evidence: ({ updated, refreshed }) => [
+        '### Updated Milestone',
+        `- ${updated.id} | ${updated.status} | ${updated.title}${updated.time ? ` | time=${updated.time}` : ''}`,
+        '',
+        '### Roadmap Count',
+        `- total: ${refreshed.milestones.length}`,
+      ],
+      guidance: () => [
+        'Milestone updated successfully and roadmap.md has been synced.',
+        'Re-run roadmapContext to verify linked task traceability.',
+        '.projitive governance store is source of truth; roadmap.md is a generated view and may be overwritten.',
+      ],
+      lint: () => [],
+      nextCall: ({ normalizedProjectPath, roadmapId }) =>
+        `roadmapContext(projectPath="${normalizedProjectPath}", roadmapId="${roadmapId}")`,
+    })
   )
 }
