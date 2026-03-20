@@ -49,8 +49,6 @@ type TaskResearchBriefState = {
   relativePath: string;
   absolutePath: string;
   exists: boolean;
-  lineCount: number;
-  hasLineReferences: boolean;
   ready: boolean;
 };
 
@@ -204,43 +202,19 @@ async function inspectTaskResearchBrief(governanceDir: string, task: Task): Prom
   const projectPath = toProjectPath(governanceDir)
   const relativePath = taskResearchBriefRelativePath(task.id)
   const absolutePath = resolveTaskLinkPath(projectPath, relativePath)
-
-  const content = await fs.readFile(absolutePath, 'utf-8').catch(() => '')
-  const exists = content.length > 0
-  const lineCount = exists ? content.split(/\r?\n/).length : 0
-  const hasLineReferences = /#L\d+/.test(content)
-
-  return {
-    relativePath,
-    absolutePath,
-    exists,
-    lineCount,
-    hasLineReferences,
-    ready: exists && hasLineReferences,
-  }
+  const exists = await fs.access(absolutePath).then(() => true).catch(() => false)
+  return { relativePath, absolutePath, exists, ready: exists }
 }
 
 function collectTaskResearchBriefLintSuggestions(state: TaskResearchBriefState): TaskLintSuggestion[] {
-  const suggestions: TaskLintSuggestion[] = []
-
   if (!state.exists) {
-    suggestions.push({
+    return [{
       code: TASK_LINT_CODES.RESEARCH_BRIEF_MISSING,
       message: `Pre-execution research brief missing: ${state.relativePath}.`,
       fixHint: 'Create the file and fill required sections before implementation.',
-    })
-    return suggestions
+    }]
   }
-
-  if (!state.hasLineReferences) {
-    suggestions.push({
-      code: TASK_LINT_CODES.RESEARCH_BRIEF_INCOMPLETE,
-      message: `Research brief incomplete: ${state.relativePath}.`,
-      fixHint: 'Include at least one file line reference (for example #L42).',
-    })
-  }
-
-  return suggestions
+  return []
 }
 
 function inspectProjectContextDocsFromArtifacts(files: string[]) {
@@ -729,61 +703,16 @@ function collectSingleTaskLintSuggestions(task: Task): string[] {
   return renderLintSuggestions(collectSingleTaskLintSuggestionItems(task))
 }
 
-async function collectTaskFileLintSuggestionItems(governanceDir: string, task: Task): Promise<TaskLintSuggestion[]> {
-  const suggestions: TaskLintSuggestion[] = []
-  const projectPath = toProjectPath(governanceDir)
-
-  for (const link of task.links) {
-    const normalized = link.trim()
-    if (normalized.length === 0) {
-      continue
-    }
-
-    if (/^https?:\/\//i.test(normalized)) {
-      continue
-    }
-
-    if (!isProjectRootRelativePath(normalized)) {
-      suggestions.push({
-        code: TASK_LINT_CODES.LINK_PATH_FORMAT_INVALID,
-        message: `Link path should be project-root-relative without leading slash: ${normalized}.`,
-        fixHint: 'Use path/from/project/root format.',
-      })
-      continue
-    }
-
-    const resolvedPath = resolveTaskLinkPath(projectPath, normalized)
-    const exists = await fs.access(resolvedPath).then(() => true).catch(() => false)
-    if (!exists) {
-      suggestions.push({
-        code: TASK_LINT_CODES.LINK_TARGET_MISSING,
-        message: `Link target not found: ${normalized} (resolved: ${resolvedPath}).`,
-      })
-    }
-  }
-
-  return suggestions
-}
-
-async function collectTaskFileLintSuggestions(governanceDir: string, task: Task): Promise<string[]> {
-  return renderLintSuggestions(await collectTaskFileLintSuggestionItems(governanceDir, task))
-}
-
 async function collectDoneConformanceSuggestions(governanceDir: string, task: Task): Promise<TaskLintSuggestion[]> {
-  const suggestions: TaskLintSuggestion[] = []
-
-  suggestions.push(...collectSingleTaskLintSuggestionItems(task))
-  suggestions.push(...(await collectTaskFileLintSuggestionItems(governanceDir, task)))
-
   const researchBriefState = await inspectTaskResearchBrief(governanceDir, task)
-  suggestions.push(...collectTaskResearchBriefLintSuggestions(researchBriefState))
-
   const artifacts = await discoverGovernanceArtifacts(governanceDir)
   const fileCandidates = candidateFilesFromArtifacts(artifacts)
   const projectContextDocsState = inspectProjectContextDocsFromArtifacts(fileCandidates)
-  suggestions.push(...collectProjectContextDocsLintSuggestions(projectContextDocsState))
-
-  return suggestions
+  return [
+    ...collectSingleTaskLintSuggestionItems(task),
+    ...collectTaskResearchBriefLintSuggestions(researchBriefState),
+    ...collectProjectContextDocsLintSuggestions(projectContextDocsState),
+  ]
 }
 
 export function renderTasksMarkdown(tasks: Task[]): string {
@@ -1042,10 +971,7 @@ export function registerTaskTools(server: McpServer): void {
         'Task created in governance store successfully and tasks.md has been synced.',
         'Run taskContext to verify references and lint guidance.',
       ],
-      lint: async ({ createdTask, governanceDir }) => [
-        ...collectSingleTaskLintSuggestions(createdTask),
-        ...(await collectTaskFileLintSuggestions(governanceDir, createdTask)),
-      ],
+      lint: ({ createdTask }) => collectSingleTaskLintSuggestions(createdTask),
       nextCall: ({ normalizedProjectPath, createdTask }) =>
         `taskContext(projectPath="${normalizedProjectPath}", taskId="${createdTask.id}")`,
     })
@@ -1286,7 +1212,7 @@ export function registerTaskTools(server: McpServer): void {
           `- updatedAt: ${task.updatedAt}`,
           `- roadmapRefs: ${task.roadmapRefs.join(', ') || '(none)'}`,
           `- researchBriefPath: ${researchBriefState.relativePath}`,
-          `- researchBriefStatus: ${researchBriefState.ready ? 'READY' : researchBriefState.exists ? 'INCOMPLETE' : 'MISSING'}`,
+          `- researchBriefStatus: ${researchBriefState.ready ? 'READY' : 'MISSING'}`,
           `- architectureDocsStatus: ${projectContextDocsState.missingArchitectureDocs ? 'MISSING' : 'READY'}`,
           `- styleDocsStatus: ${projectContextDocsState.missingStyleDocs ? 'MISSING' : 'READY'}`,
           `- taskLocation: ${taskLocation ? `${taskLocation.filePath}#L${taskLocation.line}` : markdownPath}`,
@@ -1311,9 +1237,7 @@ export function registerTaskTools(server: McpServer): void {
         '### Pre-Execution Research Brief',
         `- path: ${researchBriefState.relativePath}`,
         `- absolutePath: ${researchBriefState.absolutePath}`,
-        `- status: ${researchBriefState.ready ? 'READY' : researchBriefState.exists ? 'INCOMPLETE' : 'MISSING'}`,
-        `- lineCount: ${researchBriefState.lineCount}`,
-        `- has file line references (#L<line>): ${researchBriefState.hasLineReferences ? 'yes' : 'no'}`,
+        `- status: ${researchBriefState.ready ? 'READY' : 'MISSING'}`,
         ...(!researchBriefState.ready
           ? [
               '',
@@ -1379,9 +1303,8 @@ export function registerTaskTools(server: McpServer): void {
         '- If updates are needed, use tool writes for governance store (`taskUpdate` / `roadmapUpdate`) and keep TASK IDs unchanged.',
         '- After editing, re-run `taskContext` to verify references and context consistency.',
       ],
-      lint: async ({ task, governanceDir, researchBriefState, projectContextDocsState }) => [
+      lint: ({ task, researchBriefState, projectContextDocsState }) => [
         ...collectSingleTaskLintSuggestions(task),
-        ...(await collectTaskFileLintSuggestions(governanceDir, task)),
         ...renderLintSuggestions(collectTaskResearchBriefLintSuggestions(researchBriefState)),
         ...renderLintSuggestions(collectProjectContextDocsLintSuggestions(projectContextDocsState)),
       ],
@@ -1446,17 +1369,10 @@ export function registerTaskTools(server: McpServer): void {
         if (updates.status === 'IN_PROGRESS' && originalStatus === 'TODO') {
           const researchBriefState = await inspectTaskResearchBrief(governanceDir, task)
           if (!researchBriefState.ready) {
-            const missingReasons = [
-              !researchBriefState.exists ? `missing file: ${researchBriefState.relativePath}` : undefined,
-              researchBriefState.exists && !researchBriefState.hasLineReferences
-                ? 'missing file line references (for example #L42)'
-                : undefined,
-            ].filter((item): item is string => Boolean(item))
             throw new ToolExecutionError(
               `Pre-execution research brief gate failed for ${taskId}.`,
               [
-                ...missingReasons,
-                `required file: ${researchBriefState.relativePath}`,
+                `missing file: ${researchBriefState.relativePath}`,
                 'complete the research brief before TODO -> IN_PROGRESS transition',
               ],
               `taskContext(projectPath="${toProjectPath(governanceDir)}", taskId="${taskId}")`,
