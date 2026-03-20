@@ -17,7 +17,7 @@ function baseToolTemplateMarkdown(): string {
   '{{guidance}}',
   '',
   '## Lint Suggestions',
-  '{{lint_suggestions}}',
+  '{{suggestions}}',
   '',
   '## Next Call',
   '{{next_call}}',
@@ -215,7 +215,7 @@ function buildToolTemplateVariables(payload: ToolResponsePayload): ToolTemplateV
     summary: toSectionText(resolveSection(payload, 'Summary')),
     evidence: toSectionText(resolveSection(payload, 'Evidence')),
     guidance: toSectionText(resolveSection(payload, 'Agent Guidance')),
-    lint_suggestions: toSectionText(resolveSection(payload, 'Lint Suggestions')),
+    suggestions: toSectionText(resolveSection(payload, 'Lint Suggestions')),
     next_call: toSectionText(resolveSection(payload, 'Next Call')),
   }
 }

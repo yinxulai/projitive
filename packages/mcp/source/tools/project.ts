@@ -525,7 +525,7 @@ export function registerProjectTools(server: McpServer): void {
         }
         return { initialized, filesByAction, force: force ?? false }
       },
-      primary: ({ initialized, force }) => [
+      summary: ({ initialized, force }) => [
         `- projectPath: ${initialized.projectPath}`,
         `- governanceDir: ${initialized.governanceDir}`,
         `- force: ${force ? 'true' : 'false'}`,
@@ -564,7 +564,7 @@ export function registerProjectTools(server: McpServer): void {
         const projects = Array.from(new Set(governanceDirs.map((governanceDir) => toProjectPath(governanceDir)))).sort()
         return { roots, depth, projects }
       },
-      primary: ({ roots, depth, projects }) => [
+      summary: ({ roots, depth, projects }) => [
         `- rootPaths: ${roots.join(', ')}`,
         `- rootCount: ${roots.length}`,
         `- maxDepth: ${depth}`,
@@ -627,7 +627,7 @@ export function registerProjectTools(server: McpServer): void {
         const topTasks = ranked[0] ? (await loadTasksDocument(ranked[0].governanceDir)).tasks : undefined
         return { roots, depth, projects, ranked, limit: limit ?? 10, topTasks }
       },
-      primary: ({ roots, depth, projects, ranked, limit }) => [
+      summary: ({ roots, depth, projects, ranked, limit }) => [
         `- rootPaths: ${roots.join(', ')}`,
         `- rootCount: ${roots.length}`,
         `- maxDepth: ${depth}`,
@@ -667,7 +667,7 @@ export function registerProjectTools(server: McpServer): void {
         const projectPath = toProjectPath(governanceDir)
         return { resolvedFrom, governanceDir, projectPath }
       },
-      primary: ({ resolvedFrom, projectPath, governanceDir }) => [
+      summary: ({ resolvedFrom, projectPath, governanceDir }) => [
         `- resolvedFrom: ${resolvedFrom}`,
         `- projectPath: ${projectPath}`,
         `- governanceDir: ${governanceDir}`,
@@ -707,7 +707,7 @@ export function registerProjectTools(server: McpServer): void {
         }
         return { normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, selectedViews, forceSync, taskCount, roadmapCount }
       },
-      primary: ({ normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, selectedViews, forceSync }) => [
+      summary: ({ normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, selectedViews, forceSync }) => [
         `- projectPath: ${normalizedProjectPath}`,
         `- governanceDir: ${governanceDir}`,
         `- tasksView: ${tasksViewPath}`,
@@ -748,7 +748,7 @@ export function registerProjectTools(server: McpServer): void {
         const roadmapIds = milestones.map((item) => item.id)
         return { normalizedProjectPath, governanceDir, tasksMarkdownPath, roadmapMarkdownPath, roadmapIds, taskStats, artifacts, tasks }
       },
-      primary: ({ normalizedProjectPath, governanceDir, tasksMarkdownPath, roadmapMarkdownPath, roadmapIds }) => [
+      summary: ({ normalizedProjectPath, governanceDir, tasksMarkdownPath, roadmapMarkdownPath, roadmapIds }) => [
         `- projectPath: ${normalizedProjectPath}`,
         `- governanceDir: ${governanceDir}`,
         `- tasksView: ${tasksMarkdownPath}`,

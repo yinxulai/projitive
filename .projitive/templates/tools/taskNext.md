@@ -10,7 +10,7 @@
 {{guidance}}
 
 ## Lint Suggestions
-{{lint_suggestions}}
+{{suggestions}}
 
 ## Next Call
 {{next_call}}

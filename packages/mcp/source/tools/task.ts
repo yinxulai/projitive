@@ -854,7 +854,7 @@ export function registerTaskTools(server: McpServer): void {
           .slice(0, limit ?? 100)
         return { normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, filtered, status }
       },
-      primary: ({ normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, filtered, status }) => [
+      summary: ({ normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, filtered, status }) => [
         `- projectPath: ${normalizedProjectPath}`,
         `- governanceDir: ${governanceDir}`,
         `- tasksView: ${tasksViewPath}`,
@@ -951,7 +951,7 @@ export function registerTaskTools(server: McpServer): void {
         await loadTasksDocumentWithOptions(governanceDir, true)
         return { normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, createdTask }
       },
-      primary: ({ normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, createdTask }) => [
+      summary: ({ normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, createdTask }) => [
         `- projectPath: ${normalizedProjectPath}`,
         `- governanceDir: ${governanceDir}`,
         `- tasksView: ${tasksViewPath}`,
@@ -1028,7 +1028,7 @@ export function registerTaskTools(server: McpServer): void {
           suggestedReadOrder, projectContextDocsState, taskLocation, candidateLimit,
         }
       },
-      primary: (data) => {
+      summary: (data) => {
         if (data.isEmpty) {
           return [
             `- rootPaths: ${data.roots.join(', ')}`,
@@ -1200,7 +1200,7 @@ export function registerTaskTools(server: McpServer): void {
           projectContextDocsState,
         }
       },
-      primary: ({ normalizedProjectPath, governanceDir, markdownPath, roadmapViewPath, task, researchBriefState, projectContextDocsState, taskLocation }) => {
+      summary: ({ normalizedProjectPath, governanceDir, markdownPath, roadmapViewPath, task, researchBriefState, projectContextDocsState, taskLocation }) => {
         const lines = [
           `- projectPath: ${normalizedProjectPath}`,
           `- governanceDir: ${governanceDir}`,
@@ -1395,7 +1395,7 @@ export function registerTaskTools(server: McpServer): void {
         await loadTasksDocumentWithOptions(governanceDir, true)
         return { normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, taskId, originalStatus, task: normalizedTask, previewTask, updates }
       },
-      primary: ({ normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, taskId, originalStatus, task }) => {
+      summary: ({ normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, taskId, originalStatus, task }) => {
         const lines = [
           `- projectPath: ${normalizedProjectPath}`,
           `- governanceDir: ${governanceDir}`,

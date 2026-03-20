@@ -242,7 +242,7 @@ export function registerRoadmapTools(server: McpServer): void {
         const { tasks, markdownPath: tasksViewPath } = await loadTasksDocument(governanceDir)
         return { normalizedProjectPath, governanceDir, roadmapIds, roadmapViewPath, tasksViewPath, tasks }
       },
-      primary: ({ normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, roadmapIds }) => [
+      summary: ({ normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, roadmapIds }) => [
         `- projectPath: ${normalizedProjectPath}`,
         `- governanceDir: ${governanceDir}`,
         `- tasksView: ${tasksViewPath}`,
@@ -295,7 +295,7 @@ export function registerRoadmapTools(server: McpServer): void {
         const roadmapIds = await loadRoadmapIds(governanceDir)
         return { normalizedProjectPath, governanceDir, roadmapId, roadmapViewPath, tasksViewPath, relatedTasks, referenceLocations, roadmapIds, tasks }
       },
-      primary: ({ normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, roadmapId, relatedTasks, referenceLocations }) => [
+      summary: ({ normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, roadmapId, relatedTasks, referenceLocations }) => [
         `- projectPath: ${normalizedProjectPath}`,
         `- governanceDir: ${governanceDir}`,
         `- tasksView: ${tasksViewPath}`,
@@ -377,7 +377,7 @@ export function registerRoadmapTools(server: McpServer): void {
         const { tasks } = await loadTasks(governanceDir)
         return { normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath: refreshed.markdownPath, created, refreshed, tasks }
       },
-      primary: ({ normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, created }) => [
+      summary: ({ normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, created }) => [
         `- projectPath: ${normalizedProjectPath}`,
         `- governanceDir: ${governanceDir}`,
         `- tasksView: ${tasksViewPath}`,
@@ -448,7 +448,7 @@ export function registerRoadmapTools(server: McpServer): void {
         const refreshed = await loadRoadmapDocumentWithOptions(governanceDir, true)
         return { normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath: refreshed.markdownPath, roadmapId, updated, refreshed }
       },
-      primary: ({ normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, roadmapId, updated }) => [
+      summary: ({ normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, roadmapId, updated }) => [
         `- projectPath: ${normalizedProjectPath}`,
         `- governanceDir: ${governanceDir}`,
         `- tasksView: ${tasksViewPath}`,

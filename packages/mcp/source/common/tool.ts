@@ -21,7 +21,7 @@ export type ToolSpec<TShape extends ZodRawShape, TData> = {
   description: string
   inputSchema: TShape
   execute: (input: z.infer<z.ZodObject<TShape>>, ctx: ToolRuntimeContext) => Promise<TData>
-  primary: (data: TData, ctx: ToolRuntimeContext) => string[] | Promise<string[]>
+  summary: (data: TData, ctx: ToolRuntimeContext) => string[] | Promise<string[]>
   evidence?: (data: TData, ctx: ToolRuntimeContext) => string[] | Promise<string[]>
   guidance: (data: TData, ctx: ToolRuntimeContext) => string[] | Promise<string[]>
   suggestions?: (data: TData, ctx: ToolRuntimeContext) => string[] | Promise<string[]>
@@ -52,7 +52,7 @@ export function createGovernedTool<TShape extends ZodRawShape, TData>(
       const markdown = renderToolResponseMarkdown({
         toolName: spec.name,
         sections: [
-          summarySection(await spec.primary(data, ctx)),
+          summarySection(await spec.summary(data, ctx)),
           evidenceSection(await (spec.evidence?.(data, ctx) ?? [])),
           guidanceSection(await spec.guidance(data, ctx)),
           lintSection(await (spec.suggestions?.(data, ctx) ?? [])),
