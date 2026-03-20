@@ -24,7 +24,7 @@ export type ToolSpec<TShape extends ZodRawShape, TData> = {
   primary: (data: TData, ctx: ToolRuntimeContext) => string[] | Promise<string[]>
   evidence?: (data: TData, ctx: ToolRuntimeContext) => string[] | Promise<string[]>
   guidance: (data: TData, ctx: ToolRuntimeContext) => string[] | Promise<string[]>
-  lint?: (data: TData, ctx: ToolRuntimeContext) => string[] | Promise<string[]>
+  suggestions?: (data: TData, ctx: ToolRuntimeContext) => string[] | Promise<string[]>
   nextCall: (data: TData, ctx: ToolRuntimeContext) => string | undefined | Promise<string | undefined>
 }
 
@@ -55,7 +55,7 @@ export function createGovernedTool<TShape extends ZodRawShape, TData>(
           summarySection(await spec.primary(data, ctx)),
           evidenceSection(await (spec.evidence?.(data, ctx) ?? [])),
           guidanceSection(await spec.guidance(data, ctx)),
-          lintSection(await (spec.lint?.(data, ctx) ?? [])),
+          lintSection(await (spec.suggestions?.(data, ctx) ?? [])),
           nextCallSection(await spec.nextCall(data, ctx)),
         ],
       })

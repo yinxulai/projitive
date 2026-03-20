@@ -867,7 +867,7 @@ export function registerTaskTools(server: McpServer): void {
         ...filtered.map((task) => `- ${task.id} | ${task.status} | ${task.title} | owner=${task.owner || ''} | updatedAt=${task.updatedAt}`),
       ],
       guidance: () => ['- Pick one task ID and call `taskContext`.'],
-      lint: ({ filtered, status }) => {
+      suggestions: ({ filtered, status }) => {
         const suggestions = collectTaskLintSuggestions(filtered)
         if (status && filtered.length === 0) {
           suggestions.push(...renderLintSuggestions([
@@ -972,7 +972,7 @@ export function registerTaskTools(server: McpServer): void {
         'Task created in governance store successfully and tasks.md has been synced.',
         'Run taskContext to verify references and lint guidance.',
       ],
-      lint: ({ createdTask }) => collectSingleTaskLintSuggestions(createdTask),
+      suggestions: ({ createdTask }) => collectSingleTaskLintSuggestions(createdTask),
       nextCall: ({ normalizedProjectPath, createdTask }) =>
         `taskContext(projectPath="${normalizedProjectPath}", taskId="${createdTask.id}")`,
     })
@@ -1130,7 +1130,7 @@ export function registerTaskTools(server: McpServer): void {
           '- Re-run `taskContext` for the selectedTaskId after edits to verify evidence consistency.',
         ]
       },
-      lint: (data) => {
+      suggestions: (data) => {
         if (data.isEmpty) {
           return [
             '- No actionable tasks found. Verify task statuses and required fields in .projitive task table.',
@@ -1304,7 +1304,7 @@ export function registerTaskTools(server: McpServer): void {
         '- If updates are needed, use tool writes for governance store (`taskUpdate` / `roadmapUpdate`) and keep TASK IDs unchanged.',
         '- After editing, re-run `taskContext` to verify references and context consistency.',
       ],
-      lint: ({ task, researchBriefState, projectContextDocsState }) => [
+      suggestions: ({ task, researchBriefState, projectContextDocsState }) => [
         ...collectSingleTaskLintSuggestions(task),
         ...renderLintSuggestions(collectTaskResearchBriefLintSuggestions(researchBriefState)),
         ...renderLintSuggestions(collectProjectContextDocsLintSuggestions(projectContextDocsState)),
@@ -1447,7 +1447,7 @@ export function registerTaskTools(server: McpServer): void {
           : []),
         '.projitive governance store is source of truth; tasks.md is a generated view and may be overwritten.',
       ],
-      lint: async ({ previewTask, governanceDir }) => [
+      suggestions: async ({ previewTask, governanceDir }) => [
         ...collectSingleTaskLintSuggestions(previewTask),
         ...renderLintSuggestions(await collectDoneConformanceSuggestions(governanceDir, previewTask)),
       ],

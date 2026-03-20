@@ -543,7 +543,7 @@ export function registerProjectTools(server: McpServer): void {
         '- If files were skipped and you want to overwrite templates, rerun with force=true.',
         '- Continue with projectContext and taskList for execution.',
       ],
-      lint: () => [
+      suggestions: () => [
         '- After init, fill owner/roadmapRefs/links in .projitive task table before marking DONE.',
         '- Keep task source-of-truth inside .projitive governance store.',
       ],
@@ -578,7 +578,7 @@ export function registerProjectTools(server: McpServer): void {
         '- Use one discovered project path and call `projectLocate` to lock governance root.',
         '- Then call `projectContext` to inspect current governance state.',
       ],
-      lint: ({ projects }) =>
+      suggestions: ({ projects }) =>
         projects.length === 0
           ? ['- No governance root discovered. Add `.projitive` marker and baseline artifacts before execution.']
           : ['- Run `projectContext` on a discovered project to receive module-level lint suggestions.'],
@@ -647,7 +647,7 @@ export function registerProjectTools(server: McpServer): void {
         '- Then call `taskList` and `taskContext` to continue execution.',
         '- If governance store is missing, initialize governance before task-level operations.',
       ],
-      lint: ({ topTasks }) => topTasks ? collectTaskLintSuggestions(topTasks) : [],
+      suggestions: ({ topTasks }) => topTasks ? collectTaskLintSuggestions(topTasks) : [],
       nextCall: ({ ranked }) =>
         ranked[0] ? `projectContext(projectPath="${toProjectPath(ranked[0].governanceDir)}")` : undefined,
     })
@@ -673,7 +673,7 @@ export function registerProjectTools(server: McpServer): void {
         `- governanceDir: ${governanceDir}`,
       ],
       guidance: () => ['- Call `projectContext` with this projectPath to get task and roadmap summaries.'],
-      lint: () => ['- Run `projectContext` to get governance/module lint suggestions for this project.'],
+      suggestions: () => ['- Run `projectContext` to get governance/module lint suggestions for this project.'],
       nextCall: ({ projectPath }) => `projectContext(projectPath="${projectPath}")`,
     })
   )
@@ -723,7 +723,7 @@ export function registerProjectTools(server: McpServer): void {
         'Use this tool after batch updates when you need immediate markdown materialization.',
         'Routine workflows can rely on lazy sync and usually do not require force=true.',
       ],
-      lint: () => [],
+      suggestions: () => [],
       nextCall: ({ normalizedProjectPath }) => `projectContext(projectPath="${normalizedProjectPath}")`,
     })
   )
@@ -770,7 +770,7 @@ export function registerProjectTools(server: McpServer): void {
         '- Start from `taskList` to choose a target task.',
         '- Then call `taskContext` with a task ID to retrieve evidence locations and reading order.',
       ],
-      lint: ({ tasks }) => collectTaskLintSuggestions(tasks),
+      suggestions: ({ tasks }) => collectTaskLintSuggestions(tasks),
       nextCall: ({ normalizedProjectPath }) => `taskList(projectPath="${normalizedProjectPath}")`,
     })
   )

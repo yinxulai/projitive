@@ -257,7 +257,7 @@ export function registerRoadmapTools(server: McpServer): void {
         }),
       ],
       guidance: () => ['- Pick one roadmap ID and call `roadmapContext`.'],
-      lint: ({ roadmapIds, tasks }) => collectRoadmapLintSuggestions(roadmapIds, tasks),
+      suggestions: ({ roadmapIds, tasks }) => collectRoadmapLintSuggestions(roadmapIds, tasks),
       nextCall: ({ roadmapIds, normalizedProjectPath }) =>
         roadmapIds[0]
           ? `roadmapContext(projectPath="${normalizedProjectPath}", roadmapId="${roadmapIds[0]}")`
@@ -316,7 +316,7 @@ export function registerRoadmapTools(server: McpServer): void {
         '- Keep ROADMAP/TASK IDs unchanged while updating markdown files.',
         '- Re-run `roadmapContext` after edits to confirm references remain consistent.',
       ],
-      lint: ({ roadmapIds, tasks, relatedTasks, roadmapId }) => {
+      suggestions: ({ roadmapIds, tasks, relatedTasks, roadmapId }) => {
         const items = collectRoadmapLintSuggestionItems(roadmapIds, tasks)
         if (relatedTasks.length === 0) {
           items.push({
@@ -397,7 +397,7 @@ export function registerRoadmapTools(server: McpServer): void {
         'Milestone created successfully and roadmap.md has been synced.',
         'Re-run roadmapContext to verify linked task traceability.',
       ],
-      lint: ({ refreshed, tasks }) => collectRoadmapLintSuggestions(refreshed.milestones.map((item) => item.id), tasks),
+      suggestions: ({ refreshed, tasks }) => collectRoadmapLintSuggestions(refreshed.milestones.map((item) => item.id), tasks),
       nextCall: ({ normalizedProjectPath, created }) =>
         `roadmapContext(projectPath="${normalizedProjectPath}", roadmapId="${created.id}")`,
     })
@@ -469,7 +469,7 @@ export function registerRoadmapTools(server: McpServer): void {
         'Re-run roadmapContext to verify linked task traceability.',
         '.projitive governance store is source of truth; roadmap.md is a generated view and may be overwritten.',
       ],
-      lint: () => [],
+      suggestions: () => [],
       nextCall: ({ normalizedProjectPath, roadmapId }) =>
         `roadmapContext(projectPath="${normalizedProjectPath}", roadmapId="${roadmapId}")`,
     })
