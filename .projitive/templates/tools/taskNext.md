@@ -9,11 +9,12 @@
 ## Agent Guidance
 {{guidance}}
 
+## Lint Suggestions
+{{lint_suggestions}}
+
 ## Next Call
 {{next_call}}
 
-## Raw Response
-{{content}}
 
 ## Idle Discovery Checklist (When No Actionable Task)
 - Scan backlog comments: TODO / FIXME / HACK / XXX.

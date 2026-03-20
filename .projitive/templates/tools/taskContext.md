@@ -9,11 +9,12 @@
 ## Agent Guidance
 {{guidance}}
 
+## Lint Suggestions
+{{lint_suggestions}}
+
 ## Next Call
 {{next_call}}
 
-## Raw Response
-{{content}}
 
 ## Common Tool Guides To Read First
 - ./CLAUDE.md

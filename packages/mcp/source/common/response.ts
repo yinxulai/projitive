@@ -2,7 +2,6 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 const MESSAGE_TEMPLATE_ENV = 'PROJITIVE_MESSAGE_TEMPLATE_PATH'
-const CONTENT_TEMPLATE_TOKEN = '{{content}}'
 
 function baseToolTemplateMarkdown(): string {
   return [
@@ -17,11 +16,11 @@ function baseToolTemplateMarkdown(): string {
   '## Agent Guidance',
   '{{guidance}}',
   '',
+  '## Lint Suggestions',
+  '{{lint_suggestions}}',
+  '',
   '## Next Call',
   '{{next_call}}',
-  '',
-  '## Raw Response',
-  '{{content}}',
   ].join('\n')
 }
 
@@ -210,13 +209,13 @@ function resolveSection(payload: ToolResponsePayload, title: ToolSectionTitle): 
   return payload.sections.find((item) => item.title === title)
 }
 
-function buildToolTemplateVariables(payload: ToolResponsePayload, classicMarkdown: string): ToolTemplateVariables {
+function buildToolTemplateVariables(payload: ToolResponsePayload): ToolTemplateVariables {
   return {
     tool_name: payload.toolName,
-    content: classicMarkdown,
     summary: toSectionText(resolveSection(payload, 'Summary')),
     evidence: toSectionText(resolveSection(payload, 'Evidence')),
     guidance: toSectionText(resolveSection(payload, 'Agent Guidance')),
+    lint_suggestions: toSectionText(resolveSection(payload, 'Lint Suggestions')),
     next_call: toSectionText(resolveSection(payload, 'Next Call')),
   }
 }
@@ -226,39 +225,25 @@ function applyTemplateVariables(template: string, variables: ToolTemplateVariabl
   for (const [key, value] of Object.entries(variables)) {
     rendered = rendered.split(`{{${key}}}`).join(value)
   }
-
-  if (!rendered.includes(variables.content) && !template.includes(CONTENT_TEMPLATE_TOKEN)) {
-    rendered = `${rendered}\n\n${variables.content}`
-  }
-
   return rendered.trimEnd()
 }
 
 export function renderToolResponseMarkdown(payload: ToolResponsePayload): string {
-  const body = payload.sections.flatMap((section) => [
-    `## ${section.title}`,
-    ...withFallback(section.lines),
-    '',
-  ])
-
-  const classicMarkdown = [
-    `# ${payload.toolName}`,
-    '',
-    ...body,
-  ].join('\n').trimEnd()
-
   const template = loadMessageTemplate(payload.toolName)
-  const variables = buildToolTemplateVariables(payload, classicMarkdown)
+  const variables = buildToolTemplateVariables(payload)
   return applyTemplateVariables(template, variables)
 }
 
 export function renderErrorMarkdown(toolName: string, cause: string, nextSteps: string[], retryExample?: string): string {
-  return renderToolResponseMarkdown({
-    toolName,
-    sections: [
-      section('Error', [`cause: ${cause}`]),
-      section('Next Step', nextSteps),
-      section('Retry Example', [retryExample ?? '(none)']),
-    ],
-  })
+  const sections = [
+    section('Error', [`cause: ${cause}`]),
+    section('Next Step', nextSteps),
+    section('Retry Example', [retryExample ?? '(none)']),
+  ]
+  const body = sections.flatMap((sec) => [
+    `## ${sec.title}`,
+    ...withFallback(sec.lines),
+    '',
+  ])
+  return [`# ${toolName}`, '', ...body].join('\n').trimEnd()
 }
