@@ -16,12 +16,13 @@ import {
   getStoreVersion,
   getMarkdownViewState,
   markMarkdownViewBuilt,
-} from '../common/index.js'
-import {
   createGovernedTool,
   ToolExecutionError,
+  PROJECT_LINT_CODES,
+  TASK_LINT_CODES,
+  renderLintSuggestions,
+  type LintSuggestion,
 } from '../common/index.js'
-import { PROJECT_LINT_CODES, TASK_LINT_CODES, renderLintSuggestions, type LintSuggestion } from '../common/index.js'
 import { resolveGovernanceDir, resolveScanDepth, resolveScanRoots, discoverProjectsAcrossRoots, toProjectPath } from './project.js'
 import { isValidRoadmapId } from './roadmap.js'
 import type {
@@ -54,10 +55,6 @@ type TaskResearchBriefState = {
 };
 
 export type TaskLintSuggestion = LintSuggestion;
-
-function appendLintSuggestions(target: string[], suggestions: LintSuggestion[]): void {
-  target.push(...renderLintSuggestions(suggestions))
-}
 
 function taskStatusGuidance(task: Task): string[] {
   if (task.status === 'TODO') {
@@ -943,13 +940,13 @@ export function registerTaskTools(server: McpServer): void {
       lint: ({ filtered, status }) => {
         const suggestions = collectTaskLintSuggestions(filtered)
         if (status && filtered.length === 0) {
-          appendLintSuggestions(suggestions, [
+          suggestions.push(...renderLintSuggestions([
             {
               code: TASK_LINT_CODES.FILTER_EMPTY,
               message: `No tasks matched status=${status}.`,
               fixHint: 'Confirm status values or update task states.',
             },
-          ])
+          ]))
         }
         return suggestions
       },
@@ -1382,15 +1379,12 @@ export function registerTaskTools(server: McpServer): void {
         '- If updates are needed, use tool writes for governance store (`taskUpdate` / `roadmapUpdate`) and keep TASK IDs unchanged.',
         '- After editing, re-run `taskContext` to verify references and context consistency.',
       ],
-      lint: async ({ task, governanceDir, researchBriefState, projectContextDocsState }) => {
-        const suggestions = [
-          ...collectSingleTaskLintSuggestions(task),
-          ...(await collectTaskFileLintSuggestions(governanceDir, task)),
-        ]
-        appendLintSuggestions(suggestions, collectTaskResearchBriefLintSuggestions(researchBriefState))
-        appendLintSuggestions(suggestions, collectProjectContextDocsLintSuggestions(projectContextDocsState))
-        return suggestions
-      },
+      lint: async ({ task, governanceDir, researchBriefState, projectContextDocsState }) => [
+        ...collectSingleTaskLintSuggestions(task),
+        ...(await collectTaskFileLintSuggestions(governanceDir, task)),
+        ...renderLintSuggestions(collectTaskResearchBriefLintSuggestions(researchBriefState)),
+        ...renderLintSuggestions(collectProjectContextDocsLintSuggestions(projectContextDocsState)),
+      ],
       nextCall: ({ normalizedProjectPath, task }) =>
         `taskContext(projectPath="${normalizedProjectPath}", taskId="${task.id}")`,
     })
@@ -1486,37 +1480,25 @@ export function registerTaskTools(server: McpServer): void {
             `taskContext(projectPath="${toProjectPath(governanceDir)}", taskId="${taskId}")`,
           )
         }
-        if (updates.status) task.status = updates.status
-        if (updates.owner !== undefined) task.owner = updates.owner
-        if (updates.summary !== undefined) task.summary = updates.summary
-        if (updates.roadmapRefs) task.roadmapRefs = updates.roadmapRefs
-        if (updates.links) task.links = updates.links
-        if (updates.subState !== undefined) {
-          if (updates.subState === null) {
-            delete task.subState
-          } else {
-            task.subState = { ...(task.subState || {}), ...updates.subState }
-          }
-        }
-        if (updates.blocker !== undefined) {
-          if (updates.blocker === null) {
-            delete task.blocker
-          } else {
-            task.blocker = updates.blocker
-          }
-        }
-        task.updatedAt = nowIso()
-        const normalizedTask = normalizeTask(task)
+        const updatedSubState = updates.subState === null ? undefined
+          : updates.subState !== undefined ? { ...(task.subState ?? {}), ...updates.subState }
+          : task.subState
+        const updatedBlocker = updates.blocker === null ? undefined
+          : updates.blocker !== undefined ? updates.blocker
+          : task.blocker
+        const normalizedTask = normalizeTask({
+          ...task,
+          ...(updates.status ? { status: updates.status } : {}),
+          ...(updates.owner !== undefined ? { owner: updates.owner } : {}),
+          ...(updates.summary !== undefined ? { summary: updates.summary } : {}),
+          ...(updates.roadmapRefs ? { roadmapRefs: updates.roadmapRefs } : {}),
+          ...(updates.links ? { links: updates.links } : {}),
+          subState: updatedSubState,
+          blocker: updatedBlocker,
+          updatedAt: nowIso(),
+        })
         await upsertTaskInStore(tasksPath, normalizedTask)
         await loadTasksDocumentWithOptions(governanceDir, true)
-        task.status = normalizedTask.status
-        task.owner = normalizedTask.owner
-        task.summary = normalizedTask.summary
-        task.roadmapRefs = normalizedTask.roadmapRefs
-        task.links = normalizedTask.links
-        task.updatedAt = normalizedTask.updatedAt
-        task.subState = normalizedTask.subState
-        task.blocker = normalizedTask.blocker
         return { normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, taskId, originalStatus, task: normalizedTask, updates }
       },
       primary: ({ normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, taskId, originalStatus, task }) => {

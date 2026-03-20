@@ -11,10 +11,7 @@ import {
   ensureStore,
   replaceRoadmapsInStore,
   replaceTasksInStore,
-  markMarkdownViewDirty,
   loadTaskStatusStatsFromStore,
-} from '../common/index.js'
-import {
   createGovernedTool,
   getDefaultToolTemplateMarkdown,
 } from '../common/index.js'
@@ -698,13 +695,8 @@ export function registerProjectTools(server: McpServer): void {
         const normalizedProjectPath = toProjectPath(governanceDir)
         const tasksViewPath = path.join(governanceDir, 'tasks.md')
         const roadmapViewPath = path.join(governanceDir, 'roadmap.md')
-        const dbPath = path.join(governanceDir, PROJECT_MARKER)
         const selectedViews = views && views.length > 0 ? Array.from(new Set(views)) : ['tasks', 'roadmap']
         const forceSync = force === true
-        if (forceSync) {
-          if (selectedViews.includes('tasks')) await markMarkdownViewDirty(dbPath, 'tasks_markdown')
-          if (selectedViews.includes('roadmap')) await markMarkdownViewDirty(dbPath, 'roadmaps_markdown')
-        }
         let taskCount: number | undefined
         let roadmapCount: number | undefined
         if (selectedViews.includes('tasks')) {

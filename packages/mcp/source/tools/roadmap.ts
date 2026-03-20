@@ -15,8 +15,6 @@ import {
   getStoreVersion,
   getMarkdownViewState,
   markMarkdownViewBuilt,
-} from '../common/index.js'
-import {
   createGovernedTool,
   ToolExecutionError,
 } from '../common/index.js'
@@ -149,9 +147,7 @@ export async function loadRoadmapDocumentWithOptions(inputPath: string, forceVie
   const { roadmapPath, markdownPath } = resolveRoadmapArtifactPaths(governanceDir)
   await ensureStore(roadmapPath)
 
-  const milestones = normalizeAndSortMilestones(await loadRoadmapsFromStore(roadmapPath))
-
-  const normalizedMilestones = normalizeAndSortMilestones(milestones)
+  const normalizedMilestones = normalizeAndSortMilestones(await loadRoadmapsFromStore(roadmapPath))
   const markdown = renderRoadmapMarkdown(normalizedMilestones)
   await syncRoadmapMarkdownView(roadmapPath, markdownPath, markdown, forceViewSync)
 
