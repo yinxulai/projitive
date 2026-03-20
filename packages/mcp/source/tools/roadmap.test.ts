@@ -3,7 +3,23 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { replaceRoadmapsInStore } from '../common/store.js'
 import { isValidRoadmapId, collectRoadmapLintSuggestions, loadRoadmapDocument, renderRoadmapMarkdown, registerRoadmapTools } from './roadmap.js'
+
+async function createGovernanceWorkspace(): Promise<{ projectRoot: string; governanceDir: string; dbPath: string }> {
+  const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'projitive-mcp-roadmap-workspace-'))
+  const governanceDir = path.join(projectRoot, '.projitive')
+  const dbPath = path.join(governanceDir, '.projitive')
+  await fs.mkdir(governanceDir, { recursive: true })
+  await fs.writeFile(dbPath, '', 'utf-8')
+  return { projectRoot, governanceDir, dbPath }
+}
+
+function getRoadmapToolHandler(mockServer: { registerTool: ReturnType<typeof vi.fn> }, toolName: string) {
+  const call = mockServer.registerTool.mock.calls.find((entry) => entry[0] === toolName)
+  expect(call).toBeTruthy()
+  return call?.[2] as (args?: Record<string, unknown>) => Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }>
+}
 
 describe('roadmap module', () => {
   let tempDir: string
@@ -95,6 +111,222 @@ describe('roadmap module', () => {
       registerRoadmapTools(mockServer as unknown as McpServer)
 
       expect(spy.mock.calls.some((call) => call[0] === 'roadmapCreate')).toBe(true)
+    })
+
+    it('sorts milestones with same timestamp by ID descending', () => {
+      const markdown = renderRoadmapMarkdown([
+        { id: 'ROADMAP-0001', title: 'First', status: 'active', updatedAt: '2026-01-01T00:00:00.000Z' },
+        { id: 'ROADMAP-0003', title: 'Third', status: 'active', updatedAt: '2026-01-01T00:00:00.000Z' },
+        { id: 'ROADMAP-0002', title: 'Second', status: 'active', updatedAt: '2026-01-01T00:00:00.000Z' },
+      ])
+      expect(markdown.indexOf('ROADMAP-0003')).toBeLessThan(markdown.indexOf('ROADMAP-0002'))
+      expect(markdown.indexOf('ROADMAP-0002')).toBeLessThan(markdown.indexOf('ROADMAP-0001'))
+    })
+
+    it('skips view write on second load with no changes', async () => {
+      const { projectRoot, governanceDir } = await createGovernanceWorkspace()
+      await loadRoadmapDocument(governanceDir)
+      const doc = await loadRoadmapDocument(governanceDir)
+      expect(doc.milestones).toHaveLength(0)
+      await fs.rm(projectRoot, { recursive: true, force: true })
+    })
+  })
+
+  describe('roadmapList tool handler', () => {
+    it('lists roadmap IDs and linked task count', async () => {
+      const { projectRoot, dbPath } = await createGovernanceWorkspace()
+      await replaceRoadmapsInStore(dbPath, [
+        { id: 'ROADMAP-0001', title: 'First', status: 'active', updatedAt: '2026-01-01T00:00:00.000Z' },
+        { id: 'ROADMAP-0002', title: 'Second', status: 'done', updatedAt: '2026-02-01T00:00:00.000Z' },
+      ])
+
+      const mockServer = { registerTool: vi.fn() } as unknown as McpServer & { registerTool: ReturnType<typeof vi.fn> }
+      registerRoadmapTools(mockServer)
+
+      const roadmapList = getRoadmapToolHandler(mockServer, 'roadmapList')
+      const result = await roadmapList({ projectPath: projectRoot })
+
+      expect(result.isError).toBeUndefined()
+      expect(result.content[0].text).toContain('roadmapCount: 2')
+      expect(result.content[0].text).toContain('ROADMAP-0001')
+
+      await fs.rm(projectRoot, { recursive: true, force: true })
+    })
+
+    it('returns no nextCall when roadmap store is empty', async () => {
+      const { projectRoot } = await createGovernanceWorkspace()
+
+      const mockServer = { registerTool: vi.fn() } as unknown as McpServer & { registerTool: ReturnType<typeof vi.fn> }
+      registerRoadmapTools(mockServer)
+
+      const roadmapList = getRoadmapToolHandler(mockServer, 'roadmapList')
+      const result = await roadmapList({ projectPath: projectRoot })
+
+      expect(result.isError).toBeUndefined()
+      expect(result.content[0].text).toContain('roadmapCount: 0')
+
+      await fs.rm(projectRoot, { recursive: true, force: true })
+    })
+  })
+
+  describe('roadmapContext tool handler', () => {
+    it('returns error for invalid roadmap ID format', async () => {
+      const { projectRoot } = await createGovernanceWorkspace()
+
+      const mockServer = { registerTool: vi.fn() } as unknown as McpServer & { registerTool: ReturnType<typeof vi.fn> }
+      registerRoadmapTools(mockServer)
+
+      const roadmapContext = getRoadmapToolHandler(mockServer, 'roadmapContext')
+      const result = await roadmapContext({ projectPath: projectRoot, roadmapId: 'INVALID-ID' })
+
+      expect(result.isError).toBe(true)
+      expect(result.content[0].text).toContain('Invalid roadmap ID format')
+
+      await fs.rm(projectRoot, { recursive: true, force: true })
+    })
+
+    it('returns context with related tasks and reference locations', async () => {
+      const { projectRoot, dbPath } = await createGovernanceWorkspace()
+      await replaceRoadmapsInStore(dbPath, [
+        { id: 'ROADMAP-0001', title: 'Bootstrap', status: 'active', updatedAt: '2026-01-01T00:00:00.000Z' },
+      ])
+
+      const mockServer = { registerTool: vi.fn() } as unknown as McpServer & { registerTool: ReturnType<typeof vi.fn> }
+      registerRoadmapTools(mockServer)
+
+      const roadmapContext = getRoadmapToolHandler(mockServer, 'roadmapContext')
+      const result = await roadmapContext({ projectPath: projectRoot, roadmapId: 'ROADMAP-0001' })
+
+      expect(result.isError).toBeUndefined()
+      expect(result.content[0].text).toContain('ROADMAP-0001')
+      expect(result.content[0].text).toContain('relatedTasks: 0')
+      expect(result.content[0].text).toContain('roadmapView:')
+
+      await fs.rm(projectRoot, { recursive: true, force: true })
+    })
+  })
+
+  describe('roadmapCreate tool handler', () => {
+    it('returns error for invalid roadmap ID format', async () => {
+      const { projectRoot } = await createGovernanceWorkspace()
+
+      const mockServer = { registerTool: vi.fn() } as unknown as McpServer & { registerTool: ReturnType<typeof vi.fn> }
+      registerRoadmapTools(mockServer)
+
+      const roadmapCreate = getRoadmapToolHandler(mockServer, 'roadmapCreate')
+      const result = await roadmapCreate({ projectPath: projectRoot, roadmapId: 'BAD-FORMAT', title: 'Test' })
+
+      expect(result.isError).toBe(true)
+      expect(result.content[0].text).toContain('Invalid roadmap ID format')
+
+      await fs.rm(projectRoot, { recursive: true, force: true })
+    })
+
+    it('returns error when roadmap ID already exists', async () => {
+      const { projectRoot, dbPath } = await createGovernanceWorkspace()
+      await replaceRoadmapsInStore(dbPath, [
+        { id: 'ROADMAP-0001', title: 'Existing', status: 'active', updatedAt: '2026-01-01T00:00:00.000Z' },
+      ])
+
+      const mockServer = { registerTool: vi.fn() } as unknown as McpServer & { registerTool: ReturnType<typeof vi.fn> }
+      registerRoadmapTools(mockServer)
+
+      const roadmapCreate = getRoadmapToolHandler(mockServer, 'roadmapCreate')
+      const result = await roadmapCreate({ projectPath: projectRoot, roadmapId: 'ROADMAP-0001', title: 'Duplicate' })
+
+      expect(result.isError).toBe(true)
+      expect(result.content[0].text).toContain('already exists')
+
+      await fs.rm(projectRoot, { recursive: true, force: true })
+    })
+
+    it('auto-generates next roadmap ID', async () => {
+      const { projectRoot, dbPath } = await createGovernanceWorkspace()
+      await replaceRoadmapsInStore(dbPath, [
+        { id: 'ROADMAP-0005', title: 'Existing', status: 'active', updatedAt: '2026-01-01T00:00:00.000Z' },
+      ])
+
+      const mockServer = { registerTool: vi.fn() } as unknown as McpServer & { registerTool: ReturnType<typeof vi.fn> }
+      registerRoadmapTools(mockServer)
+
+      const roadmapCreate = getRoadmapToolHandler(mockServer, 'roadmapCreate')
+      const result = await roadmapCreate({ projectPath: projectRoot, title: 'New Milestone' })
+
+      expect(result.isError).toBeUndefined()
+      expect(result.content[0].text).toContain('ROADMAP-0006')
+
+      await fs.rm(projectRoot, { recursive: true, force: true })
+    })
+
+    it('creates milestone with explicit ID, status done, and time', async () => {
+      const { projectRoot } = await createGovernanceWorkspace()
+
+      const mockServer = { registerTool: vi.fn() } as unknown as McpServer & { registerTool: ReturnType<typeof vi.fn> }
+      registerRoadmapTools(mockServer)
+
+      const roadmapCreate = getRoadmapToolHandler(mockServer, 'roadmapCreate')
+      const result = await roadmapCreate({ projectPath: projectRoot, roadmapId: 'ROADMAP-0001', title: 'Planned', status: 'done', time: '2026-Q2' })
+
+      expect(result.isError).toBeUndefined()
+      expect(result.content[0].text).toContain('ROADMAP-0001')
+      expect(result.content[0].text).toContain('done')
+
+      await fs.rm(projectRoot, { recursive: true, force: true })
+    })
+  })
+
+  describe('roadmapUpdate tool handler', () => {
+    it('returns error for invalid roadmap ID format', async () => {
+      const { projectRoot } = await createGovernanceWorkspace()
+
+      const mockServer = { registerTool: vi.fn() } as unknown as McpServer & { registerTool: ReturnType<typeof vi.fn> }
+      registerRoadmapTools(mockServer)
+
+      const roadmapUpdate = getRoadmapToolHandler(mockServer, 'roadmapUpdate')
+      const result = await roadmapUpdate({ projectPath: projectRoot, roadmapId: 'NOT-VALID', updates: { title: 'New' } })
+
+      expect(result.isError).toBe(true)
+      expect(result.content[0].text).toContain('Invalid roadmap ID format')
+
+      await fs.rm(projectRoot, { recursive: true, force: true })
+    })
+
+    it('returns error when roadmap milestone not found', async () => {
+      const { projectRoot } = await createGovernanceWorkspace()
+
+      const mockServer = { registerTool: vi.fn() } as unknown as McpServer & { registerTool: ReturnType<typeof vi.fn> }
+      registerRoadmapTools(mockServer)
+
+      const roadmapUpdate = getRoadmapToolHandler(mockServer, 'roadmapUpdate')
+      const result = await roadmapUpdate({ projectPath: projectRoot, roadmapId: 'ROADMAP-0099', updates: { title: 'Does not exist' } })
+
+      expect(result.isError).toBe(true)
+      expect(result.content[0].text).toContain('not found')
+
+      await fs.rm(projectRoot, { recursive: true, force: true })
+    })
+
+    it('updates milestone title, status, and time', async () => {
+      const { projectRoot, dbPath } = await createGovernanceWorkspace()
+      await replaceRoadmapsInStore(dbPath, [
+        { id: 'ROADMAP-0001', title: 'Original', status: 'active', updatedAt: '2026-01-01T00:00:00.000Z' },
+      ])
+
+      const mockServer = { registerTool: vi.fn() } as unknown as McpServer & { registerTool: ReturnType<typeof vi.fn> }
+      registerRoadmapTools(mockServer)
+
+      const roadmapUpdate = getRoadmapToolHandler(mockServer, 'roadmapUpdate')
+      const result = await roadmapUpdate({
+        projectPath: projectRoot,
+        roadmapId: 'ROADMAP-0001',
+        updates: { title: 'Updated', status: 'done', time: '2026-Q3' },
+      })
+
+      expect(result.isError).toBeUndefined()
+      expect(result.content[0].text).toContain('ROADMAP-0001')
+      expect(result.content[0].text).toContain('done')
+
+      await fs.rm(projectRoot, { recursive: true, force: true })
     })
   })
 })
