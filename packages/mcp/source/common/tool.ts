@@ -22,12 +22,12 @@ export type ToolSpec<TShape extends ZodRawShape, TData> = {
   description: string
   inputSchema: TShape
   execute: (input: z.infer<z.ZodObject<TShape>>, ctx: ToolRuntimeContext) => Promise<TData>
-  primary: (data: TData, ctx: ToolRuntimeContext) => string[]
-  evidence?: (data: TData, ctx: ToolRuntimeContext) => string[]
-  guidance: (data: TData, ctx: ToolRuntimeContext) => string[]
-  lint?: (data: TData, ctx: ToolRuntimeContext) => string[]
-  nextCall: (data: TData, ctx: ToolRuntimeContext) => string | undefined
-  extraSections?: (data: TData, ctx: ToolRuntimeContext) => ToolResponseSection[]
+  primary: (data: TData, ctx: ToolRuntimeContext) => string[] | Promise<string[]>
+  evidence?: (data: TData, ctx: ToolRuntimeContext) => string[] | Promise<string[]>
+  guidance: (data: TData, ctx: ToolRuntimeContext) => string[] | Promise<string[]>
+  lint?: (data: TData, ctx: ToolRuntimeContext) => string[] | Promise<string[]>
+  nextCall: (data: TData, ctx: ToolRuntimeContext) => string | undefined | Promise<string | undefined>
+  extraSections?: (data: TData, ctx: ToolRuntimeContext) => ToolResponseSection[] | Promise<ToolResponseSection[]>
 }
 
 export class ToolExecutionError extends Error {
@@ -54,12 +54,12 @@ export function createGovernedTool<TShape extends ZodRawShape, TData>(
       const markdown = renderToolResponseMarkdown({
         toolName: spec.name,
         sections: [
-          summarySection(spec.primary(data, ctx)),
-          evidenceSection(spec.evidence?.(data, ctx) ?? []),
-          guidanceSection(spec.guidance(data, ctx)),
-          lintSection(spec.lint?.(data, ctx) ?? []),
-          nextCallSection(spec.nextCall(data, ctx)),
-          ...(spec.extraSections?.(data, ctx) ?? []),
+          summarySection(await spec.primary(data, ctx)),
+          evidenceSection(await (spec.evidence?.(data, ctx) ?? [])),
+          guidanceSection(await spec.guidance(data, ctx)),
+          lintSection(await (spec.lint?.(data, ctx) ?? [])),
+          nextCallSection(await spec.nextCall(data, ctx)),
+          ...(await (spec.extraSections?.(data, ctx) ?? [])),
         ],
       })
       return asText(markdown)

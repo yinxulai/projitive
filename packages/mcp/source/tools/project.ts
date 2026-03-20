@@ -630,11 +630,8 @@ export function registerProjectTools(server: McpServer): void {
             return b.latestUpdatedAt.localeCompare(a.latestUpdatedAt)
           })
           .slice(0, limit ?? 10)
-        if (ranked[0]) {
-          const topDoc = await loadTasksDocument(ranked[0].governanceDir)
-          ranked[0].lintSuggestions = collectTaskLintSuggestions(topDoc.tasks)
-        }
-        return { roots, depth, projects, ranked, limit: limit ?? 10 }
+        const topTasks = ranked[0] ? (await loadTasksDocument(ranked[0].governanceDir)).tasks : undefined
+        return { roots, depth, projects, ranked, limit: limit ?? 10, topTasks }
       },
       primary: ({ roots, depth, projects, ranked, limit }) => [
         `- rootPaths: ${roots.join(', ')}`,
@@ -656,7 +653,7 @@ export function registerProjectTools(server: McpServer): void {
         '- Then call `taskList` and `taskContext` to continue execution.',
         '- If governance store is missing, initialize governance before task-level operations.',
       ],
-      lint: ({ ranked }) => ranked[0]?.lintSuggestions ?? [],
+      lint: ({ topTasks }) => topTasks ? collectTaskLintSuggestions(topTasks) : [],
       nextCall: ({ ranked }) =>
         ranked[0] ? `projectContext(projectPath="${toProjectPath(ranked[0].governanceDir)}")` : undefined,
     })
@@ -760,8 +757,7 @@ export function registerProjectTools(server: McpServer): void {
         const { markdownPath: tasksMarkdownPath, tasks } = await loadTasksDocument(governanceDir)
         const { markdownPath: roadmapMarkdownPath, milestones } = await loadRoadmapDocumentWithOptions(governanceDir, false)
         const roadmapIds = milestones.map((item) => item.id)
-        const lintSuggestions = collectTaskLintSuggestions(tasks)
-        return { normalizedProjectPath, governanceDir, tasksMarkdownPath, roadmapMarkdownPath, roadmapIds, taskStats, artifacts, lintSuggestions }
+        return { normalizedProjectPath, governanceDir, tasksMarkdownPath, roadmapMarkdownPath, roadmapIds, taskStats, artifacts, tasks }
       },
       primary: ({ normalizedProjectPath, governanceDir, tasksMarkdownPath, roadmapMarkdownPath, roadmapIds }) => [
         `- projectPath: ${normalizedProjectPath}`,
@@ -785,7 +781,7 @@ export function registerProjectTools(server: McpServer): void {
         '- Start from `taskList` to choose a target task.',
         '- Then call `taskContext` with a task ID to retrieve evidence locations and reading order.',
       ],
-      lint: ({ lintSuggestions }) => lintSuggestions,
+      lint: ({ tasks }) => collectTaskLintSuggestions(tasks),
       nextCall: ({ normalizedProjectPath }) => `taskList(projectPath="${normalizedProjectPath}")`,
     })
   )

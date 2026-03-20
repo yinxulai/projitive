@@ -925,17 +925,7 @@ export function registerTaskTools(server: McpServer): void {
         const filtered = tasks
           .filter((task) => (status ? task.status === status : true))
           .slice(0, limit ?? 100)
-        const lintSuggestions = collectTaskLintSuggestions(filtered)
-        if (status && filtered.length === 0) {
-          appendLintSuggestions(lintSuggestions, [
-            {
-              code: TASK_LINT_CODES.FILTER_EMPTY,
-              message: `No tasks matched status=${status}.`,
-              fixHint: 'Confirm status values or update task states.',
-            },
-          ])
-        }
-        return { normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, filtered, lintSuggestions, status }
+        return { normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, filtered, status }
       },
       primary: ({ normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, filtered, status }) => [
         `- projectPath: ${normalizedProjectPath}`,
@@ -950,7 +940,19 @@ export function registerTaskTools(server: McpServer): void {
         ...filtered.map((task) => `- ${task.id} | ${task.status} | ${task.title} | owner=${task.owner || ''} | updatedAt=${task.updatedAt}`),
       ],
       guidance: () => ['- Pick one task ID and call `taskContext`.'],
-      lint: ({ lintSuggestions }) => lintSuggestions,
+      lint: ({ filtered, status }) => {
+        const suggestions = collectTaskLintSuggestions(filtered)
+        if (status && filtered.length === 0) {
+          appendLintSuggestions(suggestions, [
+            {
+              code: TASK_LINT_CODES.FILTER_EMPTY,
+              message: `No tasks matched status=${status}.`,
+              fixHint: 'Confirm status values or update task states.',
+            },
+          ])
+        }
+        return suggestions
+      },
       nextCall: ({ filtered, normalizedProjectPath }) =>
         filtered[0]
           ? `taskContext(projectPath="${normalizedProjectPath}", taskId="${filtered[0].id}")`
@@ -1020,11 +1022,7 @@ export function registerTaskTools(server: McpServer): void {
         })
         await upsertTaskInStore(tasksPath, createdTask)
         await loadTasksDocumentWithOptions(governanceDir, true)
-        const lintSuggestions = [
-          ...collectSingleTaskLintSuggestions(createdTask),
-          ...(await collectTaskFileLintSuggestions(governanceDir, createdTask)),
-        ]
-        return { normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, createdTask, lintSuggestions }
+        return { normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, createdTask }
       },
       primary: ({ normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, createdTask }) => [
         `- projectPath: ${normalizedProjectPath}`,
@@ -1047,7 +1045,10 @@ export function registerTaskTools(server: McpServer): void {
         'Task created in governance store successfully and tasks.md has been synced.',
         'Run taskContext to verify references and lint guidance.',
       ],
-      lint: ({ lintSuggestions }) => lintSuggestions,
+      lint: async ({ createdTask, governanceDir }) => [
+        ...collectSingleTaskLintSuggestions(createdTask),
+        ...(await collectTaskFileLintSuggestions(governanceDir, createdTask)),
+      ],
       nextCall: ({ normalizedProjectPath, createdTask }) =>
         `taskContext(projectPath="${normalizedProjectPath}", taskId="${createdTask.id}")`,
     })
@@ -1085,7 +1086,6 @@ export function registerTaskTools(server: McpServer): void {
 
         const selected = rankedCandidates[0]
         const selectedTaskDocument = await loadTasksDocument(selected.governanceDir)
-        const lintSuggestions = collectTaskLintSuggestions(selectedTaskDocument.tasks)
         const artifacts = await discoverGovernanceArtifacts(selected.governanceDir)
         const fileCandidates = candidateFilesFromArtifacts(artifacts)
         const projectContextDocsState = inspectProjectContextDocsFromArtifacts(fileCandidates)
@@ -1100,7 +1100,7 @@ export function registerTaskTools(server: McpServer): void {
           isEmpty: false as const,
           roots, depth, projects,
           rankedCandidates, selected, selectedTaskDocument,
-          lintSuggestions, relatedArtifacts, referenceLocations,
+          relatedArtifacts, referenceLocations,
           suggestedReadOrder, projectContextDocsState, taskLocation, candidateLimit,
         }
       },
@@ -1214,7 +1214,7 @@ export function registerTaskTools(server: McpServer): void {
           ]
         }
         return [
-          ...data.lintSuggestions,
+          ...collectTaskLintSuggestions(data.selectedTaskDocument.tasks),
           ...renderLintSuggestions(collectProjectContextDocsLintSuggestions(data.projectContextDocsState)),
         ]
       },
@@ -1258,18 +1258,12 @@ export function registerTaskTools(server: McpServer): void {
             `taskList(projectPath="${toProjectPath(governanceDir)}")`,
           )
         }
-        const lintSuggestions = [
-          ...collectSingleTaskLintSuggestions(task),
-          ...(await collectTaskFileLintSuggestions(governanceDir, task)),
-        ]
         const researchBriefState = await inspectTaskResearchBrief(governanceDir, task)
-        appendLintSuggestions(lintSuggestions, collectTaskResearchBriefLintSuggestions(researchBriefState))
         const contextReadingGuidance = await resolveTaskContextReadingGuidance(governanceDir)
         const taskLocation = (await findTextReferences(markdownPath, taskId))[0]
         const artifacts = await discoverGovernanceArtifacts(governanceDir)
         const fileCandidates = candidateFilesFromArtifacts(artifacts)
         const projectContextDocsState = inspectProjectContextDocsFromArtifacts(fileCandidates)
-        appendLintSuggestions(lintSuggestions, collectProjectContextDocsLintSuggestions(projectContextDocsState))
         const referenceLocations = (
           await Promise.all(fileCandidates.map((file) => findTextReferences(file, taskId)))
         ).flat()
@@ -1277,7 +1271,7 @@ export function registerTaskTools(server: McpServer): void {
         const suggestedReadOrder = [markdownPath, ...relatedArtifacts.filter((item) => item !== markdownPath)]
         return {
           normalizedProjectPath, governanceDir, markdownPath, roadmapViewPath,
-          task, lintSuggestions, researchBriefState, contextReadingGuidance,
+          task, researchBriefState, contextReadingGuidance,
           taskLocation, referenceLocations, relatedArtifacts, suggestedReadOrder,
           projectContextDocsState,
         }
@@ -1388,7 +1382,15 @@ export function registerTaskTools(server: McpServer): void {
         '- If updates are needed, use tool writes for governance store (`taskUpdate` / `roadmapUpdate`) and keep TASK IDs unchanged.',
         '- After editing, re-run `taskContext` to verify references and context consistency.',
       ],
-      lint: ({ lintSuggestions }) => lintSuggestions,
+      lint: async ({ task, governanceDir, researchBriefState, projectContextDocsState }) => {
+        const suggestions = [
+          ...collectSingleTaskLintSuggestions(task),
+          ...(await collectTaskFileLintSuggestions(governanceDir, task)),
+        ]
+        appendLintSuggestions(suggestions, collectTaskResearchBriefLintSuggestions(researchBriefState))
+        appendLintSuggestions(suggestions, collectProjectContextDocsLintSuggestions(projectContextDocsState))
+        return suggestions
+      },
       nextCall: ({ normalizedProjectPath, task }) =>
         `taskContext(projectPath="${normalizedProjectPath}", taskId="${task.id}")`,
     })

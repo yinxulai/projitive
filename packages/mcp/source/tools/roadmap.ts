@@ -244,8 +244,7 @@ export function registerRoadmapTools(server: McpServer): void {
         const { milestones, markdownPath: roadmapViewPath } = await loadRoadmapDocument(governanceDir)
         const roadmapIds = milestones.map((item) => item.id)
         const { tasks, markdownPath: tasksViewPath } = await loadTasksDocument(governanceDir)
-        const lintSuggestions = collectRoadmapLintSuggestions(roadmapIds, tasks)
-        return { normalizedProjectPath, governanceDir, roadmapIds, roadmapViewPath, tasksViewPath, tasks, lintSuggestions }
+        return { normalizedProjectPath, governanceDir, roadmapIds, roadmapViewPath, tasksViewPath, tasks }
       },
       primary: ({ normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, roadmapIds }) => [
         `- projectPath: ${normalizedProjectPath}`,
@@ -262,7 +261,7 @@ export function registerRoadmapTools(server: McpServer): void {
         }),
       ],
       guidance: () => ['- Pick one roadmap ID and call `roadmapContext`.'],
-      lint: ({ lintSuggestions }) => lintSuggestions,
+      lint: ({ roadmapIds, tasks }) => collectRoadmapLintSuggestions(roadmapIds, tasks),
       nextCall: ({ roadmapIds, normalizedProjectPath }) =>
         roadmapIds[0]
           ? `roadmapContext(projectPath="${normalizedProjectPath}", roadmapId="${roadmapIds[0]}")`
@@ -298,16 +297,7 @@ export function registerRoadmapTools(server: McpServer): void {
         const { tasks, markdownPath: tasksViewPath } = await loadTasksDocument(governanceDir)
         const relatedTasks = tasks.filter((task) => task.roadmapRefs.includes(roadmapId))
         const roadmapIds = await loadRoadmapIds(governanceDir)
-        const lintSuggestionItems = collectRoadmapLintSuggestionItems(roadmapIds, tasks)
-        if (relatedTasks.length === 0) {
-          lintSuggestionItems.push({
-            code: ROADMAP_LINT_CODES.CONTEXT_RELATED_TASKS_EMPTY,
-            message: `relatedTasks=0 for ${roadmapId}.`,
-            fixHint: 'Batch bind task roadmapRefs to improve execution traceability.',
-          })
-        }
-        const lintSuggestions = renderLintSuggestions(lintSuggestionItems)
-        return { normalizedProjectPath, governanceDir, roadmapId, roadmapViewPath, tasksViewPath, relatedTasks, referenceLocations, lintSuggestions }
+        return { normalizedProjectPath, governanceDir, roadmapId, roadmapViewPath, tasksViewPath, relatedTasks, referenceLocations, roadmapIds, tasks }
       },
       primary: ({ normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, roadmapId, relatedTasks, referenceLocations }) => [
         `- projectPath: ${normalizedProjectPath}`,
@@ -330,7 +320,17 @@ export function registerRoadmapTools(server: McpServer): void {
         '- Keep ROADMAP/TASK IDs unchanged while updating markdown files.',
         '- Re-run `roadmapContext` after edits to confirm references remain consistent.',
       ],
-      lint: ({ lintSuggestions }) => lintSuggestions,
+      lint: ({ roadmapIds, tasks, relatedTasks, roadmapId }) => {
+        const items = collectRoadmapLintSuggestionItems(roadmapIds, tasks)
+        if (relatedTasks.length === 0) {
+          items.push({
+            code: ROADMAP_LINT_CODES.CONTEXT_RELATED_TASKS_EMPTY,
+            message: `relatedTasks=0 for ${roadmapId}.`,
+            fixHint: 'Batch bind task roadmapRefs to improve execution traceability.',
+          })
+        }
+        return renderLintSuggestions(items)
+      },
       nextCall: ({ normalizedProjectPath, roadmapId }) =>
         `roadmapContext(projectPath="${normalizedProjectPath}", roadmapId="${roadmapId}")`,
     })
@@ -379,8 +379,7 @@ export function registerRoadmapTools(server: McpServer): void {
         await upsertRoadmapInStore(doc.roadmapPath, created)
         const refreshed = await loadRoadmapDocumentWithOptions(governanceDir, true)
         const { tasks } = await loadTasks(governanceDir)
-        const lintSuggestions = collectRoadmapLintSuggestions(refreshed.milestones.map((item) => item.id), tasks)
-        return { normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath: refreshed.markdownPath, created, refreshed, lintSuggestions }
+        return { normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath: refreshed.markdownPath, created, refreshed, tasks }
       },
       primary: ({ normalizedProjectPath, governanceDir, tasksViewPath, roadmapViewPath, created }) => [
         `- projectPath: ${normalizedProjectPath}`,
@@ -402,7 +401,7 @@ export function registerRoadmapTools(server: McpServer): void {
         'Milestone created successfully and roadmap.md has been synced.',
         'Re-run roadmapContext to verify linked task traceability.',
       ],
-      lint: ({ lintSuggestions }) => lintSuggestions,
+      lint: ({ refreshed, tasks }) => collectRoadmapLintSuggestions(refreshed.milestones.map((item) => item.id), tasks),
       nextCall: ({ normalizedProjectPath, created }) =>
         `roadmapContext(projectPath="${normalizedProjectPath}", roadmapId="${created.id}")`,
     })
