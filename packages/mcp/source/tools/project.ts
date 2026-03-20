@@ -16,7 +16,6 @@ import {
 } from '../common/index.js'
 import {
   createGovernedTool,
-  ToolExecutionError,
   getDefaultToolTemplateMarkdown,
 } from '../common/index.js'
 import { collectTaskLintSuggestions, loadTasksDocument, loadTasksDocumentWithOptions, renderTasksMarkdown } from './task.js'
