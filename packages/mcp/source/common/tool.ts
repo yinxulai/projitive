@@ -9,7 +9,6 @@ import {
   lintSection,
   nextCallSection,
   summarySection,
-  type ToolResponseSection,
 } from './response.js'
 
 export type ToolRuntimeContext = {
@@ -27,7 +26,6 @@ export type ToolSpec<TShape extends ZodRawShape, TData> = {
   guidance: (data: TData, ctx: ToolRuntimeContext) => string[] | Promise<string[]>
   lint?: (data: TData, ctx: ToolRuntimeContext) => string[] | Promise<string[]>
   nextCall: (data: TData, ctx: ToolRuntimeContext) => string | undefined | Promise<string | undefined>
-  extraSections?: (data: TData, ctx: ToolRuntimeContext) => ToolResponseSection[] | Promise<ToolResponseSection[]>
 }
 
 export class ToolExecutionError extends Error {
@@ -59,7 +57,6 @@ export function createGovernedTool<TShape extends ZodRawShape, TData>(
           guidanceSection(await spec.guidance(data, ctx)),
           lintSection(await (spec.lint?.(data, ctx) ?? [])),
           nextCallSection(await spec.nextCall(data, ctx)),
-          ...(await (spec.extraSections?.(data, ctx) ?? [])),
         ],
       })
       return asText(markdown)
