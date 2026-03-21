@@ -73,6 +73,21 @@ describe('roadmap module', () => {
       expect(suggestions.some(s => s.includes('TASK_REFS_EMPTY'))).toBe(true)
     })
 
+    it('collects lint suggestion for tasks with unknown roadmap refs', () => {
+      const tasks = [{
+        id: 'TASK-0001',
+        title: 'Orphaned Task',
+        status: 'TODO' as const,
+        owner: 'ai-copilot',
+        summary: '',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        links: [],
+        roadmapRefs: ['ROADMAP-9999'],
+      }]
+      const suggestions = collectRoadmapLintSuggestions(['ROADMAP-0001'], tasks)
+      expect(suggestions.some(s => s.includes('UNKNOWN_REFS'))).toBe(true)
+    })
+
     it('loads from governance store and rewrites roadmap markdown view', async () => {
       const governanceDir = path.join(tempDir, '.projitive-db')
       await fs.mkdir(governanceDir, { recursive: true })

@@ -31,9 +31,6 @@ function normalizePath(inputPath?: string): string {
 
 function normalizeGovernanceDirName(input?: string): string {
   const name = input?.trim() || DEFAULT_GOVERNANCE_DIR
-  if (!name) {
-    throw new Error('governanceDir cannot be empty')
-  }
   if (path.isAbsolute(name)) {
     throw new Error('governanceDir must be a relative directory name')
   }
@@ -46,11 +43,7 @@ function normalizeGovernanceDirName(input?: string): string {
   return name
 }
 
-function parseDepthFromEnv(rawDepth: string | undefined): number | undefined {
-  if (typeof rawDepth !== 'string' || rawDepth.trim().length === 0) {
-    return undefined
-  }
-
+function parseDepthFromEnv(rawDepth: string): number | undefined {
   const parsed = Number.parseInt(rawDepth, 10)
   if (!Number.isFinite(parsed)) {
     return undefined
