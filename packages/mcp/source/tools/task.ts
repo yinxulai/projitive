@@ -70,10 +70,181 @@ function taskStatusGuidance(task: Task): string[] {
   }
 
   if (task.status === 'BLOCKED') {
-    return [
-      '- This task is BLOCKED: identify blocker and required unblock condition first.',
-      '- Reopen only after blocker evidence is documented.',
+    const guidance: string[] = [
+      '## BLOCKED Task - Structured Unblocking Path',
+      '',
     ]
+
+    // ===== LAYER 1: CRITICAL VALIDATION =====
+    guidance.push('### 🔴 CRITICAL - Validate Blocker Metadata First')
+    guidance.push('')
+
+    if (!task.blocker) {
+      guidance.push('⚠️ **BLOCKER MISSING** - Task cannot be truly BLOCKED without blocker metadata.')
+      guidance.push('')
+      guidance.push('**Required Action:**')
+      guidance.push('```')
+      guidance.push('taskUpdate(projectPath="...", taskId="' + task.id + '", {')
+      guidance.push('  blocker: {')
+      guidance.push('    type: "internal_dependency|external_dependency|resource|approval",')
+      guidance.push('    description: "Specific reason for block",')
+      guidance.push('    blockingEntity: "Optional: who/what is blocking",')
+      guidance.push('    unblockCondition: "Optional: exact condition to unblock"')
+      guidance.push('  }')
+      guidance.push('})')
+      guidance.push('```')
+      guidance.push('')
+      guidance.push('**Then re-run taskContext() to see type-specific guidance.**')
+      return guidance
+    }
+
+    const { type, description, blockingEntity, unblockCondition, escalationPath } = task.blocker
+
+    guidance.push('**Blocker Summary:**')
+    guidance.push(`- Type: **${type}**`)
+    guidance.push(`- Issue: ${description}`)
+    if (blockingEntity) guidance.push(`- Blocking Entity: ${blockingEntity}`)
+    if (unblockCondition) guidance.push(`- Unblock Condition: ${unblockCondition}`)
+    guidance.push('')
+
+    // ===== LAYER 2: HOW TO UNBLOCK =====
+    guidance.push('### 🟠 HOW TO UNBLOCK - Type-Specific Steps')
+    guidance.push('')
+
+    if (type === 'internal_dependency') {
+      guidance.push('**This task is blocked by another task (internal dependency).**')
+      guidance.push('')
+      guidance.push('**Step 1: Identify the Blocking Task**')
+      guidance.push('- Call `taskList()` and search for a task matching this description:')
+      guidance.push(`  "${unblockCondition || description}"`)
+      guidance.push('- Or ask: who owns completing this blocker?')
+      guidance.push('')
+      guidance.push('**Step 2: Check Blocking Task Status**')
+      guidance.push('- If DONE: Proceed to Step 4')
+      guidance.push('- If TODO/IN_PROGRESS: Coordinate with owner → proceed to Step 4 when complete')
+      guidance.push('- If NOT FOUND: Proceed to Step 3')
+      guidance.push('')
+      guidance.push('**Step 3: Create the Missing Blocking Task (if needed)**')
+      guidance.push('```')
+      guidance.push('taskCreate(projectPath="...", {')
+      guidance.push('  title: "Unblock ' + task.id + ': [specific outcome]",')
+      guidance.push('  status: "TODO",')
+      guidance.push('  summary: "Required to unblock ' + task.id + '"')
+      guidance.push('})')
+      guidance.push('```')
+      guidance.push('')
+      guidance.push('**Step 4: After Blocker is Resolved - Unblock This Task**')
+      guidance.push('- Verify the blocker is actually DONE (not just in progress)')
+      guidance.push('- Call `taskUpdate()` to move back to TODO:')
+      guidance.push('```')
+      guidance.push('taskUpdate(projectPath="...", taskId="' + task.id + '", {status: "TODO"})')
+      guidance.push('```')
+      guidance.push('- This removes the BLOCKED state and allows execution to continue')
+    } else if (type === 'external_dependency') {
+      guidance.push('**This task is blocked by an external party/service/event.**')
+      guidance.push('')
+      guidance.push('**Step 1: Understand What is Needed**')
+      guidance.push(`- Blocking Entity: ${blockingEntity || '(not documented)'}`)
+      guidance.push(`- Description: ${description}`)
+      guidance.push('- Contact method: (verify in your knowledge base)')
+      guidance.push('')
+      guidance.push('**Step 2: Reach Out or Escalate**')
+      if (escalationPath) {
+        guidance.push(`- Use escalation path: ${escalationPath}`)
+      } else {
+        guidance.push('- If escalation path missing: call `taskUpdate()` to add it')
+      }
+      guidance.push('- Send request specifying: what, by when, and why (link this TASK ID)')
+      guidance.push('')
+      guidance.push('**Step 3: Track External Progress**')
+      guidance.push('- Check status periodically')
+      guidance.push('- Update task with any new information via `taskUpdate()`')
+      guidance.push('- If blocked for too long: follow escalation path')
+      guidance.push('')
+      guidance.push('**Step 4: After External Delivery - Unblock This Task**')
+      guidance.push('- Verify delivery is complete and acceptable')
+      guidance.push('- Call `taskUpdate()` to move back to TODO:')
+      guidance.push('```')
+      guidance.push('taskUpdate(projectPath="...", taskId="' + task.id + '", {status: "TODO"})')
+      guidance.push('```')
+    } else if (type === 'resource') {
+      guidance.push('**This task is blocked by missing resource (tools, access, personnel, budget, etc.).**')
+      guidance.push('')
+      guidance.push('**Step 1: Clarify the Missing Resource**')
+      guidance.push(`- Need: ${description}`)
+      guidance.push('- Who can allocate? (should be in escalationPath)')
+      guidance.push('')
+      guidance.push('**Step 2: Request or Allocate**')
+      if (escalationPath) {
+        guidance.push(`- Contact: ${escalationPath}`)
+      } else {
+        guidance.push('- FIX: Call `taskUpdate()` to add escalationPath for resource owner')
+      }
+      guidance.push('- Provide justification (link this TASK ID and explain why needed)')
+      guidance.push('')
+      guidance.push('**Step 3: Wait for Approval and Setup**')
+      guidance.push('- Track approval and allocation status')
+      guidance.push('- Once allocated and available: proceed to Step 4')
+      guidance.push('')
+      guidance.push('**Step 4: After Resource Secured - Unblock This Task**')
+      guidance.push('- Confirm resource is ready to use')
+      guidance.push('- Call `taskUpdate()` to move back to TODO:')
+      guidance.push('```')
+      guidance.push('taskUpdate(projectPath="...", taskId="' + task.id + '", {status: "TODO"})')
+      guidance.push('```')
+    } else if (type === 'approval') {
+      guidance.push('**This task is blocked by pending approval from decision maker.**')
+      guidance.push('')
+      guidance.push('**Step 1: Identify Approver**')
+      guidance.push(`- Approver: ${blockingEntity || '(not documented)'}`)
+      guidance.push('- Approval criteria: (ensure clear in description)')
+      guidance.push('')
+      guidance.push('**Step 2: Prepare and Submit Approval Request**')
+      guidance.push('- What are you asking approval for? (clear one-sentence request)')
+      guidance.push('- Why? (link this TASK ID and provide context)')
+      guidance.push('- By when? (deadline)')
+      if (blockingEntity) {
+        guidance.push(`- Send to: ${blockingEntity}`)
+      }
+      guidance.push('')
+      guidance.push('**Step 3: Track Approval Process**')
+      guidance.push('- Follow up if no response by deadline')
+      if (escalationPath) {
+        guidance.push(`- If denied or stalled: use escalation path: ${escalationPath}`)
+      } else {
+        guidance.push('- If escalation needed: call `taskUpdate()` to add escalationPath')
+      }
+      guidance.push('')
+      guidance.push('**Step 4: After Approval Granted - Unblock This Task**')
+      guidance.push('- Confirm approval is in writing (link to approval evidence)')
+      guidance.push('- Call `taskUpdate()` to move back to TODO:')
+      guidance.push('```')
+      guidance.push('taskUpdate(projectPath="...", taskId="' + task.id + '", {status: "TODO"})')
+      guidance.push('```')
+    }
+
+    guidance.push('')
+
+    // ===== LAYER 3: REFERENCE INFORMATION =====
+    guidance.push('### ℹ️ REFERENCE - System-Wide Information')
+    guidance.push('')
+    guidance.push('**All Blocker Types:**')
+    guidance.push('- `internal_dependency` — Blocked by another task that must complete first')
+    guidance.push('- `external_dependency` — Blocked by external party/service/event')
+    guidance.push('- `resource` — Blocked by missing resource (tool, access, personnel, budget)')
+    guidance.push('- `approval` — Blocked by pending decision/sign-off')
+    guidance.push('')
+    guidance.push('**Unblock Verification Checklist:**')
+    guidance.push('- ✓ Blocker condition is actually met (not just "almost done")')
+    guidance.push('- ✓ Evidence is documented (link to TASK/report/email/etc)')
+    guidance.push('- ✓ Task status can be safely moved back to TODO')
+    guidance.push('')
+    guidance.push('**After Unblocking - Next Steps:**')
+    guidance.push('1. Call `taskUpdate(..., {status: "TODO"})` to unblock')
+    guidance.push('2. Call `taskContext()` to see task in unblocked state')
+    guidance.push('3. Call `taskNext()` to resume execution flow')
+
+    return guidance
   }
 
   return [
@@ -84,11 +255,15 @@ function taskStatusGuidance(task: Task): string[] {
 
 const DEFAULT_NO_TASK_DISCOVERY_GUIDANCE = [
   '- Recheck project state first: run projectContext and confirm there is truly no TODO/IN_PROGRESS task to execute.',
-  '- Create new tasks via `taskCreate(...)` (do not edit tasks.md directly).',
-  '- If all remaining tasks are BLOCKED, create one unblock task with explicit unblock condition and dependency owner.',
-  '- Start from active roadmap milestones and split into the smallest executable slices with a single done condition each.',
-  '- Prefer slices that unlock multiple downstream tasks before isolated refactors or low-impact cleanups.',
+  '- Check BLOCKED tasks: if BLOCKED tasks exist, read their blocker metadata and take unblock action before creating new tasks.',
+  '  - internal_dependency: create/track the blocking task, coordinate with owner',
+  '  - external_dependency: reach out to blocking entity or escalate',
+  '  - resource: request/allocate the missing resource',
+  '  - approval: follow escalation path to expedite approval',
+  '- Only after all BLOCKED tasks are unblocked (moved back to TODO/IN_PROGRESS), then create new tasks via `taskCreate(...)`.',
   '- Create TODO tasks only when evidence is clear: each new task must produce at least one report/designs/readme artifact update.',
+  '- Start from active roadmap milestones and split into smallest executable slices with single done condition each.',
+  '- Prefer slices that unlock multiple downstream tasks before isolated refactors or low-impact cleanups.',
   '- Skip duplicate scope: do not create tasks that overlap existing TODO/IN_PROGRESS/BLOCKED task intent.',
   '- Use quality gates for discovery candidates: user value, delivery risk reduction, or measurable throughput improvement.',
   '- Review and update project architecture docs under designs/core/ (architecture.md, style-guide.md) if they are missing or outdated.',
