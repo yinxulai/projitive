@@ -335,11 +335,8 @@ describe('projitive module', () => {
       await expect(initializeProjectStructure(filePath)).rejects.toThrow('projectPath must be a directory')
     })
 
-    it('creates governance structure with default name when invalid names are provided', async () => {
+    it('uses default governance dir when governanceDir is omitted', async () => {
       const root = await createTempDir()
-      
-      // When governanceDir is invalid, it should fall back to default
-      // Note: normalizeGovernanceDirName is not exported, so we test initialization behavior
       const initialized = await initializeProjectStructure(root)
       expect(initialized.governanceDir).toBe(path.join(root, '.projitive'))
     })

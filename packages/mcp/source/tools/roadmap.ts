@@ -64,12 +64,7 @@ function sortMilestonesNewestFirst(milestones: RoadmapMilestone[]): RoadmapMiles
       return updatedAtDelta
     }
 
-    const idDelta = toRoadmapIdNumericSuffix(b.id) - toRoadmapIdNumericSuffix(a.id)
-    if (idDelta !== 0) {
-      return idDelta
-    }
-
-    return b.id.localeCompare(a.id)
+    return toRoadmapIdNumericSuffix(b.id) - toRoadmapIdNumericSuffix(a.id)
   })
 }
 
