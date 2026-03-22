@@ -387,7 +387,7 @@ describe('tasks module', () => {
   })
 
   it('taskUpdate allows TODO -> IN_PROGRESS when research brief is ready', async () => {
-    const { projectRoot, dbPath } = await createGovernanceWorkspace()
+    const { projectRoot, governanceDir, dbPath } = await createGovernanceWorkspace()
     await replaceRoadmapsInStore(dbPath, [
       { id: 'ROADMAP-0001', title: 'Bootstrap', status: 'active', updatedAt: '2026-03-14T00:00:00.000Z' },
     ])
@@ -395,7 +395,7 @@ describe('tasks module', () => {
       normalizeTask({ id: 'TASK-0001', title: 'gate test pass', status: 'TODO', roadmapRefs: ['ROADMAP-0001'] }),
     ])
 
-    const researchDir = path.join(projectRoot, 'designs', 'research')
+    const researchDir = path.join(governanceDir, 'designs', 'research')
     await fs.mkdir(researchDir, { recursive: true })
     await fs.writeFile(
       path.join(researchDir, 'TASK-0001.implementation-research.md'),
@@ -504,8 +504,8 @@ describe('tasks module', () => {
 
     expect(contextResult.content[0].text).toContain('architectureDocsStatus: MISSING')
     expect(contextResult.content[0].text).toContain('styleDocsStatus: MISSING')
-    expect(contextResult.content[0].text).toContain('add required file designs/core/architecture.md')
-    expect(contextResult.content[0].text).toContain('add required file designs/core/style-guide.md')
+    expect(contextResult.content[0].text).toContain('add required file under governanceDir: designs/core/architecture.md')
+    expect(contextResult.content[0].text).toContain('add required file under governanceDir: designs/core/style-guide.md')
 
     await fs.rm(projectRoot, { recursive: true, force: true })
   })
@@ -526,7 +526,7 @@ describe('tasks module', () => {
       }),
     ])
 
-    const researchDir = path.join(projectRoot, 'designs', 'research')
+    const researchDir = path.join(governanceDir, 'designs', 'research')
     await fs.mkdir(researchDir, { recursive: true })
     await fs.writeFile(
       path.join(researchDir, 'TASK-0001.implementation-research.md'),
@@ -581,7 +581,7 @@ describe('tasks module', () => {
       }),
     ])
 
-    const researchDir = path.join(projectRoot, 'designs', 'research')
+    const researchDir = path.join(governanceDir, 'designs', 'research')
     await fs.mkdir(researchDir, { recursive: true })
     await fs.writeFile(
       path.join(researchDir, 'TASK-0001.implementation-research.md'),

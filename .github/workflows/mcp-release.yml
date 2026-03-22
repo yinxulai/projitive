@@ -3,16 +3,7 @@ name: Release Publish MCP
 on:
   push:
     tags:
-      - '[0-9]+.[0-9]+.[0-9]+'
-  release:
-    types:
-      - published
-  workflow_dispatch:
-    inputs:
-      release_tag:
-        description: Release tag to verify against package version (must not start with v; optional, defaults to current ref)
-        required: false
-        type: string
+      - '*.*.*'
 
 permissions:
   id-token: write  # Required for OIDC
@@ -34,7 +25,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           cache: npm
-          node-version: 20
+          node-version: 24
           registry-url: https://registry.npmjs.org
           cache-dependency-path: packages/mcp/package-lock.json
 
@@ -54,9 +45,8 @@ jobs:
         run: npm run test
 
       - name: Verify package version matches release tag
-        env:
-          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.release_tag || github.ref_name }}
         run: |
+          RELEASE_TAG="${GITHUB_REF_NAME}"
           PACKAGE_VERSION=$(node -p "require('./package.json').version")
           if [ "$PACKAGE_VERSION" != "$RELEASE_TAG" ]; then
             echo "Package version ($PACKAGE_VERSION) does not match release tag ($RELEASE_TAG)."
@@ -64,4 +54,4 @@ jobs:
           fi
 
       - name: Publish to npm
-        run: npm publish --provenance --access public
+        run: npm publish --access public

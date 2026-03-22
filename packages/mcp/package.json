@@ -1,6 +1,6 @@
 {
   "name": "@projitive/mcp",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "description": "Projitive MCP Server for project and task discovery/update",
   "license": "ISC",
   "author": "",
@@ -11,6 +11,10 @@
   "main": "./output/source/index.js",
   "publishConfig": {
     "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yinxulai/projitive"
   },
   "scripts": {
     "test": "vitest run",
