@@ -340,10 +340,6 @@ function normalizeTaskLink(link: string): string {
   return withoutDotPrefix.replace(/^\/+/, '')
 }
 
-function resolveTaskLinkPath(projectPath: string, link: string): string {
-  return path.join(projectPath, link)
-}
-
 function taskResearchBriefRelativePath(taskId: string): string {
   return `${TASK_RESEARCH_DIR}/${taskId}${TASK_RESEARCH_FILE_SUFFIX}`
 }
