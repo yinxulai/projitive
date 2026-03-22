@@ -375,9 +375,8 @@ function renderTaskResearchBriefTemplate(task: Task): string[] {
 }
 
 async function inspectTaskResearchBrief(governanceDir: string, task: Task): Promise<TaskResearchBriefState> {
-  const projectPath = toProjectPath(governanceDir)
   const relativePath = taskResearchBriefRelativePath(task.id)
-  const absolutePath = resolveTaskLinkPath(projectPath, relativePath)
+  const absolutePath = path.join(governanceDir, relativePath)
   const exists = await fs.access(absolutePath).then(() => true).catch(() => false)
   return { relativePath, absolutePath, exists, ready: exists }
 }
@@ -386,8 +385,8 @@ function collectTaskResearchBriefLintSuggestions(state: TaskResearchBriefState):
   if (!state.exists) {
     return [{
       code: TASK_LINT_CODES.RESEARCH_BRIEF_MISSING,
-      message: `Pre-execution research brief missing: ${state.relativePath}.`,
-      fixHint: 'Create the file and fill required sections before implementation.',
+      message: `Pre-execution research brief missing under governanceDir: ${state.relativePath}.`,
+      fixHint: 'Create the file under governanceDir and fill required sections before implementation.',
     }]
   }
   return []
@@ -422,7 +421,7 @@ function collectProjectContextDocsLintSuggestions(state: ReturnType<typeof inspe
     suggestions.push({
       code: PROJECT_LINT_CODES.ARCHITECTURE_DOC_MISSING,
       message: 'Project context is missing architecture design documentation.',
-      fixHint: `Add required file: ${CORE_ARCHITECTURE_DOC_FILE}.`,
+      fixHint: `Add required file under governanceDir: ${CORE_ARCHITECTURE_DOC_FILE}.`,
     })
   }
 
@@ -430,7 +429,7 @@ function collectProjectContextDocsLintSuggestions(state: ReturnType<typeof inspe
     suggestions.push({
       code: PROJECT_LINT_CODES.STYLE_DOC_MISSING,
       message: 'Project context is missing design style documentation.',
-      fixHint: `Add required file: ${CORE_STYLE_DOC_FILE}.`,
+      fixHint: `Add required file under governanceDir: ${CORE_STYLE_DOC_FILE}.`,
     })
   }
 
@@ -1293,10 +1292,10 @@ export function registerTaskTools(server: McpServer): void {
             ? [
                 '- Project context docs are incomplete. Complete missing project architecture/style docs before deep implementation.',
                 ...(data.projectContextDocsState.missingArchitectureDocs
-                  ? [`- Missing architecture design doc: create required file ${CORE_ARCHITECTURE_DOC_FILE}.`]
+                  ? [`- Missing architecture design doc: create required file under governanceDir: ${CORE_ARCHITECTURE_DOC_FILE}.`]
                   : []),
                 ...(data.projectContextDocsState.missingStyleDocs
-                  ? [`- Missing design style doc: create required file ${CORE_STYLE_DOC_FILE}.`]
+                  ? [`- Missing design style doc: create required file under governanceDir: ${CORE_STYLE_DOC_FILE}.`]
                   : []),
               ]
             : []),
@@ -1426,11 +1425,11 @@ export function registerTaskTools(server: McpServer): void {
         `- architecture docs: ${projectContextDocsState.architectureDocs.length > 0 ? 'found' : 'missing'}`,
         ...(projectContextDocsState.architectureDocs.length > 0
           ? projectContextDocsState.architectureDocs.map((item) => `- architecture: ${item}`)
-          : [`- architecture: add required file ${CORE_ARCHITECTURE_DOC_FILE}.`]),
+          : [`- architecture: add required file under governanceDir: ${CORE_ARCHITECTURE_DOC_FILE}.`]),
         `- design style docs: ${projectContextDocsState.styleDocs.length > 0 ? 'found' : 'missing'}`,
         ...(projectContextDocsState.styleDocs.length > 0
           ? projectContextDocsState.styleDocs.map((item) => `- style: ${item}`)
-          : [`- style: add required file ${CORE_STYLE_DOC_FILE}.`]),
+          : [`- style: add required file under governanceDir: ${CORE_STYLE_DOC_FILE}.`]),
         '',
         '### Related Artifacts',
         ...(relatedArtifacts.length > 0 ? relatedArtifacts.map((file) => `- ${file}`) : ['- (none)']),
@@ -1447,22 +1446,22 @@ export function registerTaskTools(server: McpServer): void {
         ...(!researchBriefState.ready
           ? [
               '- Pre-execution gate is NOT satisfied. Complete research brief first, then proceed with implementation.',
-              `- Create or update ${researchBriefState.relativePath} with design guidelines + code architecture findings before code changes.`,
+              `- Create or update ${researchBriefState.relativePath} under governanceDir with design guidelines + code architecture findings before code changes.`,
               '- Include exact file/line locations in the brief (for example path/to/file.ts#L120).',
               '- Re-run taskContext after writing the brief and confirm researchBriefStatus becomes READY.',
             ]
           : [
               '- Pre-execution gate satisfied. Read the research brief first, then continue implementation.',
-              `- Must read ${researchBriefState.relativePath} before any task execution changes.`,
+              `- Must read ${researchBriefState.relativePath} under governanceDir before any task execution changes.`,
             ]),
         ...(!projectContextDocsState.ready
           ? [
               '- Project context docs gate is NOT satisfied. Complete missing project architecture/style docs first.',
               ...(projectContextDocsState.missingArchitectureDocs
-                ? [`- Missing architecture design doc. Add required file ${CORE_ARCHITECTURE_DOC_FILE} and include architecture boundaries and module responsibilities.`]
+                ? [`- Missing architecture design doc. Add required file under governanceDir: ${CORE_ARCHITECTURE_DOC_FILE} and include architecture boundaries and module responsibilities.`]
                 : []),
               ...(projectContextDocsState.missingStyleDocs
-                ? [`- Missing design style doc. Add required file ${CORE_STYLE_DOC_FILE} and include style language, tokens/themes, and UI consistency rules.`]
+                ? [`- Missing design style doc. Add required file under governanceDir: ${CORE_STYLE_DOC_FILE} and include style language, tokens/themes, and UI consistency rules.`]
                 : []),
               '- Re-run taskContext and confirm both architectureDocsStatus/styleDocsStatus are READY.',
             ]
@@ -1615,7 +1614,7 @@ export function registerTaskTools(server: McpServer): void {
       guidance: ({ updates, originalStatus }) => [
         'Task updated successfully and tasks.md has been synced. Run `taskContext` to verify the changes.',
         ...(updates.status === 'IN_PROGRESS' && originalStatus === 'TODO'
-          ? ['- Ensure pre-execution research brief exists before deep implementation.']
+          ? ['- Ensure pre-execution research brief exists under governanceDir before deep implementation.']
           : []),
         ...(updates.status === 'DONE'
           ? ['- Verify evidence links are attached and reflect completed work.']

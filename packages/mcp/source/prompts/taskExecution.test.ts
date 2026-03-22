@@ -16,7 +16,8 @@ describe('taskExecution prompt', () => {
     expect(text).toContain('1) Run taskContext(projectPath="/workspace/app", taskId="TASK-0007").')
     expect(text).toContain('Every status transition must have report evidence')
     expect(text).toContain('Pre-Execution Research Brief (Mandatory Gate)')
-    expect(text).toContain('designs/research/<TASK-ID>.implementation-research.md')
+    expect(text).toContain('Fixed file name (relative to governanceDir): `designs/research/<TASK-ID>.implementation-research.md`')
+    expect(text).toContain('Always read `<governanceDir>/designs/research/<TASK-ID>.implementation-research.md` before implementation')
   })
 
   it('falls back to taskNext when task is not provided', async () => {

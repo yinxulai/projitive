@@ -54,7 +54,8 @@ export function registerTaskExecutionPrompt(server: McpServer): void {
         '- If status is MISSING/INCOMPLETE, complete it before any implementation',
         '',
         '### Pre-Execution Research Brief (Mandatory Gate)',
-        '- Fixed file name: `designs/research/<TASK-ID>.implementation-research.md`',
+        '- Fixed file name (relative to governanceDir): `designs/research/<TASK-ID>.implementation-research.md`',
+        '- Absolute location: `<governanceDir>/designs/research/<TASK-ID>.implementation-research.md`',
         '- Required sections:',
         '  - `## Design Guidelines and Specs`',
         '  - `## Code Architecture and Implementation Findings`',
@@ -231,7 +232,7 @@ export function registerTaskExecutionPrompt(server: McpServer): void {
         '',
         '6. **Pre-execution research brief is mandatory**',
         '   - `TODO -> IN_PROGRESS` is not allowed until research brief is READY',
-        '   - Always read `designs/research/<TASK-ID>.implementation-research.md` before implementation',
+        '   - Always read `<governanceDir>/designs/research/<TASK-ID>.implementation-research.md` before implementation',
       ].join('\n')
 
       return asUserPrompt(text)
