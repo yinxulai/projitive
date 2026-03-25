@@ -14,7 +14,6 @@ Create or normalize these files/directories:
 - `.projitive/tasks.md`
 - `.projitive/designs/`
 - `.projitive/reports/`
-- `.projitive/hooks/`
 
 ## Initialization Steps
 
@@ -46,18 +45,7 @@ Write `.projitive/tasks.md` with:
 - Task IDs and clear status (`TODO`, `IN_PROGRESS`, `BLOCKED`, `DONE`)
 - Minimal evidence requirements per task
 
-### 4. Prepare hooks scaffolding
-
-Create hook templates in `.projitive/hooks/` for:
-
-- assignment
-- completion
-- block
-- reopen
-
-Each hook should contain a short intent and expected output format.
-
-### 5. Enforce evidence-first convention
+### 4. Enforce evidence-first convention
 
 In all baseline docs, make it explicit:
 

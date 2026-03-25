@@ -4,7 +4,6 @@ import {
   isValidTaskId,
   normalizeTask,
   rankActionableTaskCandidates,
-  resolveNoTaskDiscoveryGuidance,
   renderTaskSeedTemplate,
   renderTasksMarkdown,
   loadTasksDocument,
@@ -197,17 +196,6 @@ describe('tasks module', () => {
     const lines = renderTaskSeedTemplate('ROADMAP-0099')
     const markdown = lines.join('\n')
     expect(markdown).toContain('- roadmapRefs: ROADMAP-0099')
-  })
-
-  it('uses default no-task guidance when hook file is absent', async () => {
-    const guidance = await resolveNoTaskDiscoveryGuidance('/path/that/does/not/exist')
-    expect(guidance.length).toBeGreaterThan(3)
-  })
-
-  it('returns same default no-task guidance regardless of path', async () => {
-    const guidanceA = await resolveNoTaskDiscoveryGuidance('/path/that/does/not/exist')
-    const guidanceB = await resolveNoTaskDiscoveryGuidance('/another/path')
-    expect(guidanceA).toEqual(guidanceB)
   })
 
   it('loads and saves tasks from governance store and keeps newest-first order', async () => {

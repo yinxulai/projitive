@@ -25,7 +25,6 @@
 - `范围边界` 必须明确区分：`In Scope` 与 `Out of Scope`
 - `关键术语` 使用“术语：定义”一行一条，避免段落描述
 - `关联工件` 必须使用相对路径链接到 `roadmap.md`、`tasks.md`、`designs/`、`reports/`
-- 若配置生命周期提示，`关联工件` 应包含 `hooks/`
 - `Agent 必读` 应明确列出：
 	- 本项目治理文件
 	- 外部官方指南文件（若有）
@@ -53,7 +52,6 @@
 ## Agent 必读
 - Local: ./tasks.md
 - Local: ./roadmap.md
-- Local: ./hooks/task_no_actionable.md
 - External: <official-guide-path-or-link>
 
 ## 关联工件
@@ -61,5 +59,4 @@
 - tasks: ./tasks.md
 - designs: ./designs/
 - reports: ./reports/
-- hooks: ./hooks/
 ```

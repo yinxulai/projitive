@@ -27,7 +27,6 @@ Defines the executable task pool and status transitions, answering “what shoul
 - Recommended task ID format: `TASK-0001`, `TASK-0002`, ...
 - Task item should include related roadmap IDs when applicable (for example `ROADMAP-0001`)
 - Task IDs must be referenced by `designs/` and `reports/` for reverse lookup
-- Hook mechanism is global and backend-managed under `hooks/`, not declared in task cards
 
 Recommended field constraints:
 - `id`: `TASK-\d{4}` (for example `TASK-0001`)

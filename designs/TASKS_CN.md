@@ -27,7 +27,6 @@
 - 推荐任务 ID 格式：`TASK-0001`、`TASK-0002` ...
 - 任务应在适用时包含关联 roadmap ID（如 `ROADMAP-0001`）
 - `designs/` 和 `reports/` 必须引用任务 ID 以支持反查
-- HOOK 机制属于全局后台机制（位于 `hooks/`），不在任务卡中声明
 
 推荐字段规范：
 - `id`：`TASK-\d{4}`（如 `TASK-0001`）

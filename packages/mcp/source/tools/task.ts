@@ -280,16 +280,6 @@ const DEFAULT_TASK_CONTEXT_READING_GUIDANCE = [
   '- If available, read docs/ architecture or migration guides before major structural changes.',
 ]
 
-export async function resolveNoTaskDiscoveryGuidance(governanceDir?: string): Promise<string[]> {
-  void governanceDir
-  return DEFAULT_NO_TASK_DISCOVERY_GUIDANCE
-}
-
-export async function resolveTaskContextReadingGuidance(governanceDir?: string): Promise<string[]> {
-  void governanceDir
-  return DEFAULT_TASK_CONTEXT_READING_GUIDANCE
-}
-
 async function readRoadmapIds(governanceDir: string): Promise<string[]> {
   const dbPath = path.join(governanceDir, '.projitive')
   try {
@@ -1174,7 +1164,7 @@ export function registerTaskTools(server: McpServer): void {
           )
           const preferredProject = projectSnapshots[0]
           const preferredRoadmapRef = preferredProject?.roadmapIds[0] ?? 'ROADMAP-0001'
-          const noTaskDiscoveryGuidance = await resolveNoTaskDiscoveryGuidance(preferredProject?.governanceDir)
+          const noTaskDiscoveryGuidance = DEFAULT_NO_TASK_DISCOVERY_GUIDANCE
           return { isEmpty: true as const, roots, depth, projects, projectSnapshots, preferredProject, preferredRoadmapRef, noTaskDiscoveryGuidance }
         }
 
@@ -1353,7 +1343,7 @@ export function registerTaskTools(server: McpServer): void {
           )
         }
         const researchBriefState = await inspectTaskResearchBrief(governanceDir, task)
-        const contextReadingGuidance = await resolveTaskContextReadingGuidance(governanceDir)
+        const contextReadingGuidance = DEFAULT_TASK_CONTEXT_READING_GUIDANCE
         const taskLocation = (await findTextReferences(markdownPath, taskId))[0]
         const artifacts = await discoverGovernanceArtifacts(governanceDir)
         const fileCandidates = candidateFilesFromArtifacts(artifacts)

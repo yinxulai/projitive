@@ -25,7 +25,6 @@ It introduces core project governance context and explicitly tells AI tools what
 - `Scope Boundaries` must explicitly split `In Scope` and `Out of Scope`
 - `Key Terms` should use one-line entries in `Term: Definition` form
 - `Related Artifacts` must use relative links to `roadmap.md`, `tasks.md`, `designs/`, and `reports/`
-- `Related Artifacts` should include `hooks/` when lifecycle prompts are configured
 - `Required Reading for Agents` should list:
   - governance files (this repo/project)
   - external official guidance files when available
@@ -53,7 +52,6 @@ Recommended template:
 ## Required Reading for Agents
 - Local: ./tasks.md
 - Local: ./roadmap.md
-- Local: ./hooks/task_no_actionable.md
 - External: <official-guide-path-or-link>
 
 ## Related Artifacts
@@ -61,5 +59,4 @@ Recommended template:
 - tasks: ./tasks.md
 - designs: ./designs/
 - reports: ./reports/
-- hooks: ./hooks/
 ```

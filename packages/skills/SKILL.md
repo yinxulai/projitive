@@ -40,7 +40,6 @@ At the governance root, these artifacts should exist and be read before task exe
 - `tasks.md` — task pool with status + evidence
 - `designs/` — design decisions and rationale
 - `reports/` — execution reports and evidence
-- `hooks/` — event guidance hooks
 
 # MCP Tooling Prerequisite
 
