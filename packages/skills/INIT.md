@@ -14,6 +14,8 @@ Create or normalize these files/directories:
 - `.projitive/tasks.md`
 - `.projitive/designs/`
 - `.projitive/reports/`
+- `.projitive/templates/`
+- `.projitive/templates/tools/`
 
 ## Initialization Steps
 

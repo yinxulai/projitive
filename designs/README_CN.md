@@ -59,4 +59,5 @@
 - tasks: ./tasks.md
 - designs: ./designs/
 - reports: ./reports/
+- templates: ./templates/
 ```
