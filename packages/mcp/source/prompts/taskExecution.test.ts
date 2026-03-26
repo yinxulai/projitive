@@ -18,6 +18,10 @@ describe('taskExecution prompt', () => {
     expect(text).toContain('Pre-Execution Research Brief (Mandatory Gate)')
     expect(text).toContain('Fixed file name (relative to governanceDir): `designs/research/<TASK-ID>.implementation-research.md`')
     expect(text).toContain('Always read `<governanceDir>/designs/research/<TASK-ID>.implementation-research.md` before implementation')
+    expect(text).toContain('Core docs review checklist (required):')
+    expect(text).toContain('- [ ] architecture.md reviewed (`designs/core/architecture.md`)')
+    expect(text).toContain('- [ ] code-style.md reviewed (`designs/core/code-style.md`)')
+    expect(text).toContain('- [ ] ui-style.md reviewed (`designs/core/ui-style.md`)')
   })
 
   it('falls back to taskNext when task is not provided', async () => {

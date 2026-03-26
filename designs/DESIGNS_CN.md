@@ -10,7 +10,8 @@
 
 - 决策显式化：重要取舍必须文档化
 - 上下文连续性：新人可以从设计文档快速接手
-- 可关联性：设计文档应被 `tasks.md` 和 `reports/` 引用
+- 可关联性：设计文档应被任务/报告证据引用，并可从治理视图反向检索
+- 完成态维护：任务完成时应复核核心文档是否需要同步更新
 
 ## 3、内容或者子文件的编写风格/格式
 
@@ -33,6 +34,7 @@
 - `Task` 字段必须使用 `TASK-xxxx` 格式
 - 如关联里程碑，新增 `Roadmap` 字段并使用 `ROADMAP-xxxx` 格式
 - 一个设计文档可关联多个 ID，但至少要有一个 `TASK-xxxx`
+- 对任务完成相关的设计变更，建议补充三份核心文档复核说明：`designs/core/architecture.md`、`designs/core/code-style.md`、`designs/core/ui-style.md`
 
 建议模板（design）：
 

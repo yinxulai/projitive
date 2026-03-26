@@ -24,6 +24,8 @@ Language: English | [简体中文](PROJITIVE_CN.md)
 - Exactly one `.projitive` should exist in one governance root; avoid duplicates in nested folders
 - Tools must support upward lookup from any child path to the nearest `.projitive`
 - If no marker is found, tools must return explicit errors and must not silently fallback
+- `projectInit` should initialize or repair governance artifacts under the located root
+- `projectInit` should report missing items with explicit repair summary categories: `core docs`, `templates`, `bootstrap tasks`
 
 Recommended example (key-value mode):
 
@@ -39,3 +41,5 @@ owner: team-platform
 - Nested duplicate markers should be warned as ambiguity risk
 - Upward nearest-marker resolution should be deterministic
 - Missing marker should return explicit error (no silent fallback)
+- `projectInit` should create or backfill core docs (`designs/core/architecture.md`, `designs/core/code-style.md`, `designs/core/ui-style.md`)
+- `projectInit` should create or backfill bootstrap TODO tasks for the three core docs

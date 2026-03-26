@@ -10,7 +10,8 @@ Records solution design and key decisions, answering “why this approach is cho
 
 - Explicit decisions: key trade-offs must be documented
 - Context continuity: newcomers should be able to onboard via design docs
-- Linkability: design docs should be referenced by `tasks.md` and `reports/`
+- Linkability: design docs should be referenced by task/report evidence and remain discoverable from governance views
+- Completion-aware maintenance: when a task is completed, re-check whether core docs need updates
 
 ## 3. Writing Style / Format for Content or Subfiles
 
@@ -33,6 +34,7 @@ Records solution design and key decisions, answering “why this approach is cho
 - `Task` should use `TASK-xxxx` format and be mandatory
 - Add `Roadmap` metadata (for example `ROADMAP-0001`) when linked to a milestone
 - One design file may reference multiple IDs, but at least one `TASK-xxxx` is required
+- For task completion-related design changes, include core-doc review notes for `designs/core/architecture.md`, `designs/core/code-style.md`, and `designs/core/ui-style.md`
 
 Recommended template (design):
 

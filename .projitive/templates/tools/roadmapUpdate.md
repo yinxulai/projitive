@@ -16,6 +16,11 @@
 {{next_call}}
 
 
+## Governance Write Rule
+- MUST use governance tools for task/roadmap state updates.
+- NEVER edit tasks.md/roadmap.md directly; they are generated views.
+
+
 ## Commit Reminder
 - After this update, create a commit to keep progress auditable.
 - Recommended format: type(scope): summary

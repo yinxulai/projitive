@@ -23,6 +23,7 @@ Defines the executable task pool and status transitions, answering “what shoul
 - Recommended optional fields: `roadmapRefs`
 - Keep task item format stable for Agent/tool parsing
 - Canonical format is markdown-native task sections inside fixed markers
+- `tasks.md` is a generated governance view; authoritative task state must be updated via tools (`taskCreate`/`taskUpdate`)
 - Every task MUST have a unique task ID
 - Recommended task ID format: `TASK-0001`, `TASK-0002`, ...
 - Task item should include related roadmap IDs when applicable (for example `ROADMAP-0001`)
@@ -59,3 +60,4 @@ Recommended markdown-native example:
 - `BLOCKED` should include blocker reason in `summary`
 - `updatedAt` should be valid ISO8601 UTC
 - `roadmapRefs` should link to existing `ROADMAP-xxxx` when applicable
+- Direct manual edits to generated task views should be treated as non-authoritative and may be overwritten by sync

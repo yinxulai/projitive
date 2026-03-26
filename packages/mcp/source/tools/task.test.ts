@@ -339,11 +339,14 @@ describe('tasks module', () => {
     expect(contextResult.content[0].text).toContain('### Pre-Execution Research Brief')
     expect(contextResult.content[0].text).toContain('researchBriefStatus: MISSING')
     expect(contextResult.content[0].text).toContain('designs/research/TASK-0001.implementation-research.md')
-    expect(contextResult.content[0].text).toContain('architectureDocsStatus: MISSING')
-    expect(contextResult.content[0].text).toContain('styleDocsStatus: MISSING')
+    expect(contextResult.content[0].text).toContain('projectArchitectureDocsStatus: MISSING')
+    expect(contextResult.content[0].text).toContain('codeStyleDocsStatus: MISSING')
+    expect(contextResult.content[0].text).toContain('uiStyleDocsStatus: MISSING')
     expect(contextResult.content[0].text).toContain('Project context docs gate is NOT satisfied')
     expect(contextResult.content[0].text).toContain('PROJECT_ARCHITECTURE_DOC_MISSING')
-    expect(contextResult.content[0].text).toContain('PROJECT_STYLE_DOC_MISSING')
+    expect(contextResult.content[0].text).toContain('PROJECT_CODE_STYLE_DOC_MISSING')
+    expect(contextResult.content[0].text).toContain('PROJECT_UI_STYLE_DOC_MISSING')
+    expect(contextResult.content[0].text).toContain('projectInit(projectPath="')
 
     await fs.rm(projectRoot, { recursive: true, force: true })
   })
@@ -426,7 +429,8 @@ describe('tasks module', () => {
 
     await fs.mkdir(path.join(projectRoot, 'designs'), { recursive: true })
     await fs.writeFile(path.join(projectRoot, 'designs', 'architecture.md'), '# Architecture\n', 'utf-8')
-    await fs.writeFile(path.join(projectRoot, 'designs', 'style-guide.md'), '# Style\n', 'utf-8')
+    await fs.writeFile(path.join(projectRoot, 'designs', 'code-style.md'), '# Code Style\n', 'utf-8')
+    await fs.writeFile(path.join(projectRoot, 'designs', 'ui-style.md'), '# UI Style\n', 'utf-8')
 
     const mockServer = { registerTool: vi.fn() } as unknown as McpServer & { registerTool: ReturnType<typeof vi.fn> }
     registerTaskTools(mockServer)
@@ -434,16 +438,18 @@ describe('tasks module', () => {
     const taskContext = getToolHandler(mockServer, 'taskContext')
     const contextResult = await taskContext({ projectPath: projectRoot, taskId: 'TASK-0001' })
 
-    expect(contextResult.content[0].text).toContain('architectureDocsStatus: MISSING')
-    expect(contextResult.content[0].text).toContain('styleDocsStatus: MISSING')
+    expect(contextResult.content[0].text).toContain('projectArchitectureDocsStatus: MISSING')
+    expect(contextResult.content[0].text).toContain('codeStyleDocsStatus: MISSING')
+    expect(contextResult.content[0].text).toContain('uiStyleDocsStatus: MISSING')
     expect(contextResult.content[0].text).toContain('designs/core/architecture.md')
     expect(contextResult.content[0].text).toContain('PROJECT_ARCHITECTURE_DOC_MISSING')
-    expect(contextResult.content[0].text).toContain('PROJECT_STYLE_DOC_MISSING')
+    expect(contextResult.content[0].text).toContain('PROJECT_CODE_STYLE_DOC_MISSING')
+    expect(contextResult.content[0].text).toContain('PROJECT_UI_STYLE_DOC_MISSING')
 
     await fs.rm(projectRoot, { recursive: true, force: true })
   })
 
-  it('taskContext marks project core docs ready when architecture/style docs exist under designs/core', async () => {
+  it('taskContext marks project core docs ready when architecture/code-style/ui-style docs exist under designs/core', async () => {
     const { projectRoot, governanceDir, dbPath } = await createGovernanceWorkspace()
     await replaceRoadmapsInStore(dbPath, [
       { id: 'ROADMAP-0001', title: 'Roadmap', status: 'active', updatedAt: '2026-03-14T00:00:00.000Z' },
@@ -455,7 +461,8 @@ describe('tasks module', () => {
     const coreDir = path.join(governanceDir, 'designs', 'core')
     await fs.mkdir(coreDir, { recursive: true })
     await fs.writeFile(path.join(coreDir, 'architecture.md'), '# Architecture\n', 'utf-8')
-    await fs.writeFile(path.join(coreDir, 'style-guide.md'), '# Style\n', 'utf-8')
+    await fs.writeFile(path.join(coreDir, 'code-style.md'), '# Code Style\n', 'utf-8')
+    await fs.writeFile(path.join(coreDir, 'ui-style.md'), '# UI Style\n', 'utf-8')
 
     const mockServer = { registerTool: vi.fn() } as unknown as McpServer & { registerTool: ReturnType<typeof vi.fn> }
     registerTaskTools(mockServer)
@@ -463,8 +470,9 @@ describe('tasks module', () => {
     const taskContext = getToolHandler(mockServer, 'taskContext')
     const contextResult = await taskContext({ projectPath: projectRoot, taskId: 'TASK-0001' })
 
-    expect(contextResult.content[0].text).toContain('architectureDocsStatus: READY')
-    expect(contextResult.content[0].text).toContain('styleDocsStatus: READY')
+    expect(contextResult.content[0].text).toContain('projectArchitectureDocsStatus: READY')
+    expect(contextResult.content[0].text).toContain('codeStyleDocsStatus: READY')
+    expect(contextResult.content[0].text).toContain('uiStyleDocsStatus: READY')
     expect(contextResult.content[0].text).toContain('Project context docs gate satisfied')
 
     await fs.rm(projectRoot, { recursive: true, force: true })
@@ -482,7 +490,8 @@ describe('tasks module', () => {
     const coreDir = path.join(governanceDir, 'designs', 'core')
     await fs.mkdir(coreDir, { recursive: true })
     await fs.writeFile(path.join(coreDir, 'system-architecture.md'), '# Architecture\n', 'utf-8')
-    await fs.writeFile(path.join(coreDir, 'visual-style.md'), '# Style\n', 'utf-8')
+    await fs.writeFile(path.join(coreDir, 'engineering-style.md'), '# Code Style\n', 'utf-8')
+    await fs.writeFile(path.join(coreDir, 'visual-style.md'), '# UI Style\n', 'utf-8')
 
     const mockServer = { registerTool: vi.fn() } as unknown as McpServer & { registerTool: ReturnType<typeof vi.fn> }
     registerTaskTools(mockServer)
@@ -490,10 +499,13 @@ describe('tasks module', () => {
     const taskContext = getToolHandler(mockServer, 'taskContext')
     const contextResult = await taskContext({ projectPath: projectRoot, taskId: 'TASK-0001' })
 
-    expect(contextResult.content[0].text).toContain('architectureDocsStatus: MISSING')
-    expect(contextResult.content[0].text).toContain('styleDocsStatus: MISSING')
+    expect(contextResult.content[0].text).toContain('projectArchitectureDocsStatus: MISSING')
+    expect(contextResult.content[0].text).toContain('codeStyleDocsStatus: MISSING')
+    expect(contextResult.content[0].text).toContain('uiStyleDocsStatus: MISSING')
     expect(contextResult.content[0].text).toContain('add required file under governanceDir: designs/core/architecture.md')
-    expect(contextResult.content[0].text).toContain('add required file under governanceDir: designs/core/style-guide.md')
+    expect(contextResult.content[0].text).toContain('add required file under governanceDir: designs/core/code-style.md')
+    expect(contextResult.content[0].text).toContain('add required file under governanceDir: designs/core/ui-style.md')
+    expect(contextResult.content[0].text).toContain('projectInit(projectPath="')
 
     await fs.rm(projectRoot, { recursive: true, force: true })
   })
@@ -533,7 +545,8 @@ describe('tasks module', () => {
     const coreDir = path.join(governanceDir, 'designs', 'core')
     await fs.mkdir(coreDir, { recursive: true })
     await fs.writeFile(path.join(coreDir, 'architecture.md'), '# Architecture\n', 'utf-8')
-    await fs.writeFile(path.join(coreDir, 'style-guide.md'), '# Style\n', 'utf-8')
+    await fs.writeFile(path.join(coreDir, 'code-style.md'), '# Code Style\n', 'utf-8')
+    await fs.writeFile(path.join(coreDir, 'ui-style.md'), '# UI Style\n', 'utf-8')
 
     const mockServer = { registerTool: vi.fn() } as unknown as McpServer & { registerTool: ReturnType<typeof vi.fn> }
     registerTaskTools(mockServer)
@@ -548,6 +561,10 @@ describe('tasks module', () => {
     expect(result.isError).toBeUndefined()
     expect(result.content[0].text).toContain('newStatus: DONE')
     expect(result.content[0].text).toContain('TASK_DONE_LINKS_MISSING')
+    expect(result.content[0].text).toContain('Core docs review checklist (required):')
+    expect(result.content[0].text).toContain('- [ ] architecture.md reviewed (designs/core/architecture.md)')
+    expect(result.content[0].text).toContain('- [ ] code-style.md reviewed (designs/core/code-style.md)')
+    expect(result.content[0].text).toContain('- [ ] ui-style.md reviewed (designs/core/ui-style.md)')
 
     await fs.rm(projectRoot, { recursive: true, force: true })
   })
@@ -588,7 +605,8 @@ describe('tasks module', () => {
     const coreDir = path.join(governanceDir, 'designs', 'core')
     await fs.mkdir(coreDir, { recursive: true })
     await fs.writeFile(path.join(coreDir, 'architecture.md'), '# Architecture\n', 'utf-8')
-    await fs.writeFile(path.join(coreDir, 'style-guide.md'), '# Style\n', 'utf-8')
+    await fs.writeFile(path.join(coreDir, 'code-style.md'), '# Code Style\n', 'utf-8')
+    await fs.writeFile(path.join(coreDir, 'ui-style.md'), '# UI Style\n', 'utf-8')
 
     const mockServer = { registerTool: vi.fn() } as unknown as McpServer & { registerTool: ReturnType<typeof vi.fn> }
     registerTaskTools(mockServer)
@@ -602,6 +620,7 @@ describe('tasks module', () => {
 
     expect(result.isError).toBeUndefined()
     expect(result.content[0].text).toContain('newStatus: DONE')
+    expect(result.content[0].text).toContain('Core docs review checklist (required):')
 
     await fs.rm(projectRoot, { recursive: true, force: true })
   })

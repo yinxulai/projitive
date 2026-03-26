@@ -13,6 +13,7 @@ It introduces core project governance context and explicitly tells AI tools what
 - Shared semantics: unify terminology to reduce cross-role communication ambiguity
 - Guided execution: make required-reading inputs explicit for AI tools (Claude Code / Copilot / other agents)
 - Minimal context loop: after reading `README.md`, the agent should know scope, rules, and required references
+- Governance-store-first: update task/roadmap state through tools, not by editing generated views
 
 ## 3. Writing Style / Format for Content or Subfiles
 
@@ -25,6 +26,8 @@ It introduces core project governance context and explicitly tells AI tools what
 - `Scope Boundaries` must explicitly split `In Scope` and `Out of Scope`
 - `Key Terms` should use one-line entries in `Term: Definition` form
 - `Related Artifacts` must use relative links to `roadmap.md`, `tasks.md`, `designs/`, and `reports/`
+- `tasks.md` and `roadmap.md` are generated views; state changes must use governance tools (`taskCreate`/`taskUpdate`/`roadmapCreate`/`roadmapUpdate`)
+- Recommend listing core governance docs in `Related Artifacts`: `designs/core/architecture.md`, `designs/core/code-style.md`, `designs/core/ui-style.md`
 - `Required Reading for Agents` should list:
   - governance files (this repo/project)
   - external official guidance files when available
@@ -57,6 +60,9 @@ Recommended template:
 ## Related Artifacts
 - roadmap: ./roadmap.md
 - tasks: ./tasks.md
+- core-architecture: ./designs/core/architecture.md
+- core-code-style: ./designs/core/code-style.md
+- core-ui-style: ./designs/core/ui-style.md
 - designs: ./designs/
 - reports: ./reports/
 - templates: ./templates/

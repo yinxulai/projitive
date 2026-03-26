@@ -13,6 +13,7 @@
 - 语义统一：统一术语，减少跨角色沟通歧义
 - 引导执行：显式告诉 AI（如 Claude Code / Copilot）必须先读哪些文件
 - 上下文最小闭环：读完 `README.md` 即可理解治理范围、规则和必读参考
+- 治理写入优先：任务/里程碑状态必须通过工具写入，不应直接编辑生成视图
 
 ## 3、内容或者子文件的编写风格/格式
 
@@ -25,6 +26,8 @@
 - `范围边界` 必须明确区分：`In Scope` 与 `Out of Scope`
 - `关键术语` 使用“术语：定义”一行一条，避免段落描述
 - `关联工件` 必须使用相对路径链接到 `roadmap.md`、`tasks.md`、`designs/`、`reports/`
+- `tasks.md` 与 `roadmap.md` 是生成视图；状态变更必须通过治理工具（`taskCreate`/`taskUpdate`/`roadmapCreate`/`roadmapUpdate`）
+- 建议在 `关联工件` 中显式列出三份核心文档：`designs/core/architecture.md`、`designs/core/code-style.md`、`designs/core/ui-style.md`
 - `Agent 必读` 应明确列出：
 	- 本项目治理文件
 	- 外部官方指南文件（若有）
@@ -57,6 +60,9 @@
 ## 关联工件
 - roadmap: ./roadmap.md
 - tasks: ./tasks.md
+- core-architecture: ./designs/core/architecture.md
+- core-code-style: ./designs/core/code-style.md
+- core-ui-style: ./designs/core/ui-style.md
 - designs: ./designs/
 - reports: ./reports/
 - templates: ./templates/

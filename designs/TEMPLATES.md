@@ -40,7 +40,8 @@ Default templates overview:
 |---|---|
 | `taskNext` | `## Idle Discovery Checklist (When No Actionable Task)` |
 | `projectContext`, `taskContext`, `roadmapContext` | `## Common Tool Guides To Read First` |
-| `taskUpdate`, `roadmapUpdate` | `## Commit Reminder` |
+| `taskUpdate` | `## Governance Write Rule`, `## Core Docs Review Checklist (Required When Marking DONE)`, `## Commit Reminder` |
+| `roadmapUpdate` | `## Governance Write Rule`, `## Commit Reminder` |
 | All others | Base sections only |
 
 Base template structure:
@@ -71,3 +72,4 @@ Base template structure:
 - Empty template file should be treated as missing (auto-generate)
 - Template variables must be injected before rendering; unknown variables are left as-is
 - `projectInit` creates the `templates/` directory and generates default template files for all built-in tools
+- Generated templates should preserve governance-write constraints (tool writes only; do not edit `tasks.md`/`roadmap.md` directly)

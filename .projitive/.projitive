@@ -443,6 +443,30 @@
         "ROADMAP-0002"
       ],
       "recordVersion": 3
+    },
+    {
+      "id": "TASK-0025",
+      "title": "Extend core-doc lifecycle guidance and bootstrap tasks",
+      "status": "DONE",
+      "owner": "ai-copilot",
+      "summary": "Completed core-doc lifecycle extension: bootstrap tasks, three-doc gate, completion-time maintenance prompts, repository-local core docs, and execution report.",
+      "updatedAt": "2026-03-26T13:12:54.596Z",
+      "links": [
+        "packages/mcp/source/tools/project.ts",
+        "packages/mcp/source/tools/task.ts",
+        "packages/mcp/source/prompts/quickStart.ts",
+        "packages/mcp/source/prompts/taskDiscovery.ts",
+        "packages/mcp/source/prompts/taskExecution.ts",
+        ".projitive/README.md",
+        ".projitive/designs/core/architecture.md",
+        ".projitive/designs/core/code-style.md",
+        ".projitive/designs/core/ui-style.md",
+        ".projitive/reports/TASK-0025-execution-2026-03-26.md"
+      ],
+      "roadmapRefs": [
+        "ROADMAP-0004"
+      ],
+      "recordVersion": 2
     }
   ],
   "roadmaps": [
@@ -480,7 +504,7 @@
     }
   ],
   "meta": {
-    "tasks_version": 3,
+    "tasks_version": 5,
     "roadmaps_version": 3,
     "store_schema_version": 3
   },
@@ -488,9 +512,9 @@
     "tasks_markdown": {
       "name": "tasks_markdown",
       "dirty": false,
-      "lastSourceVersion": 3,
-      "lastBuiltAt": "2026-03-13T15:34:33.509Z",
-      "recordVersion": 14
+      "lastSourceVersion": 5,
+      "lastBuiltAt": "2026-03-26T13:12:54.600Z",
+      "recordVersion": 20
     },
     "roadmaps_markdown": {
       "name": "roadmaps_markdown",

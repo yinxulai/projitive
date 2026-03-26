@@ -22,6 +22,7 @@
 - 里程碑条目建议使用勾选格式，状态一眼可见
 - 时间建议统一 `YYYY-MM-DD` 或 `YYYY-QN`，避免混用
 - `roadmap.md` 中每条里程碑/任务都必须包含唯一 ID
+- `roadmap.md` 是治理生成视图；路线状态真源应通过工具（`roadmapCreate`/`roadmapUpdate`）写入
 - 推荐 ID 格式：`ROADMAP-0001`、`ROADMAP-0002` ...
 - ID 一旦发布禁止修改（可改标题和状态，不可改 ID）
 - `designs/` 与 `reports/` 必须引用该 ID 以支持反向检索
@@ -53,3 +54,4 @@
 - roadmap ID 应被任务 `roadmapRefs` 关联
 - 若某里程碑长期 `relatedTasks=0`，应告警并提示补绑任务
 - 时间格式应统一（`YYYY-MM-DD` 或 `YYYY-QN`）
+- 对生成视图的直接手工编辑不视为权威写入，后续同步可能覆盖

@@ -16,7 +16,8 @@
 
 - 子文件命名建议：`YYYY-MM-DD-topic.md`
 - 每份报告建议固定包含：目标范围、变更摘要、验证结果、风险与后续动作
-- 报告必须关联对应任务（`tasks.md`）与里程碑（`roadmap.md`）
+- 报告必须关联对应任务 ID（`TASK-xxxx`）与里程碑 ID（`ROADMAP-xxxx`）
+- 报告应关联治理真源中的任务/里程碑 ID；`tasks.md`/`roadmap.md` 仅为生成视图
 - 验证结论建议使用可复查描述（命令、结果、截图或链接）
 - 每份报告建议固定字段（可直接复制）：
 	- `Task`、`Roadmap`、`Owner`、`Date`
@@ -59,3 +60,4 @@ Date: 2026-02-17
 - `Validation` 至少包含一条可复查证据
 - `Date` 建议统一日期格式
 - 报告证据应可被 `tasks.md` 的 `links` 复用引用
+- 对 DONE 任务的报告，建议记录三份核心文档复核结果：`designs/core/architecture.md`、`designs/core/code-style.md`、`designs/core/ui-style.md`

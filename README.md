@@ -30,29 +30,78 @@ Why teams use it:
 - Clearer evidence traceability
 - More stable multi-agent delivery loops
 
-## Outcomes You Get
+## 5-Minute Demo (Copy/Paste)
 
-After onboarding Projitive, teams usually see these outcomes within the first iteration:
+Use this quick flow to experience the full loop: auto task discovery -> execution gate -> state write-back.
 
-- Faster task bootstrapping: use taskCreate/roadmapCreate when no actionable task exists.
-- Higher state consistency: task and roadmap transitions stay traceable and verifiable.
-- More stable delivery rhythm: discover -> execute -> verify -> reprioritize stays continuous.
-- Lower adoption friction: new contributors can follow a deterministic execution sequence.
+1. Start MCP server
 
-Key point: best results come from pairing with autonomous execution agents, such as OpenClaw.
+```bash
+npx -y @projitive/mcp
+```
 
-## What It Solves
+2. Connect Projitive MCP in your agent client
 
-Most agent workflows fail in project continuity, not coding ability.
+```json
+{
+  "mcpServers": {
+    "projitive": {
+      "command": "npx",
+      "args": ["-y", "@projitive/mcp"]
+    }
+  }
+}
+```
 
-Projitive fixes that with four constraints:
+3. Run this minimal loop
 
-- State-first: explicit task states (`TODO`, `IN_PROGRESS`, `BLOCKED`, `DONE`)
-- Evidence-first: transitions should be backed by designs/report/readme evidence
-- Context-first: resolve governance root before acting
-- Loop-first: discover -> execute -> verify -> reprioritize
+```text
+taskNext
+taskContext
+taskUpdate
+taskContext
+taskNext
+```
 
-## Default Delivery Loop
+4. If no actionable task exists
+
+```text
+taskCreate
+taskNext
+```
+
+Expected result: the system does not stall on "no tasks" and helps the agent create and continue actionable work.
+
+## Why Use Projitive
+
+Projitive turns agent execution from "can code" into "can continuously deliver." If you want an open-source governance loop that is practical, traceable, and sustainable in real projects, this is what it is built for.
+
+- Your agent always gets a next best action, even when backlog quality is poor.
+- Task state, roadmap state, and evidence stay aligned by design.
+- Documentation is maintained during execution, not deferred to release week.
+- New contributors can enter mid-cycle without breaking delivery rhythm.
+
+## Typical Open-Source Usage Scenarios
+
+### "Agent has nothing to do"
+
+Instead of stalling, Projitive returns a discovery path and seed direction so the agent can create new actionable slices and keep moving.
+
+### "Project setup is incomplete"
+
+Projitive bootstraps governance baseline (store, views, doc tracks) and repairs missing artifacts in partially initialized projects.
+
+### "Docs and execution drift apart"
+
+Projitive enforces execution gates and context checks, so research, architecture decisions, and evidence links are updated as part of the same loop.
+
+### "Too many projects, no priority"
+
+Projitive ranks opportunities by actionable intensity and recency, so agents focus where delivery impact is highest first.
+
+## How It Lands In Practice
+
+### Default Delivery Loop
 
 ```mermaid
 flowchart LR
@@ -71,6 +120,17 @@ Recommended minimal sequence:
 3. taskCreate/taskUpdate and/or roadmapCreate/roadmapUpdate
 4. taskContext
 5. taskNext
+
+### Governance Status Model
+
+| Status | Meaning | Valid transitions |
+|---|---|---|
+| `TODO` | Ready to start | -> `IN_PROGRESS`, `BLOCKED` |
+| `IN_PROGRESS` | Actively executing | -> `BLOCKED`, `DONE` |
+| `BLOCKED` | Cannot proceed | -> `TODO`, `IN_PROGRESS` |
+| `DONE` | Completed with evidence | (terminal) |
+
+`BLOCKED` tasks use structured blocker metadata (`type`, `description`, optional `blockingEntity` / `unblockCondition` / `escalationPath`) so unblocking can be automated.
 
 ## Install and Configure
 
@@ -97,12 +157,20 @@ MCP client config example:
 }
 ```
 
-Required environment variables:
+Environment variables (all optional):
 
-- PROJITIVE_SCAN_ROOT_PATHS: discovery roots (platform-delimited)
-- PROJITIVE_SCAN_MAX_DEPTH: discovery depth (0-8)
+| Variable | Default | Description |
+|---|---|---|
+| `PROJITIVE_SCAN_ROOT_PATHS` | `~` (home dir) | Discovery roots, platform path delimiter separated |
+| `PROJITIVE_SCAN_ROOT_PATH` | — | Legacy single-root fallback if above is unset |
+| `PROJITIVE_SCAN_MAX_DEPTH` | `3` | Discovery depth, integer 0–8 |
 
-Fallback: if PROJITIVE_SCAN_ROOT_PATHS is unset, legacy PROJITIVE_SCAN_ROOT_PATH is used.
+## Deep-Dive Docs
+
+For complete parameters and concrete call examples:
+
+- packages/mcp/README.md
+- packages/mcp/README_CN.md
 
 ## Repo Map
 

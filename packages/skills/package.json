@@ -1,6 +1,6 @@
 {
   "name": "@projitive/skills",
-  "version": "1.0.0",
+  "version": "2.1.3",
   "description": "Projitive reusable skills package for governance-first agent workflows",
   "license": "ISC",
   "author": "",
@@ -10,16 +10,10 @@
     "access": "public"
   },
   "files": [
-    "INIT.md",
-    "SKILL.md",
-    "references",
-    "README.md",
-    "README_CN.md"
+    "SKILL.md"
   ],
   "scripts": {
-    "test": "echo \"No tests for markdown skill package\"",
-    "sync:references": "node ./scripts/sync-references.mjs",
-    "prepack": "npm run sync:references"
+    "test": "echo \"No tests for markdown skill package\""
   },
   "keywords": [
     "projitive",

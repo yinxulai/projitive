@@ -1,5 +1,5 @@
 import fs from 'node:fs/promises'
-import os from 'node:os'
+import os, { homedir } from 'node:os'
 import path from 'node:path'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -15,6 +15,7 @@ import {
   toProjectPath,
   registerProjectTools
 } from './project.js'
+import { loadTasksFromStore, replaceTasksInStore } from '../common/store.js'
 
 const tempPaths: string[] = []
 
@@ -283,10 +284,15 @@ describe('projitive module', () => {
         path.join(root, '.projitive', 'README.md'),
         path.join(root, '.projitive', 'roadmap.md'),
         path.join(root, '.projitive', 'tasks.md'),
+        path.join(root, '.projitive', 'designs', 'core', 'architecture.md'),
+        path.join(root, '.projitive', 'designs', 'core', 'code-style.md'),
+        path.join(root, '.projitive', 'designs', 'core', 'ui-style.md'),
         path.join(root, '.projitive', 'templates', 'README.md'),
         path.join(root, '.projitive', 'templates', 'tools', 'taskNext.md'),
         path.join(root, '.projitive', 'templates', 'tools', 'taskUpdate.md'),
         path.join(root, '.projitive', 'designs'),
+        path.join(root, '.projitive', 'designs', 'core'),
+        path.join(root, '.projitive', 'designs', 'research'),
         path.join(root, '.projitive', 'reports'),
         path.join(root, '.projitive', 'templates'),
         path.join(root, '.projitive', 'templates', 'tools'),
@@ -356,6 +362,31 @@ describe('projitive module', () => {
       expect(initialized.files.find((item) => item.path === readmePath)?.action).toBe('skipped')
     })
 
+    it('backfills missing core docs and bootstrap tasks when rerunning projectInit on partial governance', async () => {
+      const root = await createTempDir()
+      const governanceDir = path.join(root, '.projitive')
+
+      await initializeProjectStructure(root)
+      await fs.rm(path.join(governanceDir, 'designs', 'core', 'ui-style.md'))
+
+      const dbPath = path.join(governanceDir, '.projitive')
+      const existingTasks = await loadTasksFromStore(dbPath)
+      const uiTask = existingTasks.find((task) => task.title === 'Initialize UI style document')
+      expect(uiTask).toBeTruthy()
+      const filteredTasks = existingTasks.filter((task) => task.title !== 'Initialize UI style document')
+      await replaceTasksInStore(dbPath, filteredTasks)
+
+      const initialized = await initializeProjectStructure(root)
+
+      expect(await fs.access(path.join(governanceDir, 'designs', 'core', 'ui-style.md')).then(() => true).catch(() => false)).toBe(true)
+      expect(initialized.missingBeforeInit.missingFiles.some((item) => item.endsWith('designs/core/ui-style.md'))).toBe(true)
+      expect(initialized.missingBeforeInit.missingBootstrapTaskTitles).toContain('Initialize UI style document')
+      expect(initialized.remediation.createdBootstrapTaskIds).toHaveLength(1)
+
+      const reloadedTasks = await loadTasksFromStore(dbPath)
+      expect(reloadedTasks.some((task) => task.title === 'Initialize UI style document')).toBe(true)
+    })
+
     it('creates all required subdirectories', async () => {
       const root = await createTempDir()
 
@@ -416,9 +447,9 @@ describe('projitive module', () => {
         vi.unstubAllEnvs()
       })
 
-      it('throws error when no root environment variables are configured', () => {
+      it('falls back to home directory when no env vars configured', () => {
         vi.unstubAllEnvs()
-        expect(() => resolveScanRoots()).toThrow('Missing required environment variable: PROJITIVE_SCAN_ROOT_PATHS')
+        expect(resolveScanRoots()).toEqual([homedir()])
       })
     })
 
@@ -451,9 +482,9 @@ describe('projitive module', () => {
         vi.unstubAllEnvs()
       })
 
-      it('throws when PROJITIVE_SCAN_MAX_DEPTH env var is missing', () => {
+      it('falls back to default depth 3 when env var is missing', () => {
         vi.unstubAllEnvs()
-        expect(() => resolveScanDepth()).toThrow('Missing required environment variable: PROJITIVE_SCAN_MAX_DEPTH')
+        expect(resolveScanDepth()).toBe(3)
       })
     })
 
@@ -562,6 +593,13 @@ describe('projitive module', () => {
       expect(result.isError).toBeUndefined()
       expect(result.content[0].text).toContain('governanceDir:')
       expect(result.content[0].text).toContain('createdFiles:')
+      expect(result.content[0].text).toContain('designs/core/architecture.md')
+      expect(result.content[0].text).toContain('designs/core/code-style.md')
+      expect(result.content[0].text).toContain('designs/core/ui-style.md')
+      expect(result.content[0].text).toContain('Repair Summary (Missing Before Init)')
+      expect(result.content[0].text).toContain('- core docs:')
+      expect(result.content[0].text).toContain('- templates:')
+      expect(result.content[0].text).toContain('- bootstrap tasks:')
     })
 
     it('projectLocate resolves governance dir from any inner path', async () => {
@@ -615,6 +653,23 @@ describe('projitive module', () => {
       expect(result.isError).toBeUndefined()
       expect(result.content[0].text).toContain('Task Summary')
       expect(result.content[0].text).toContain('Artifacts')
+    })
+
+    it('projectContext suggests rerunning projectInit when required core docs are missing', async () => {
+      const root = await createTempDir()
+      await initializeProjectStructure(root)
+      await fs.rm(path.join(root, '.projitive', 'designs', 'core', 'code-style.md'))
+
+      const mockServer = { registerTool: vi.fn() }
+      registerProjectTools(mockServer as unknown as McpServer)
+
+      const projectContext = getProjectToolHandler(mockServer, 'projectContext')
+      const result = await projectContext({ projectPath: root })
+
+      expect(result.isError).toBeUndefined()
+      expect(result.content[0].text).toContain('codeStyleDocsStatus: MISSING')
+      expect(result.content[0].text).toContain('projectInit(projectPath="')
+      expect(result.content[0].text).toContain('PROJECT_CODE_STYLE_DOC_MISSING')
     })
 
     it('syncViews materializes both tasks and roadmap markdown views', async () => {

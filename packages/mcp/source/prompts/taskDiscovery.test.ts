@@ -16,6 +16,10 @@ describe('taskDiscovery prompt', () => {
     expect(text).toContain('Known project path: "/workspace/app"')
     expect(text).toContain('Method A: Auto-select with taskNext()')
     expect(text).toContain('roadmapCreate')
+    expect(text).toContain('Core docs review checklist (required before DONE):')
+    expect(text).toContain('- [ ] architecture.md reviewed (`designs/core/architecture.md`)')
+    expect(text).toContain('- [ ] code-style.md reviewed (`designs/core/code-style.md`)')
+    expect(text).toContain('- [ ] ui-style.md reviewed (`designs/core/ui-style.md`)')
   })
 
   it('renders unknown-project discovery steps', async () => {

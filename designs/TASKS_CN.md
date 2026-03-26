@@ -23,6 +23,7 @@
 - 可选字段：`roadmapRefs`
 - 任务条目格式要求统一，便于 Agent 与工具解析
 - 标准格式为 marker 内的 Markdown 原生任务分段
+- `tasks.md` 是治理生成视图；任务状态真源应通过工具（`taskCreate`/`taskUpdate`）写入
 - 每个任务必须有唯一任务 ID
 - 推荐任务 ID 格式：`TASK-0001`、`TASK-0002` ...
 - 任务应在适用时包含关联 roadmap ID（如 `ROADMAP-0001`）
@@ -59,3 +60,4 @@
 - `BLOCKED` 建议在 `summary` 写清阻塞原因与解锁条件
 - `updatedAt` 建议校验为 ISO8601 UTC
 - `roadmapRefs` 在适用时应绑定有效 `ROADMAP-xxxx`
+- 对生成视图的直接手工编辑不视为权威写入，后续同步可能覆盖

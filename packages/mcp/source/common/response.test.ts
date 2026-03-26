@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   asText,
+  getDefaultToolTemplateMarkdown,
   nextCallSection,
   renderErrorMarkdown,
   renderToolResponseMarkdown,
@@ -60,5 +61,19 @@ describe('response helpers', () => {
       sections: [nextCallSection(undefined)],
     })
     expect(withoutCall).toContain('- (none)')
+  })
+
+  it('taskUpdate default template includes core docs review checklist', () => {
+    const markdown = getDefaultToolTemplateMarkdown('taskUpdate')
+    expect(markdown).toContain('Core Docs Review Checklist (Required When Marking DONE)')
+    expect(markdown).toContain('- [ ] architecture.md reviewed (designs/core/architecture.md)')
+    expect(markdown).toContain('- [ ] code-style.md reviewed (designs/core/code-style.md)')
+    expect(markdown).toContain('- [ ] ui-style.md reviewed (designs/core/ui-style.md)')
+  })
+
+  it('roadmapUpdate default template keeps governance write rule without task checklist', () => {
+    const markdown = getDefaultToolTemplateMarkdown('roadmapUpdate')
+    expect(markdown).toContain('Governance Write Rule')
+    expect(markdown).not.toContain('Core Docs Review Checklist (Required When Marking DONE)')
   })
 })

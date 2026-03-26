@@ -1,21 +1,37 @@
 import fs from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import {
+  candidateFilesFromArtifacts,
   discoverGovernanceArtifacts,
   catchIt,
   PROJECT_LINT_CODES,
   renderLintSuggestions,
   ensureStore,
+  loadRoadmapsFromStore,
+  loadTasksFromStore,
   replaceRoadmapsInStore,
   replaceTasksInStore,
   loadTaskStatusStatsFromStore,
+  upsertRoadmapInStore,
+  upsertTaskInStore,
   createGovernedTool,
   getDefaultToolTemplateMarkdown,
 } from '../common/index.js'
-import { collectTaskLintSuggestions, loadTasksDocument, loadTasksDocumentWithOptions, renderTasksMarkdown } from './task.js'
+import {
+  collectProjectContextDocsLintSuggestions,
+  collectTaskLintSuggestions,
+  CORE_ARCHITECTURE_DOC_FILE,
+  CORE_CODE_STYLE_DOC_FILE,
+  CORE_UI_STYLE_DOC_FILE,
+  inspectProjectContextDocsFromArtifacts,
+  loadTasksDocument,
+  loadTasksDocumentWithOptions,
+  renderTasksMarkdown,
+} from './task.js'
 import { loadRoadmapDocumentWithOptions, renderRoadmapMarkdown } from './roadmap.js'
 import type { RoadmapMilestone } from '../types.js'
 
@@ -24,6 +40,7 @@ const DEFAULT_GOVERNANCE_DIR = '.projitive'
 
 const ignoreNames = new Set(['node_modules', '.git', '.next', 'dist', 'build'])
 const MAX_SCAN_DEPTH = 8
+const DEFAULT_SCAN_DEPTH = 3
 
 function normalizePath(inputPath?: string): string {
   return inputPath ? path.resolve(inputPath) : process.cwd()
@@ -50,14 +67,6 @@ function parseDepthFromEnv(rawDepth: string): number | undefined {
   }
 
   return Math.min(MAX_SCAN_DEPTH, Math.max(0, parsed))
-}
-
-function requireEnvVar(name: 'PROJITIVE_SCAN_ROOT_PATH' | 'PROJITIVE_SCAN_ROOT_PATHS' | 'PROJITIVE_SCAN_MAX_DEPTH'): string {
-  const value = process.env[name]
-  if (typeof value !== 'string' || value.trim().length === 0) {
-    throw new Error(`Missing required environment variable: ${name}`)
-  }
-  return value.trim()
 }
 
 function normalizeScanRoots(rootPaths: string[]): string[] {
@@ -99,7 +108,7 @@ export function resolveScanRoots(inputPaths?: string[]): string[] {
     return rootsFromLegacyEnv
   }
 
-  throw new Error('Missing required environment variable: PROJITIVE_SCAN_ROOT_PATHS (or legacy PROJITIVE_SCAN_ROOT_PATH)')
+  return [os.homedir()]
 }
 
 export function resolveScanRoot(inputPath?: string): string {
@@ -107,16 +116,20 @@ export function resolveScanRoot(inputPath?: string): string {
 }
 
 export function resolveScanDepth(inputDepth?: number): number {
-  const configuredDepthRaw = requireEnvVar('PROJITIVE_SCAN_MAX_DEPTH')
-  const configuredDepth = parseDepthFromEnv(configuredDepthRaw)
-  if (typeof configuredDepth !== 'number') {
-    throw new Error('Invalid PROJITIVE_SCAN_MAX_DEPTH: expected integer in range 0-8')
-  }
-
   if (typeof inputDepth === 'number') {
     return inputDepth
   }
-  return configuredDepth
+
+  const configuredDepthRaw = process.env.PROJITIVE_SCAN_MAX_DEPTH
+  if (typeof configuredDepthRaw === 'string' && configuredDepthRaw.trim().length > 0) {
+    const configuredDepth = parseDepthFromEnv(configuredDepthRaw)
+    if (typeof configuredDepth !== 'number') {
+      throw new Error('Invalid PROJITIVE_SCAN_MAX_DEPTH: expected integer in range 0-8')
+    }
+    return configuredDepth
+  }
+
+  return DEFAULT_SCAN_DEPTH
 }
 
 function renderArtifactsMarkdown(artifacts: Awaited<ReturnType<typeof discoverGovernanceArtifacts>>): string {
@@ -322,6 +335,34 @@ type ProjectInitResult = {
   governanceDir: string;
   directories: InitArtifactResult[];
   files: InitArtifactResult[];
+  missingBeforeInit: ProjectInitMissingState;
+  remediation: ProjectInitRemediation;
+};
+
+type BootstrapTaskBlueprint = {
+  title: string;
+  summary: string;
+  links: string[];
+};
+
+type ProjectInitMissingState = {
+  markerMissing: boolean;
+  missingDirectories: string[];
+  missingFiles: string[];
+  missingBootstrapTaskTitles: string[];
+  missingBootstrapRoadmap: boolean;
+};
+
+type ProjectInitRemediation = {
+  createdBootstrapTaskIds: string[];
+  createdBootstrapRoadmapId?: string;
+};
+
+type ProjectInitMissingClassification = {
+  coreDocs: string[];
+  templates: string[];
+  bootstrapTasks: string[];
+  otherFiles: string[];
 };
 
 const DEFAULT_TOOL_TEMPLATE_NAMES = [
@@ -368,6 +409,8 @@ function defaultReadmeMarkdown(governanceDirName: string): string {
     '- Treat roadmap.md/tasks.md as generated views from governance store.',
     '- Keep IDs stable (TASK-xxxx / ROADMAP-xxxx).',
     '- Update report evidence before status transitions.',
+    '- Maintain core docs under designs/core/: architecture.md, code-style.md, ui-style.md.',
+    '- After each task completion, review whether architecture, code conventions, or UI rules changed and update the matching core docs.',
   ].join('\n')
 }
 
@@ -376,28 +419,275 @@ function defaultRoadmapMarkdown(milestones: RoadmapMilestone[] = defaultRoadmapM
 }
 
 function defaultTasksMarkdown(updatedAt = new Date().toISOString()): string {
-  return renderTasksMarkdown([
+  return renderTasksMarkdown(defaultBootstrapTasks(updatedAt))
+}
+
+function defaultBootstrapTaskBlueprints(): BootstrapTaskBlueprint[] {
+  return [
     {
-      id: 'TASK-0001',
-      title: 'Bootstrap governance workspace',
-      status: 'TODO',
-      owner: 'unassigned',
-      summary: 'Create initial governance artifacts and confirm task execution loop.',
-      updatedAt,
-      links: [],
-      roadmapRefs: ['ROADMAP-0001'],
+      title: 'Initialize project architecture document',
+      summary: `Establish system context, boundaries, modules, and integration flows in ${CORE_ARCHITECTURE_DOC_FILE}.`,
+      links: [CORE_ARCHITECTURE_DOC_FILE],
     },
-  ])
+    {
+      title: 'Initialize code style document',
+      summary: `Capture naming, structure, testing, and review conventions in ${CORE_CODE_STYLE_DOC_FILE}.`,
+      links: [CORE_CODE_STYLE_DOC_FILE],
+    },
+    {
+      title: 'Initialize UI style document',
+      summary: `Capture visual language, tokens, accessibility, and interaction rules in ${CORE_UI_STYLE_DOC_FILE}.`,
+      links: [CORE_UI_STYLE_DOC_FILE],
+    },
+  ]
 }
 
 function defaultRoadmapMilestones(): RoadmapMilestone[] {
   return [{
     id: 'ROADMAP-0001',
-    title: 'Bootstrap governance baseline',
+    title: 'Bootstrap governance and core docs baseline',
     status: 'active',
     time: '2026-Q1',
     updatedAt: new Date().toISOString(),
   }]
+}
+
+function defaultBootstrapTasks(updatedAt = new Date().toISOString()) {
+  return defaultBootstrapTaskBlueprints().map((blueprint, index) => ({
+    id: `TASK-${String(index + 1).padStart(4, '0')}`,
+    title: blueprint.title,
+    status: 'TODO' as const,
+    owner: 'unassigned',
+    summary: blueprint.summary,
+    updatedAt,
+    links: blueprint.links,
+    roadmapRefs: ['ROADMAP-0001'],
+  }))
+}
+
+function nextGeneratedTaskId(taskIds: string[]): string {
+  const maxSuffix = taskIds
+    .map((taskId) => /^TASK-(\d+)$/.exec(taskId)?.[1])
+    .map((value) => Number.parseInt(value ?? '-1', 10))
+    .filter((value) => Number.isFinite(value) && value > 0)
+    .reduce((max, value) => Math.max(max, value), 0)
+
+  const next = maxSuffix + 1
+  return `TASK-${String(next).padStart(Math.max(4, String(next).length), '0')}`
+}
+
+function buildBackfillTask(blueprint: BootstrapTaskBlueprint, taskId: string, roadmapRef: string) {
+  return {
+    id: taskId,
+    title: blueprint.title,
+    status: 'TODO' as const,
+    owner: 'unassigned',
+    summary: blueprint.summary,
+    updatedAt: new Date().toISOString(),
+    links: blueprint.links,
+    roadmapRefs: [roadmapRef],
+  }
+}
+
+async function inspectProjectInitMissingState(governancePath: string): Promise<ProjectInitMissingState> {
+  const requiredDirectories = [
+    governancePath,
+    path.join(governancePath, 'designs'),
+    path.join(governancePath, 'designs', 'core'),
+    path.join(governancePath, 'designs', 'research'),
+    path.join(governancePath, 'reports'),
+    path.join(governancePath, 'templates'),
+    path.join(governancePath, 'templates', 'tools'),
+  ]
+  const requiredFiles = [
+    path.join(governancePath, 'README.md'),
+    path.join(governancePath, 'roadmap.md'),
+    path.join(governancePath, 'tasks.md'),
+    path.join(governancePath, CORE_ARCHITECTURE_DOC_FILE),
+    path.join(governancePath, CORE_CODE_STYLE_DOC_FILE),
+    path.join(governancePath, CORE_UI_STYLE_DOC_FILE),
+    path.join(governancePath, 'templates', 'README.md'),
+    ...DEFAULT_TOOL_TEMPLATE_NAMES.map((toolName) => path.join(governancePath, 'templates', 'tools', `${toolName}.md`)),
+  ]
+  const missingDirectories = (await Promise.all(requiredDirectories.map(async (dirPath) => (await pathExists(dirPath)) ? undefined : dirPath)))
+    .filter((item): item is string => item != null)
+  const missingFiles = (await Promise.all(requiredFiles.map(async (filePath) => (await pathExists(filePath)) ? undefined : filePath)))
+    .filter((item): item is string => item != null)
+
+  const markerPath = path.join(governancePath, PROJECT_MARKER)
+  const markerMissing = !(await pathExists(markerPath))
+  if (markerMissing) {
+    return {
+      markerMissing,
+      missingDirectories,
+      missingFiles,
+      missingBootstrapTaskTitles: defaultBootstrapTaskBlueprints().map((item) => item.title),
+      missingBootstrapRoadmap: true,
+    }
+  }
+
+  await ensureStore(markerPath)
+  const [tasks, roadmaps] = await Promise.all([
+    loadTasksFromStore(markerPath),
+    loadRoadmapsFromStore(markerPath),
+  ])
+  const missingBootstrapTaskTitles = defaultBootstrapTaskBlueprints()
+    .filter((blueprint) => !tasks.some((task) => task.title === blueprint.title || blueprint.links.some((link) => task.links.includes(link))))
+    .map((item) => item.title)
+
+  return {
+    markerMissing,
+    missingDirectories,
+    missingFiles,
+    missingBootstrapTaskTitles,
+    missingBootstrapRoadmap: roadmaps.length === 0,
+  }
+}
+
+async function backfillBootstrapTasks(markerPath: string): Promise<ProjectInitRemediation> {
+  await ensureStore(markerPath)
+  const [tasks, roadmaps] = await Promise.all([
+    loadTasksFromStore(markerPath),
+    loadRoadmapsFromStore(markerPath),
+  ])
+
+  let createdBootstrapRoadmapId: string | undefined
+  let roadmapRef = roadmaps[0]?.id
+  if (!roadmapRef) {
+    const milestone = defaultRoadmapMilestones()[0]
+    await upsertRoadmapInStore(markerPath, milestone)
+    createdBootstrapRoadmapId = milestone.id
+    roadmapRef = milestone.id
+  }
+
+  const mutableTasks = [...tasks]
+  const createdBootstrapTaskIds: string[] = []
+  for (const blueprint of defaultBootstrapTaskBlueprints()) {
+    const exists = mutableTasks.some((task) => task.title === blueprint.title || blueprint.links.some((link) => task.links.includes(link)))
+    if (exists) {
+      continue
+    }
+
+    const nextTaskId = nextGeneratedTaskId(mutableTasks.map((task) => task.id))
+    const task = buildBackfillTask(blueprint, nextTaskId, roadmapRef)
+    await upsertTaskInStore(markerPath, task)
+    mutableTasks.push(task)
+    createdBootstrapTaskIds.push(nextTaskId)
+  }
+
+  return { createdBootstrapTaskIds, createdBootstrapRoadmapId }
+}
+
+function defaultProjectArchitectureMarkdown(): string {
+  return [
+    '# Project Architecture',
+    '',
+    '## Mission and Scope',
+    '- Describe the product or repository purpose.',
+    '- Define the operational boundary of this project.',
+    '',
+    '## System Boundaries',
+    '- List primary inputs, outputs, external integrations, and ownership boundaries.',
+    '',
+    '## Modules and Responsibilities',
+    '- Document the major modules, packages, or services and their responsibilities.',
+    '',
+    '## Key Flows',
+    '- Summarize the highest-value runtime and maintenance flows.',
+    '',
+    '## Change Triggers',
+    '- Update this document when tasks change architecture boundaries, data flow, or integration contracts.',
+  ].join('\n')
+}
+
+function defaultCodeStyleMarkdown(): string {
+  return [
+    '# Code Style',
+    '',
+    '## Core Principles',
+    '- Document the repository coding principles and non-negotiable constraints.',
+    '',
+    '## Naming and Structure',
+    '- Define naming rules, module boundaries, and file organization expectations.',
+    '',
+    '## Testing and Validation',
+    '- Record expectations for unit tests, integration tests, and verification commands.',
+    '',
+    '## Review Checklist',
+    '- List the code quality checks every completed task should re-evaluate.',
+    '',
+    '## Change Triggers',
+    '- Update this document when tasks establish or revise reusable engineering conventions.',
+  ].join('\n')
+}
+
+function defaultUiStyleMarkdown(): string {
+  return [
+    '# UI Style',
+    '',
+    '## Visual Language',
+    '- Describe the intended product tone, typography, spacing, and visual hierarchy.',
+    '',
+    '## Components and Patterns',
+    '- Record reusable UI patterns, interaction rules, and component expectations.',
+    '',
+    '## Accessibility and Quality',
+    '- Document accessibility expectations, responsiveness rules, and UX quality bars.',
+    '',
+    '## Design Tokens',
+    '- Capture colors, spacing, motion, and other token-level guidance if applicable.',
+    '',
+    '## Change Triggers',
+    '- Update this document when tasks change UI behavior, interaction rules, or visual consistency guidance.',
+  ].join('\n')
+}
+
+function toRelativeGovernancePath(governanceDir: string, targetPath: string): string {
+  const relative = path.relative(governanceDir, targetPath).replace(/\\/g, '/')
+  return relative.length > 0 ? relative : '.'
+}
+
+function classifyProjectInitMissing(initialized: ProjectInitResult): ProjectInitMissingClassification {
+  const coreDocFiles = new Set([
+    CORE_ARCHITECTURE_DOC_FILE,
+    CORE_CODE_STYLE_DOC_FILE,
+    CORE_UI_STYLE_DOC_FILE,
+  ])
+  const relativeMissingFiles = initialized.missingBeforeInit.missingFiles
+    .map((item) => toRelativeGovernancePath(initialized.governanceDir, item))
+
+  const coreDocs = relativeMissingFiles.filter((item) => coreDocFiles.has(item))
+  const templates = relativeMissingFiles.filter((item) => item === 'templates/README.md' || item.startsWith('templates/tools/'))
+  const otherFiles = relativeMissingFiles.filter((item) => !coreDocFiles.has(item) && !(item === 'templates/README.md' || item.startsWith('templates/tools/')))
+
+  return {
+    coreDocs,
+    templates,
+    bootstrapTasks: initialized.missingBeforeInit.missingBootstrapTaskTitles,
+    otherFiles,
+  }
+}
+
+function renderProjectInitRepairSummary(initialized: ProjectInitResult): string[] {
+  const classified = classifyProjectInitMissing(initialized)
+  return [
+    '### Repair Summary (Missing Before Init)',
+    '- core docs:',
+    `  - count: ${classified.coreDocs.length}`,
+    ...(classified.coreDocs.length > 0 ? classified.coreDocs.map((item) => `  - ${item}`) : ['  - (none)']),
+    '- templates:',
+    `  - count: ${classified.templates.length}`,
+    ...(classified.templates.length > 0 ? classified.templates.map((item) => `  - ${item}`) : ['  - (none)']),
+    '- bootstrap tasks:',
+    `  - count: ${classified.bootstrapTasks.length}`,
+    ...(classified.bootstrapTasks.length > 0 ? classified.bootstrapTasks.map((item) => `  - ${item}`) : ['  - (none)']),
+    '- other required files:',
+    `  - count: ${classified.otherFiles.length}`,
+    ...(classified.otherFiles.length > 0 ? classified.otherFiles.map((item) => `  - ${item}`) : ['  - (none)']),
+    '- remediation actions:',
+    `  - created bootstrap tasks: ${initialized.remediation.createdBootstrapTaskIds.length}`,
+    `  - created bootstrap roadmap: ${initialized.remediation.createdBootstrapRoadmapId ?? '(none)'}`,
+  ]
 }
 
 function defaultTemplateReadmeMarkdown(): string {
@@ -438,11 +728,14 @@ export async function initializeProjectStructure(inputPath: string, governanceDi
   }
 
   const governancePath = path.join(projectPath, governanceDirName)
+  const missingBeforeInit = await inspectProjectInitMissingState(governancePath)
   const directories: InitArtifactResult[] = []
 
   const requiredDirectories = [
     governancePath,
     path.join(governancePath, 'designs'),
+    path.join(governancePath, 'designs', 'core'),
+    path.join(governancePath, 'designs', 'research'),
     path.join(governancePath, 'reports'),
     path.join(governancePath, 'templates'),
     path.join(governancePath, 'templates', 'tools'),
@@ -459,26 +752,21 @@ export async function initializeProjectStructure(inputPath: string, governanceDi
   const markerExists = await pathExists(markerPath)
 
   await ensureStore(markerPath)
+  let remediation: ProjectInitRemediation = { createdBootstrapTaskIds: [] }
   if (force || !markerExists) {
     await replaceRoadmapsInStore(markerPath, defaultRoadmapData)
-    await replaceTasksInStore(markerPath, [
-      {
-        id: 'TASK-0001',
-        title: 'Bootstrap governance workspace',
-        status: 'TODO',
-        owner: 'unassigned',
-        summary: 'Create initial governance artifacts and confirm task execution loop.',
-        updatedAt: defaultTaskUpdatedAt,
-        links: [],
-        roadmapRefs: ['ROADMAP-0001'],
-      },
-    ])
+    await replaceTasksInStore(markerPath, defaultBootstrapTasks(defaultTaskUpdatedAt))
+  } else {
+    remediation = await backfillBootstrapTasks(markerPath)
   }
 
   const baseFiles = await Promise.all([
     writeTextFile(path.join(governancePath, 'README.md'), defaultReadmeMarkdown(governanceDirName), force),
     writeTextFile(path.join(governancePath, 'roadmap.md'), defaultRoadmapMarkdown(defaultRoadmapData), force),
     writeTextFile(path.join(governancePath, 'tasks.md'), defaultTasksMarkdown(defaultTaskUpdatedAt), force),
+    writeTextFile(path.join(governancePath, CORE_ARCHITECTURE_DOC_FILE), defaultProjectArchitectureMarkdown(), force),
+    writeTextFile(path.join(governancePath, CORE_CODE_STYLE_DOC_FILE), defaultCodeStyleMarkdown(), force),
+    writeTextFile(path.join(governancePath, CORE_UI_STYLE_DOC_FILE), defaultUiStyleMarkdown(), force),
     writeTextFile(path.join(governancePath, 'templates', 'README.md'), defaultTemplateReadmeMarkdown(), force),
   ])
 
@@ -495,6 +783,8 @@ export async function initializeProjectStructure(inputPath: string, governanceDi
     governanceDir: governancePath,
     directories,
     files,
+    missingBeforeInit,
+    remediation,
   }
 }
 
@@ -527,17 +817,45 @@ export function registerProjectTools(server: McpServer): void {
         `- createdFiles: ${filesByAction.created.length}`,
         `- updatedFiles: ${filesByAction.updated.length}`,
         `- skippedFiles: ${filesByAction.skipped.length}`,
+        `- missingDirectoriesBeforeInit: ${initialized.missingBeforeInit.missingDirectories.length}`,
+        `- missingFilesBeforeInit: ${initialized.missingBeforeInit.missingFiles.length}`,
+        `- missingBootstrapTasksBeforeInit: ${initialized.missingBeforeInit.missingBootstrapTaskTitles.length}`,
+        `- missingBootstrapRoadmapBeforeInit: ${initialized.missingBeforeInit.missingBootstrapRoadmap ? 'true' : 'false'}`,
+        `- createdBootstrapTasks: ${initialized.remediation.createdBootstrapTaskIds.length}`,
+        `- createdBootstrapRoadmap: ${initialized.remediation.createdBootstrapRoadmapId ?? '(none)'}`,
         '- directories:',
         ...initialized.directories.map((item) => `  - ${item.action}: ${item.path}`),
         '- files:',
         ...initialized.files.map((item) => `  - ${item.action}: ${item.path}`),
+        ...(initialized.missingBeforeInit.missingDirectories.length > 0
+          ? ['- missingDirectoriesBeforeInit.list:', ...initialized.missingBeforeInit.missingDirectories.map((item) => `  - ${item}`)]
+          : []),
+        ...(initialized.missingBeforeInit.missingFiles.length > 0
+          ? ['- missingFilesBeforeInit.list:', ...initialized.missingBeforeInit.missingFiles.map((item) => `  - ${item}`)]
+          : []),
+        ...(initialized.missingBeforeInit.missingBootstrapTaskTitles.length > 0
+          ? ['- missingBootstrapTasksBeforeInit.list:', ...initialized.missingBeforeInit.missingBootstrapTaskTitles.map((item) => `  - ${item}`)]
+          : []),
+        ...(initialized.remediation.createdBootstrapTaskIds.length > 0
+          ? ['- createdBootstrapTaskIds.list:', ...initialized.remediation.createdBootstrapTaskIds.map((item) => `  - ${item}`)]
+          : []),
+        '',
+        ...renderProjectInitRepairSummary(initialized),
       ],
-      guidance: () => [
+      guidance: ({ initialized }) => [
+        ...(initialized.missingBeforeInit.markerMissing
+          ? ['- Governance root was missing before init. This call performed a full bootstrap.']
+          : ['- Governance root already existed. This call inspected the current initialization state and backfilled missing artifacts where possible.']),
+        ...(initialized.missingBeforeInit.missingFiles.length > 0 || initialized.missingBeforeInit.missingDirectories.length > 0 || initialized.missingBeforeInit.missingBootstrapTaskTitles.length > 0 || initialized.missingBeforeInit.missingBootstrapRoadmap
+          ? ['- This project was partially initialized. Review the created files and bootstrap tasks, then complete any placeholder content.']
+          : ['- No initialization gaps were detected. Use force=true only when you intentionally want to overwrite templates/files.']),
         '- If files were skipped and you want to overwrite templates, rerun with force=true.',
         '- Continue with projectContext and taskList for execution.',
+        '- Start with the three bootstrap TODO tasks for architecture, code style, and UI style docs.',
       ],
       suggestions: () => [
         '- After init, fill owner/roadmapRefs/links in .projitive task table before marking DONE.',
+        '- Keep designs/core/architecture.md, designs/core/code-style.md, and designs/core/ui-style.md in sync with completed work.',
         '- Keep task source-of-truth inside .projitive governance store.',
       ],
       nextCall: ({ initialized }) => `projectContext(projectPath="${initialized.projectPath}")`,
@@ -733,20 +1051,24 @@ export function registerProjectTools(server: McpServer): void {
         const governanceDir = await resolveGovernanceDir(projectPath)
         const normalizedProjectPath = toProjectPath(governanceDir)
         const artifacts = await discoverGovernanceArtifacts(governanceDir)
+        const projectContextDocsState = inspectProjectContextDocsFromArtifacts(candidateFilesFromArtifacts(artifacts))
         const dbPath = path.join(governanceDir, PROJECT_MARKER)
         await ensureStore(dbPath)
         const taskStats = await loadTaskStatusStatsFromStore(dbPath)
         const { markdownPath: tasksMarkdownPath, tasks } = await loadTasksDocument(governanceDir)
         const { markdownPath: roadmapMarkdownPath, milestones } = await loadRoadmapDocumentWithOptions(governanceDir, false)
         const roadmapIds = milestones.map((item) => item.id)
-        return { normalizedProjectPath, governanceDir, tasksMarkdownPath, roadmapMarkdownPath, roadmapIds, taskStats, artifacts, tasks }
+        return { normalizedProjectPath, governanceDir, tasksMarkdownPath, roadmapMarkdownPath, roadmapIds, taskStats, artifacts, tasks, projectContextDocsState }
       },
-      summary: ({ normalizedProjectPath, governanceDir, tasksMarkdownPath, roadmapMarkdownPath, roadmapIds }) => [
+      summary: ({ normalizedProjectPath, governanceDir, tasksMarkdownPath, roadmapMarkdownPath, roadmapIds, projectContextDocsState }) => [
         `- projectPath: ${normalizedProjectPath}`,
         `- governanceDir: ${governanceDir}`,
         `- tasksView: ${tasksMarkdownPath}`,
         `- roadmapView: ${roadmapMarkdownPath}`,
         `- roadmapIds: ${roadmapIds.length}`,
+        `- projectArchitectureDocsStatus: ${projectContextDocsState.missingArchitectureDocs ? 'MISSING' : 'READY'}`,
+        `- codeStyleDocsStatus: ${projectContextDocsState.missingCodeStyleDocs ? 'MISSING' : 'READY'}`,
+        `- uiStyleDocsStatus: ${projectContextDocsState.missingUiStyleDocs ? 'MISSING' : 'READY'}`,
       ],
       evidence: ({ taskStats, artifacts }) => [
         '### Task Summary',
@@ -759,12 +1081,26 @@ export function registerProjectTools(server: McpServer): void {
         '### Artifacts',
         renderArtifactsMarkdown(artifacts),
       ],
-      guidance: () => [
+      guidance: ({ normalizedProjectPath, projectContextDocsState }) => [
+        ...(!projectContextDocsState.ready
+          ? [
+              '- Project-level governance gate is NOT satisfied because required core docs are missing.',
+              `- Rerun projectInit to repair missing governance artifacts and bootstrap tasks: projectInit(projectPath="${normalizedProjectPath}")`,
+              '- After projectInit backfills missing files/tasks, update any placeholder content in the created docs.',
+            ]
+          : []),
+        '- Governance state must be changed via tools; do not directly edit tasks.md/roadmap.md generated views.',
         '- Start from `taskList` to choose a target task.',
         '- Then call `taskContext` with a task ID to retrieve evidence locations and reading order.',
       ],
-      suggestions: ({ tasks }) => collectTaskLintSuggestions(tasks),
-      nextCall: ({ normalizedProjectPath }) => `taskList(projectPath="${normalizedProjectPath}")`,
+      suggestions: ({ tasks, projectContextDocsState }) => [
+        ...collectTaskLintSuggestions(tasks),
+        ...renderLintSuggestions(collectProjectContextDocsLintSuggestions(projectContextDocsState)),
+      ],
+      nextCall: ({ normalizedProjectPath, projectContextDocsState }) =>
+        projectContextDocsState.ready
+          ? `taskList(projectPath="${normalizedProjectPath}")`
+          : `projectInit(projectPath="${normalizedProjectPath}")`,
     })
   )
 }

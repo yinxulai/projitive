@@ -36,7 +36,8 @@ export function getDefaultToolTemplateMarkdown(toolName: string): string {
       '- Check lint gaps and create executable fix tasks.',
       '- Check test quality gaps (missing tests, flaky tests, low-value coverage).',
       '- Learn current project architecture and consolidate/update design docs in designs/.',
-      '- Review and update architecture docs under designs/core/ (architecture.md, style-guide.md) if missing or outdated.',
+      '- Review and update core governance docs under designs/core/ (architecture.md, code-style.md, ui-style.md) if missing or outdated.',
+      '- When finishing a task, re-check whether architecture boundaries, code conventions, or UI patterns changed and update the matching core docs.',
       '- Re-run {{tool_name}} after creating 1-3 focused TODO tasks.',
     ].join('\n')
   }
@@ -55,9 +56,34 @@ export function getDefaultToolTemplateMarkdown(toolName: string): string {
     ].join('\n')
   }
 
-  if (toolName === 'taskUpdate' || toolName === 'roadmapUpdate') {
+  if (toolName === 'taskUpdate') {
     return [
       base,
+      '',
+      '## Governance Write Rule',
+      '- MUST use governance tools for task/roadmap state updates.',
+      '- NEVER edit tasks.md/roadmap.md directly; they are generated views.',
+      '',
+      '## Core Docs Review Checklist (Required When Marking DONE)',
+      '- [ ] architecture.md reviewed (designs/core/architecture.md)',
+      '- [ ] code-style.md reviewed (designs/core/code-style.md)',
+      '- [ ] ui-style.md reviewed (designs/core/ui-style.md)',
+      '',
+      '## Commit Reminder',
+      '- After this update, create a commit to keep progress auditable.',
+      '- Recommended format: type(scope): summary',
+      '- Example: feat(task): complete TASK-0007 validation flow',
+      '- Footer suggestion: Refs: TASK-0007, ROADMAP-0002',
+    ].join('\n')
+  }
+
+  if (toolName === 'roadmapUpdate') {
+    return [
+      base,
+      '',
+      '## Governance Write Rule',
+      '- MUST use governance tools for task/roadmap state updates.',
+      '- NEVER edit tasks.md/roadmap.md directly; they are generated views.',
       '',
       '## Commit Reminder',
       '- After this update, create a commit to keep progress auditable.',

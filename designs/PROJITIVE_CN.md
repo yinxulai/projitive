@@ -24,6 +24,8 @@
 - 一个治理根目录只放一个 `.projitive`，禁止在子目录重复放置
 - 工具实现需支持“从任意子路径向上查找最近 `.projitive`”
 - 找不到标记时需返回明确错误，禁止静默 fallback 到固定目录
+- `projectInit` 应在定位到治理根后执行“初始化或修复”
+- `projectInit` 应输出缺失项修复摘要，并按 `core docs`、`templates`、`bootstrap tasks` 分类展示
 
 建议示例（键值模式）：
 
@@ -39,3 +41,5 @@ owner: team-platform
 - 若存在嵌套重复标记，应告警为歧义风险
 - 向上查找最近标记的行为应保持确定性
 - 缺失标记时必须显式报错（禁止静默 fallback）
+- `projectInit` 应创建或回填三份核心文档（`designs/core/architecture.md`、`designs/core/code-style.md`、`designs/core/ui-style.md`）
+- `projectInit` 应创建或回填对应三份核心文档的 bootstrap TODO 任务

@@ -43,7 +43,9 @@ export const TASK_RESEARCH_DIR = 'designs/research'
 export const TASK_RESEARCH_FILE_SUFFIX = '.implementation-research.md'
 export const CORE_DESIGN_DOCS_DIR = 'designs/core'
 export const CORE_ARCHITECTURE_DOC_FILE = `${CORE_DESIGN_DOCS_DIR}/architecture.md`
-export const CORE_STYLE_DOC_FILE = `${CORE_DESIGN_DOCS_DIR}/style-guide.md`
+export const CORE_CODE_STYLE_DOC_FILE = `${CORE_DESIGN_DOCS_DIR}/code-style.md`
+export const CORE_UI_STYLE_DOC_FILE = `${CORE_DESIGN_DOCS_DIR}/ui-style.md`
+export const CORE_STYLE_DOC_FILE = CORE_UI_STYLE_DOC_FILE
 
 type TaskResearchBriefState = {
   relativePath: string;
@@ -266,7 +268,8 @@ const DEFAULT_NO_TASK_DISCOVERY_GUIDANCE = [
   '- Prefer slices that unlock multiple downstream tasks before isolated refactors or low-impact cleanups.',
   '- Skip duplicate scope: do not create tasks that overlap existing TODO/IN_PROGRESS/BLOCKED task intent.',
   '- Use quality gates for discovery candidates: user value, delivery risk reduction, or measurable throughput improvement.',
-  '- Review and update project architecture docs under designs/core/ (architecture.md, style-guide.md) if they are missing or outdated.',
+  '- Review and update core governance docs under designs/core/ (architecture.md, code-style.md, ui-style.md) if they are missing or outdated.',
+  '- If a task changes module boundaries, engineering conventions, or UI patterns, create follow-up TODO work or update the matching core doc before closing the loop.',
   '- Keep each discovery round small (1-3 tasks), then rerun taskNext immediately for re-ranking and execution.',
 ]
 
@@ -378,29 +381,44 @@ function collectTaskResearchBriefLintSuggestions(state: TaskResearchBriefState):
   return []
 }
 
-function inspectProjectContextDocsFromArtifacts(files: string[]) {
+export type ProjectContextDocsState = {
+  ready: boolean;
+  uiStyleDocs: string[];
+  codeStyleDocs: string[];
+  architectureDocs: string[];
+  missingUiStyleDocs: boolean;
+  missingCodeStyleDocs: boolean;
+  missingArchitectureDocs: boolean;
+}
+
+export function inspectProjectContextDocsFromArtifacts(files: string[]): ProjectContextDocsState {
   const markdownFiles = files
     .map((item) => item.replace(/\\/g, '/'))
     .filter((item) => item.toLowerCase().endsWith('.md'))
   const architectureDocSuffix = `/${CORE_ARCHITECTURE_DOC_FILE}`.toLowerCase()
-  const styleDocSuffix = `/${CORE_STYLE_DOC_FILE}`.toLowerCase()
+  const codeStyleDocSuffix = `/${CORE_CODE_STYLE_DOC_FILE}`.toLowerCase()
+  const uiStyleDocSuffix = `/${CORE_UI_STYLE_DOC_FILE}`.toLowerCase()
 
   const architectureDocs = markdownFiles.filter((item) => item.toLowerCase().endsWith(architectureDocSuffix))
-  const styleDocs = markdownFiles.filter((item) => item.toLowerCase().endsWith(styleDocSuffix))
+  const codeStyleDocs = markdownFiles.filter((item) => item.toLowerCase().endsWith(codeStyleDocSuffix))
+  const uiStyleDocs = markdownFiles.filter((item) => item.toLowerCase().endsWith(uiStyleDocSuffix))
 
   const missingArchitectureDocs = architectureDocs.length === 0
-  const missingStyleDocs = styleDocs.length === 0
+  const missingCodeStyleDocs = codeStyleDocs.length === 0
+  const missingUiStyleDocs = uiStyleDocs.length === 0
 
   return {
     architectureDocs,
-    styleDocs,
+    codeStyleDocs,
+    uiStyleDocs,
     missingArchitectureDocs,
-    missingStyleDocs,
-    ready: !missingArchitectureDocs && !missingStyleDocs,
+    missingCodeStyleDocs,
+    missingUiStyleDocs,
+    ready: !missingArchitectureDocs && !missingCodeStyleDocs && !missingUiStyleDocs,
   }
 }
 
-function collectProjectContextDocsLintSuggestions(state: ReturnType<typeof inspectProjectContextDocsFromArtifacts>): TaskLintSuggestion[] {
+export function collectProjectContextDocsLintSuggestions(state: ProjectContextDocsState): TaskLintSuggestion[] {
   const suggestions: TaskLintSuggestion[] = []
 
   if (state.missingArchitectureDocs) {
@@ -411,11 +429,19 @@ function collectProjectContextDocsLintSuggestions(state: ReturnType<typeof inspe
     })
   }
 
-  if (state.missingStyleDocs) {
+  if (state.missingCodeStyleDocs) {
     suggestions.push({
-      code: PROJECT_LINT_CODES.STYLE_DOC_MISSING,
-      message: 'Project context is missing design style documentation.',
-      fixHint: `Add required file under governanceDir: ${CORE_STYLE_DOC_FILE}.`,
+      code: PROJECT_LINT_CODES.CODE_STYLE_DOC_MISSING,
+      message: 'Project context is missing code style documentation.',
+      fixHint: `Add required file under governanceDir: ${CORE_CODE_STYLE_DOC_FILE}.`,
+    })
+  }
+
+  if (state.missingUiStyleDocs) {
+    suggestions.push({
+      code: PROJECT_LINT_CODES.UI_STYLE_DOC_MISSING,
+      message: 'Project context is missing UI style documentation.',
+      fixHint: `Add required file under governanceDir: ${CORE_UI_STYLE_DOC_FILE}.`,
     })
   }
 
@@ -1276,15 +1302,20 @@ export function registerTaskTools(server: McpServer): void {
         return [
           ...(!data.projectContextDocsState.ready
             ? [
-                '- Project context docs are incomplete. Complete missing project architecture/style docs before deep implementation.',
+                '- Project context docs are incomplete. Complete missing project architecture, code style, and UI style docs before deep implementation.',
+                `- Rerun projectInit to backfill missing governance artifacts first: projectInit(projectPath="${toProjectPath(data.selected.governanceDir)}")`,
                 ...(data.projectContextDocsState.missingArchitectureDocs
                   ? [`- Missing architecture design doc: create required file under governanceDir: ${CORE_ARCHITECTURE_DOC_FILE}.`]
                   : []),
-                ...(data.projectContextDocsState.missingStyleDocs
-                  ? [`- Missing design style doc: create required file under governanceDir: ${CORE_STYLE_DOC_FILE}.`]
+                ...(data.projectContextDocsState.missingCodeStyleDocs
+                  ? [`- Missing code style doc: create required file under governanceDir: ${CORE_CODE_STYLE_DOC_FILE}.`]
+                  : []),
+                ...(data.projectContextDocsState.missingUiStyleDocs
+                  ? [`- Missing UI style doc: create required file under governanceDir: ${CORE_UI_STYLE_DOC_FILE}.`]
                   : []),
               ]
             : []),
+          '- Governance state updates MUST go through tools; NEVER directly edit tasks.md/roadmap.md generated views.',
           '- Start immediately with Suggested Read Order and execute the selected task.',
           '- Update markdown artifacts directly while keeping TASK/ROADMAP IDs unchanged.',
           '- Re-run `taskContext` for the selectedTaskId after edits to verify evidence consistency.',
@@ -1374,8 +1405,9 @@ export function registerTaskTools(server: McpServer): void {
           `- roadmapRefs: ${task.roadmapRefs.join(', ') || '(none)'}`,
           `- researchBriefPath: ${researchBriefState.relativePath}`,
           `- researchBriefStatus: ${researchBriefState.ready ? 'READY' : 'MISSING'}`,
-          `- architectureDocsStatus: ${projectContextDocsState.missingArchitectureDocs ? 'MISSING' : 'READY'}`,
-          `- styleDocsStatus: ${projectContextDocsState.missingStyleDocs ? 'MISSING' : 'READY'}`,
+          `- projectArchitectureDocsStatus: ${projectContextDocsState.missingArchitectureDocs ? 'MISSING' : 'READY'}`,
+          `- codeStyleDocsStatus: ${projectContextDocsState.missingCodeStyleDocs ? 'MISSING' : 'READY'}`,
+          `- uiStyleDocsStatus: ${projectContextDocsState.missingUiStyleDocs ? 'MISSING' : 'READY'}`,
           `- taskLocation: ${taskLocation ? `${taskLocation.filePath}#L${taskLocation.line}` : markdownPath}`,
         ]
         if (task.subState && task.status === 'IN_PROGRESS') {
@@ -1412,10 +1444,14 @@ export function registerTaskTools(server: McpServer): void {
         ...(projectContextDocsState.architectureDocs.length > 0
           ? projectContextDocsState.architectureDocs.map((item) => `- architecture: ${item}`)
           : [`- architecture: add required file under governanceDir: ${CORE_ARCHITECTURE_DOC_FILE}.`]),
-        `- design style docs: ${projectContextDocsState.styleDocs.length > 0 ? 'found' : 'missing'}`,
-        ...(projectContextDocsState.styleDocs.length > 0
-          ? projectContextDocsState.styleDocs.map((item) => `- style: ${item}`)
-          : [`- style: add required file under governanceDir: ${CORE_STYLE_DOC_FILE}.`]),
+        `- code style docs: ${projectContextDocsState.codeStyleDocs.length > 0 ? 'found' : 'missing'}`,
+        ...(projectContextDocsState.codeStyleDocs.length > 0
+          ? projectContextDocsState.codeStyleDocs.map((item) => `- code-style: ${item}`)
+          : [`- code-style: add required file under governanceDir: ${CORE_CODE_STYLE_DOC_FILE}.`]),
+        `- UI style docs: ${projectContextDocsState.uiStyleDocs.length > 0 ? 'found' : 'missing'}`,
+        ...(projectContextDocsState.uiStyleDocs.length > 0
+          ? projectContextDocsState.uiStyleDocs.map((item) => `- ui-style: ${item}`)
+          : [`- ui-style: add required file under governanceDir: ${CORE_UI_STYLE_DOC_FILE}.`]),
         '',
         '### Related Artifacts',
         ...(relatedArtifacts.length > 0 ? relatedArtifacts.map((file) => `- ${file}`) : ['- (none)']),
@@ -1428,7 +1464,7 @@ export function registerTaskTools(server: McpServer): void {
         '### Suggested Read Order',
         ...suggestedReadOrder.map((item, index) => `${index + 1}. ${item}`),
       ],
-      guidance: ({ researchBriefState, projectContextDocsState, contextReadingGuidance, task }) => [
+      guidance: ({ normalizedProjectPath, researchBriefState, projectContextDocsState, contextReadingGuidance, task }) => [
         ...(!researchBriefState.ready
           ? [
               '- Pre-execution gate is NOT satisfied. Complete research brief first, then proceed with implementation.',
@@ -1442,17 +1478,21 @@ export function registerTaskTools(server: McpServer): void {
             ]),
         ...(!projectContextDocsState.ready
           ? [
-              '- Project context docs gate is NOT satisfied. Complete missing project architecture/style docs first.',
+              '- Project context docs gate is NOT satisfied. Complete missing project architecture, code style, and UI style docs first.',
+              `- Rerun projectInit to repair missing governance artifacts first: projectInit(projectPath="${normalizedProjectPath}")`,
               ...(projectContextDocsState.missingArchitectureDocs
                 ? [`- Missing architecture design doc. Add required file under governanceDir: ${CORE_ARCHITECTURE_DOC_FILE} and include architecture boundaries and module responsibilities.`]
                 : []),
-              ...(projectContextDocsState.missingStyleDocs
-                ? [`- Missing design style doc. Add required file under governanceDir: ${CORE_STYLE_DOC_FILE} and include style language, tokens/themes, and UI consistency rules.`]
+              ...(projectContextDocsState.missingCodeStyleDocs
+                ? [`- Missing code style doc. Add required file under governanceDir: ${CORE_CODE_STYLE_DOC_FILE} and include naming, module boundaries, testing expectations, and review rules.`]
                 : []),
-              '- Re-run taskContext and confirm both architectureDocsStatus/styleDocsStatus are READY.',
+              ...(projectContextDocsState.missingUiStyleDocs
+                ? [`- Missing UI style doc. Add required file under governanceDir: ${CORE_UI_STYLE_DOC_FILE} and include style language, tokens/themes, accessibility expectations, and UI consistency rules.`]
+                : []),
+              '- Re-run taskContext and confirm projectArchitectureDocsStatus/codeStyleDocsStatus/uiStyleDocsStatus are READY.',
             ]
           : [
-              '- Project context docs gate satisfied. Architecture/style docs are available for execution alignment.',
+              '- Project context docs gate satisfied. Architecture, code style, and UI style docs are available for execution alignment.',
             ]),
         '- Read the files in Suggested Read Order.',
         '',
@@ -1461,7 +1501,8 @@ export function registerTaskTools(server: McpServer): void {
         '',
         '- Verify whether current status and evidence are consistent.',
         ...taskStatusGuidance(task),
-        '- If updates are needed, use tool writes for governance store (`taskUpdate` / `roadmapUpdate`) and keep TASK IDs unchanged.',
+        '- If updates are needed, use tool writes for governance store (`taskCreate` / `taskUpdate` / `roadmapCreate` / `roadmapUpdate`) and keep TASK IDs unchanged.',
+        '- NEVER directly edit tasks.md/roadmap.md; they are generated views and will be overwritten.',
         '- After editing, re-run `taskContext` to verify references and context consistency.',
       ],
       suggestions: ({ task, researchBriefState, projectContextDocsState }) => [
@@ -1603,8 +1644,18 @@ export function registerTaskTools(server: McpServer): void {
           ? ['- Ensure pre-execution research brief exists under governanceDir before deep implementation.']
           : []),
         ...(updates.status === 'DONE'
-          ? ['- Verify evidence links are attached and reflect completed work.']
+          ? [
+              '- Verify evidence links are attached and reflect completed work.',
+              '- Core docs review checklist (required):',
+              '- [ ] architecture.md reviewed (designs/core/architecture.md)',
+              '- [ ] code-style.md reviewed (designs/core/code-style.md)',
+              '- [ ] ui-style.md reviewed (designs/core/ui-style.md)',
+              '- Re-check whether this task changed module boundaries or system behavior, and update architecture.md if needed.',
+              '- Re-check whether this task introduced or normalized engineering conventions, and update code-style.md if needed.',
+              '- Re-check whether this task changed UI patterns, tokens, accessibility expectations, or interaction rules, and update ui-style.md if needed.',
+            ]
           : []),
+        '- Governance state changes must use task/roadmap tools only; never manually edit tasks.md/roadmap.md views.',
         '.projitive governance store is source of truth; tasks.md is a generated view and may be overwritten.',
       ],
       suggestions: async ({ previewTask, governanceDir }) => [

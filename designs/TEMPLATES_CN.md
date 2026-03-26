@@ -40,7 +40,8 @@
 |---|---|
 | `taskNext` | `## Idle Discovery Checklist (When No Actionable Task)` |
 | `projectContext`、`taskContext`、`roadmapContext` | `## Common Tool Guides To Read First` |
-| `taskUpdate`、`roadmapUpdate` | `## Commit Reminder` |
+| `taskUpdate` | `## Governance Write Rule`、`## Core Docs Review Checklist (Required When Marking DONE)`、`## Commit Reminder` |
+| `roadmapUpdate` | `## Governance Write Rule`、`## Commit Reminder` |
 | 其他工具 | 仅基础段落 |
 
 基础模板结构：
@@ -71,3 +72,4 @@
 - 空模板文件应视为缺失（自动生成）
 - 模板变量必须在渲染前完成注入；未知变量保留原样
 - `projectInit` 会创建 `templates/` 目录，并为所有内置工具生成默认模板文件
+- 生成模板应保留治理写入约束（状态变更走工具写入，禁止直接编辑 `tasks.md`/`roadmap.md`）

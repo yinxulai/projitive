@@ -16,7 +16,8 @@ Captures execution results and validation conclusions, answering “what was del
 
 - Subfile naming recommendation: `YYYY-MM-DD-topic.md`
 - Each report should include fixed sections: scope, change summary, validation, risks/follow-up
-- Reports must reference corresponding tasks (`tasks.md`) and milestones (`roadmap.md`)
+- Reports must reference corresponding task IDs (`TASK-xxxx`) and milestone IDs (`ROADMAP-xxxx`)
+- Reports should reference task/roadmap IDs from governance store source of truth; `tasks.md`/`roadmap.md` are generated views
 - Validation conclusions should use reviewable evidence (commands, outputs, screenshots, or links)
 - Recommended fixed fields per report:
   - `Task`, `Roadmap`, `Owner`, `Date`
@@ -59,3 +60,4 @@ Date: 2026-02-17
 - `Validation` should contain at least one verifiable evidence item
 - `Date` should use consistent date format
 - Report links should be reusable from `tasks.md` (`links`)
+- For DONE task reports, include whether core docs were reviewed: `designs/core/architecture.md`, `designs/core/code-style.md`, `designs/core/ui-style.md`

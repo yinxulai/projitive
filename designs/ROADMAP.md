@@ -22,6 +22,7 @@ Defines stage goals and milestones, answering “what is next”.
 - Use checkbox format for milestone items to make status visible at a glance
 - Standardize time format as `YYYY-MM-DD` or `YYYY-QN` (do not mix styles)
 - Every milestone/task line in `roadmap.md` MUST include a unique roadmap ID
+- `roadmap.md` is a generated governance view; authoritative roadmap state should be updated via tools (`roadmapCreate`/`roadmapUpdate`)
 - Recommended roadmap ID format: `ROADMAP-0001`, `ROADMAP-0002`, ...
 - IDs must be immutable once published (title/status can change, ID cannot)
 - IDs should be referenced by `designs/` and `reports/` for reverse lookup
@@ -53,3 +54,4 @@ Recommended template:
 - Roadmap IDs should be referenced by tasks via `roadmapRefs`
 - Warn when a roadmap ID has zero related tasks for long periods
 - Keep time format consistent (`YYYY-MM-DD` or `YYYY-QN`)
+- Direct manual edits to generated roadmap views should be treated as non-authoritative and may be overwritten by sync

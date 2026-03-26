@@ -1,192 +1,79 @@
 ---
 name: projitive
 description: >
-  Projitive is a governance skill for agent-driven delivery. Use this before changing task states or writing governance artifacts. Core flow: taskNext -> taskContext -> execute -> verify. Supports project-level triage and roadmap context.
+  Projitive is an MCP-first governance skill for agent-driven delivery. Use this before changing task states or writing governance artifacts. Core flow: taskNext -> taskContext -> execute -> verify -> taskNext. Always prefer Projitive MCP methods for discovery, context, and proactive task advancement.
 metadata:
   author: projitive
   version: "1.0.0"
 ---
 
-Projitive helps agents continuously ship under governance constraints, not just edit code.
+# MCP Setup (Default Required)
 
----
+Install (always use latest):
 
-# Core scenarios (what this skill handles)
+```bash
+npm install -g @projitive/mcp@latest
+```
 
-1. **projitive init** — initialize governance structure in a repository
-2. **Continue project execution** — pick actionable task and advance with evidence
-3. **Project triage** — scan/locate project root and summarize governance health
-4. **Task status transition** — update task status with designs/report evidence discipline
+> `@projitive/mcp` must be kept up to date — outdated versions may be missing tools or contain bugs.
+
+Key methods:
+
+- Discovery: `projectLocate` / `projectScan` / `projectNext`
+- Context: `projectContext` / `taskList` / `taskContext` / `roadmapContext`
+- Execution: `taskNext`
+- Planning: `taskCreate` / `roadmapCreate`
 
 # Init: Repo Governance Setup
 
-When `.projitive/` directory does not exist or is incomplete, you MUST automatically:
-
-1. Create/initialize governance structure
-2. Follow init prompt below to build baseline artifacts and writing standards
-
-```
-https://raw.githubusercontent.com/yinxulai/projitive/main/packages/skills/INIT.md
-```
-
-Do NOT ask the user to do this manually — just do it.
+When `.projitive/` does not exist or is incomplete, call `projectInit(projectPath="<project-dir>")` immediately. Do NOT ask the user to do this manually.
 
 # Mandatory Governance Files
 
-At the governance root, these artifacts should exist and be read before task execution:
-
-- `README.md` — scope, glossary, required reading for agents
+- `README.md` — scope, glossary, required reading
 - `roadmap.md` — stage goals and milestones
 - `tasks.md` — task pool with status + evidence
 - `designs/` — design decisions and rationale
 - `reports/` — execution reports and evidence
 - `templates/` — per-tool response templates
 
-# MCP Tooling Prerequisite
+# Execution Loop
 
-Projitive MCP is **optional but recommended**.
+1. `taskNext` — pick actionable task
+2. `taskContext` — get evidence and hints
+3. Execute; update `designs/` and `reports/`
+4. `taskContext` — verify alignment
+5. Repeat
 
-- If MCP is available, prefer MCP methods for discovery/context/next-step acceleration.
-- If MCP is not available, continue with manual governance workflow by reading/updating `.projitive/*` files directly.
-- Do not block execution solely because MCP is missing.
-
-Recommended install (optional):
-
-```bash
-npm install -g @projitive/mcp
-```
-
-Preferred methods for daily execution:
-
-- Discovery: `projectNext`, `projectScan`, `projectLocate`
-- Context: `projectContext`, `taskList`, `taskContext`, `roadmapContext`
-- Execution accelerator: `taskNext`
-
-# How it works
-
-Use the execution contract below directly.
-
-# Execution SOP: Existing Governed Project
-
-Execution mode decision:
-
-- **Mode A (preferred)**: MCP-assisted execution
-- **Mode B (fallback)**: Manual file-driven execution (no MCP)
-
-## Step 1 (Resolve governance context)
-
-In one assistant message, trigger parallel context discovery:
-
-- Mode A: project root resolution (`projectLocate` or `projectScan/projectNext`) + governance summary (`projectContext`)
-- Mode B: locate nearest `.projitive/` manually, then read `README.md`, `roadmap.md`, `tasks.md` for current context
-
-If `.projitive/` is missing or incomplete, run full init first (follow `INIT.md`) before continuing.
-
-## Step 2 (Pick actionable target)
-
-Default path (fastest):
-
-- Mode A: `taskNext` to pick one actionable task, then `taskContext`
-- Mode B: read `tasks.md`, pick top actionable task using status + dependency + evidence completeness
-
-Alternative path (manual):
-
-- Mode A: `taskList` -> choose one task -> `taskContext`
-- Mode B: manual task selection with explicit reasoning in report/design artifact
-
-## Step 3 (Execute with evidence discipline)
-
-During execution:
-
-- Update implementation/code as required by the selected task
-- Create or update evidence in `.projitive/designs/` and/or `.projitive/reports/`
-- Keep task scope narrow and verifiable
-
-## Step 4 (Verify and continue)
-
-After updates:
-
-- Mode A: re-run `taskContext` to verify status/evidence alignment
-- Mode B: manually verify task state in `tasks.md` + evidence links in `.projitive/designs/` / `.projitive/reports/`
-- If still actionable, continue to next task using `taskNext`
-- If blocked, record blocker and required dependency explicitly
-
----
-
-# Execution SOP: New or Ungoverned Project
-
-1. Run governance init (`INIT.md`)
-2. Confirm baseline artifacts exist
-3. Start loop with `taskNext`
-4. Execute and verify with evidence
-
----
+If `taskNext` returns empty: `projectContext` → `roadmapContext` → `taskCreate` 1–3 focused TODOs (+ `roadmapCreate` if needed) → `taskNext`.
 
 # Task Status Rules
 
-- `TODO` -> `IN_PROGRESS`: when execution has started and scope is clear
-- `IN_PROGRESS` -> `DONE`: only when evidence exists and acceptance criteria are met
-- `IN_PROGRESS` -> `BLOCKED`: when external dependency prevents progress
-- `BLOCKED` -> `TODO/IN_PROGRESS`: only after blocker resolution is documented
+- `TODO` → `IN_PROGRESS`: execution started, scope clear
+- `IN_PROGRESS` → `DONE`: evidence exists, criteria met
+- `IN_PROGRESS` → `BLOCKED`: external dependency blocks progress
+- `BLOCKED` → `TODO/IN_PROGRESS`: after blocker resolution is documented
 
 Never mark `DONE` without evidence references.
 
 # Evidence Rules
 
-- Design rationale belongs in `.projitive/designs/`
-- Implementation outcome and validation belong in `.projitive/reports/`
-- Task updates should reference exact evidence files
-- Prefer append-only updates to preserve audit history
-
-# Tool Use Rule
-
-Default method priority:
-
-1. `taskNext`
-2. `taskContext`
-3. execute updates
-4. `taskContext` (verify)
-5. repeat
-
-Use project-level tools when task-level context is insufficient:
-
-- `projectContext`
-- `roadmapContext`
-- `roadmapList`
-
-No-MCP fallback order:
-
-1. read `.projitive/tasks.md`
-2. read related references from `.projitive/README.md` and `.projitive/roadmap.md`
-3. execute one narrow task
-4. write evidence to `.projitive/designs/` or `.projitive/reports/`
-5. update task status in `.projitive/tasks.md`
+- Design rationale → `.projitive/designs/`
+- Execution outcome → `.projitive/reports/`
+- Task updates must reference exact evidence files
 
 # Always-on Rules
 
-- Governance root must be resolved before making task decisions
-- Prefer smallest valid step that moves one task forward
+- Resolve governance root before any task decisions
+- Governance state writes MUST go through MCP tools; never directly edit `tasks.md`/`roadmap.md`
 - Keep status transitions explicit and evidence-linked
-- Do not rewrite unrelated tasks while executing current task
-- Preserve ID stability in roadmap/tasks/designs/report documents
+- Preserve ID stability in roadmap/tasks/designs/reports
+- Prefer smallest valid step that moves one task forward
 
-# MCP Command Contract (when available)
+# Fallback (no MCP)
 
-- `projectLocate`: resolve nearest governance root from any path
-- `projectScan` / `projectNext`: discover actionable projects
-- `projectContext`: summarize governance health and artifact state
-- `taskList`: list tasks for selection
-- `taskNext`: choose most actionable task with guidance
-- `taskContext`: retrieve one task’s evidence and execution hints
-- `roadmapList` / `roadmapContext`: roadmap-level planning context
-
-If method output conflicts with local assumptions, trust method output first, then re-check affected files.
-
-# Manual Contract (no MCP)
-
-- Root discovery: find nearest `.projitive/`
-- Project context: read `.projitive/README.md` + `.projitive/roadmap.md`
-- Task selection: parse `.projitive/tasks.md` and choose one actionable task
-- Evidence update: write to `.projitive/designs/` and/or `.projitive/reports/`
-- Status transition: update `.projitive/tasks.md` with evidence references
-- Verification: re-check task state/evidence consistency before proceeding
+1. Find nearest `.projitive/`
+2. Read `README.md` + `roadmap.md` + `tasks.md`
+3. Execute one narrow task
+4. Write evidence to `designs/` or `reports/`
+5. Update task status in `tasks.md`
