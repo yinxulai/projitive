@@ -257,6 +257,8 @@ function taskStatusGuidance(task: Task): string[] {
 
 const DEFAULT_NO_TASK_DISCOVERY_GUIDANCE = [
   '- Recheck project state first: run projectContext and confirm there is truly no TODO/IN_PROGRESS task to execute.',
+  '- Before creating new tasks, inspect current branch context: check latest commits and workspace changes to infer what the user recently worked on.',
+  '- If recent code changes are not reflected in governance artifacts (tasks/roadmap/reports), sync governance first (taskUpdate/roadmapUpdate or create follow-up tasks) before expanding new scope.',
   '- Check BLOCKED tasks: if BLOCKED tasks exist, read their blocker metadata and take unblock action before creating new tasks.',
   '  - internal_dependency: create/track the blocking task, coordinate with owner',
   '  - external_dependency: reach out to blocking entity or escalate',

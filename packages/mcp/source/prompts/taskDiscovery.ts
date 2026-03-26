@@ -182,6 +182,8 @@ export function registerTaskDiscoveryPrompt(server: McpServer): void {
         '',
         'If taskNext() returns empty:',
         '1. Check if .projitive exists',
+        '1.5 Check current branch latest commits and workspace changes to understand what user recently implemented',
+        '1.6 If recent code changes are not reflected in tasks/roadmap/reports, sync governance state first (taskUpdate/roadmapUpdate or create follow-up task/report entries)',
         '2. Analyze active roadmap milestones and derive 1-3 executable TODO tasks',
         '2.5. If core docs are missing or clearly stale, create TODO tasks to initialize or refresh project architecture, code style, and UI style docs first',
         '3. Prioritize milestone slices that unblock multiple downstream tasks',

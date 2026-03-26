@@ -134,6 +134,8 @@ export function registerQuickStartPrompt(server: McpServer): void {
         '',
         '**If no tasks exist at all (or only DONE tasks):**',
         '1. Review `projectContext()` to confirm task count is 0',
+        '1.5 Check latest commits and local branch changes to understand what user recently worked on',
+        '1.6 If code changes are ahead of governance records, sync tasks/roadmap/report evidence first before creating new scope',
         '2. Read active roadmap milestones via `roadmapContext()`',
         '3. For each active milestone, derive 1-3 executable TODO tasks:',
         '   - **Clear outcome**: one-sentence done condition',

@@ -85,7 +85,7 @@ Projitive turns agent execution from "can code" into "can continuously deliver."
 
 ### "Agent has nothing to do"
 
-Instead of stalling, Projitive returns a discovery path and seed direction so the agent can create new actionable slices and keep moving.
+Instead of stalling, Projitive first checks latest branch/code changes to infer what the user recently worked on; if those changes are not synced into task/roadmap/report records, it performs governance synchronization first, then returns a discovery path and seed direction so the agent can create new actionable slices and keep moving.
 
 ### "Project setup is incomplete"
 
