@@ -22,7 +22,9 @@
 
 
 ## Commit Reminder
-- After this update, create a commit to keep progress auditable.
-- Recommended format: type(scope): summary
-- Example: docs(roadmap): update ROADMAP-0003 milestone
-- Footer suggestion: Refs: ROADMAP-0003
+- When recording changes, include a concise, descriptive commit message and link any related task or roadmap IDs when relevant.
+- Suggested formats (follow your project convention):
+	- Conventional Commits: type(scope): short summary (e.g. feat(api): add user endpoint)
+	- Simple imperative: Short imperative sentence (e.g. Add validation for X)
+- Add references in the footer when appropriate, e.g. Refs: TASK-123, ROADMAP-456.
+- If your project enforces a specific commit policy, follow that policy instead.
