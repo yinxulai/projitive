@@ -1,9 +1,8 @@
 name: Release Publish MCP
 
 on:
-  push:
-    tags:
-      - '*.*.*'
+  release:
+    types: [published]
 
 permissions:
   id-token: write  # Required for OIDC
@@ -46,7 +45,9 @@ jobs:
 
       - name: Verify package version matches release tag
         run: |
-          RELEASE_TAG="${GITHUB_REF_NAME}"
+          RELEASE_TAG="${GITHUB_REF_NAME:-${GITHUB_REF##*/}}"
+          # 兼容 v 前缀和无前缀
+          RELEASE_TAG="${RELEASE_TAG#v}"
           PACKAGE_VERSION=$(node -p "require('./package.json').version")
           if [ "$PACKAGE_VERSION" != "$RELEASE_TAG" ]; then
             echo "Package version ($PACKAGE_VERSION) does not match release tag ($RELEASE_TAG)."
@@ -76,7 +77,8 @@ jobs:
 
       - name: Verify package version matches release tag
         run: |
-          RELEASE_TAG="${GITHUB_REF_NAME}"
+          RELEASE_TAG="${GITHUB_REF_NAME:-${GITHUB_REF##*/}}"
+          RELEASE_TAG="${RELEASE_TAG#v}"
           PACKAGE_VERSION=$(node -p "require('./package.json').version")
           if [ "$PACKAGE_VERSION" != "$RELEASE_TAG" ]; then
             echo "Package version ($PACKAGE_VERSION) does not match release tag ($RELEASE_TAG)."
