@@ -1,151 +1,12 @@
 import fs from 'node:fs'
-import path from 'node:path'
 
-const MESSAGE_TEMPLATE_ENV = 'PROJITIVE_MESSAGE_TEMPLATE_PATH'
+function buildToolResponseMarkdown(payload: ToolResponsePayload): string {
+  const sections = payload.sections.map((section) => {
+    const lines = section.lines.length > 0 ? section.lines : ['- (none)']
+    return [`## ${section.title}`, ...lines, ''].join('\n')
+  })
 
-function baseToolTemplateMarkdown(): string {
-  return [
-  '# {{tool_name}}',
-  '',
-  '## Summary',
-  '{{summary}}',
-  '',
-  '## Evidence',
-  '{{evidence}}',
-  '',
-  '## Agent Guidance',
-  '{{guidance}}',
-  '',
-  '## Lint Suggestions',
-  '{{suggestions}}',
-  '',
-  '## Next Call',
-  '{{next_call}}',
-  ].join('\n')
-}
-
-export function getDefaultToolTemplateMarkdown(toolName: string): string {
-  const base = baseToolTemplateMarkdown()
-
-  if (toolName === 'taskNext') {
-    return [
-      base,
-      '',
-      '## Idle Discovery Checklist (When No Actionable Task)',
-      '- Scan backlog comments: TODO / FIXME / HACK / XXX.',
-      '- Check lint gaps and create executable fix tasks.',
-      '- Check test quality gaps (missing tests, flaky tests, low-value coverage).',
-      '- Learn current project architecture and consolidate/update design docs in designs/.',
-      '- Review and update core governance docs under designs/core/ (architecture.md, code-style.md, ui-style.md) if missing or outdated.',
-      '- When finishing a task, re-check whether architecture boundaries, code conventions, or UI patterns changed and update the matching core docs.',
-      '- Re-run {{tool_name}} after creating 1-3 focused TODO tasks.',
-    ].join('\n')
-  }
-
-  if (toolName === 'projectContext' || toolName === 'taskContext' || toolName === 'roadmapContext') {
-    return [
-      base,
-      '',
-      '## Common Tool Guides To Read First',
-      '- ./CLAUDE.md',
-      '- ./AGENTS.md',
-      '- ./.github/copilot-instructions.md',
-      '- ./.cursorrules',
-      '- ./.github/instructions/*',
-      '- ./.cursor/rules/*',
-    ].join('\n')
-  }
-
-  if (toolName === 'taskUpdate') {
-    return [
-      base,
-      '',
-      '## Governance Write Rule',
-      '- MUST use governance tools for task/roadmap state updates.',
-      '- NEVER edit tasks.md/roadmap.md directly; they are generated views.',
-      '',
-      '## Core Docs Review Checklist (Required When Marking DONE)',
-      '- [ ] architecture.md reviewed (designs/core/architecture.md)',
-      '- [ ] code-style.md reviewed (designs/core/code-style.md)',
-      '- [ ] ui-style.md reviewed (designs/core/ui-style.md)',
-      '',
-      '## Commit Reminder',
-      '- When recording changes, include a concise, descriptive commit message and link any related task or roadmap IDs when relevant.',
-      '- Suggested formats (follow your project convention):',
-      '-  - Conventional Commits: type(scope): short summary (e.g. feat(api): add user endpoint)',
-      '-  - Simple imperative: Short imperative sentence (e.g. Add validation for X)',
-      '- Add references in the footer when appropriate, e.g. Refs: TASK-123, ROADMAP-456.',
-      '- If your project enforces a specific commit policy, follow that policy instead.',
-    ].join('\n')
-  }
-
-  if (toolName === 'roadmapUpdate') {
-    return [
-      base,
-      '',
-      '## Governance Write Rule',
-      '- MUST use governance tools for task/roadmap state updates.',
-      '- NEVER edit tasks.md/roadmap.md directly; they are generated views.',
-      '',
-      '## Commit Reminder',
-      '- When recording changes, include a concise, descriptive commit message and link any related task or roadmap IDs when relevant.',
-      '- Suggested formats (follow your project convention):',
-      '-  - Conventional Commits: type(scope): short summary (e.g. feat(api): add user endpoint)',
-      '-  - Simple imperative: Short imperative sentence (e.g. Add validation for X)',
-      '- Add references in the footer when appropriate, e.g. Refs: TASK-123, ROADMAP-456.',
-      '- If your project enforces a specific commit policy, follow that policy instead.',
-    ].join('\n')
-  }
-
-  return base
-}
-
-function loadTemplateFile(templatePath: string): string | undefined {
-  try {
-    const content = fs.readFileSync(templatePath, 'utf-8').trim()
-    return content.length > 0 ? content : undefined
-  } catch {
-    return undefined
-  }
-}
-
-function ensureTemplateFile(templatePath: string, toolName: string): string {
-  const existing = loadTemplateFile(templatePath)
-  if (existing) {
-    return existing
-  }
-
-  fs.mkdirSync(path.dirname(templatePath), { recursive: true })
-  const generated = getDefaultToolTemplateMarkdown(toolName)
-  fs.writeFileSync(templatePath, `${generated}\n`, 'utf-8')
-  return generated
-}
-
-function resolveTemplateTarget(toolName: string): string {
-  const configuredPath = process.env[MESSAGE_TEMPLATE_ENV]?.trim()
-  if (!configuredPath) {
-    return path.resolve(process.cwd(), '.projitive', 'templates', 'tools', `${toolName}.md`)
-  }
-
-  const absolutePath = path.resolve(configuredPath)
-  try {
-    const stat = fs.statSync(absolutePath)
-    if (stat.isDirectory()) {
-      return path.join(absolutePath, `${toolName}.md`)
-    }
-    return absolutePath
-  } catch {
-    const ext = path.extname(absolutePath).toLowerCase()
-    if (ext === '.md') {
-      return absolutePath
-    }
-    return path.join(absolutePath, `${toolName}.md`)
-  }
-}
-
-function loadMessageTemplate(toolName: string): string {
-  const templatePath = resolveTemplateTarget(toolName)
-  return ensureTemplateFile(templatePath, toolName)
+  return [`# ${payload.toolName}`, '', ...sections].join('\n').trimEnd()
 }
 
 export function asText(markdown: string) {
@@ -202,8 +63,6 @@ export type ToolResponsePayload = {
   sections: ToolResponseSection[];
 };
 
-type ToolTemplateVariables = Record<string, string>;
-
 export function section(title: ToolSectionTitle | string, lines: string[]): ToolResponseSection {
   return { title, lines: normalizeLines(lines) }
 }
@@ -239,29 +98,8 @@ function resolveSection(payload: ToolResponsePayload, title: ToolSectionTitle): 
   return payload.sections.find((item) => item.title === title)
 }
 
-function buildToolTemplateVariables(payload: ToolResponsePayload): ToolTemplateVariables {
-  return {
-    tool_name: payload.toolName,
-    summary: toSectionText(resolveSection(payload, 'Summary')),
-    evidence: toSectionText(resolveSection(payload, 'Evidence')),
-    guidance: toSectionText(resolveSection(payload, 'Agent Guidance')),
-    suggestions: toSectionText(resolveSection(payload, 'Lint Suggestions')),
-    next_call: toSectionText(resolveSection(payload, 'Next Call')),
-  }
-}
-
-function applyTemplateVariables(template: string, variables: ToolTemplateVariables): string {
-  let rendered = template
-  for (const [key, value] of Object.entries(variables)) {
-    rendered = rendered.split(`{{${key}}}`).join(value)
-  }
-  return rendered.trimEnd()
-}
-
 export function renderToolResponseMarkdown(payload: ToolResponsePayload): string {
-  const template = loadMessageTemplate(payload.toolName)
-  const variables = buildToolTemplateVariables(payload)
-  return applyTemplateVariables(template, variables)
+  return buildToolResponseMarkdown(payload)
 }
 
 export function renderErrorMarkdown(toolName: string, cause: string, nextSteps: string[], retryExample?: string): string {

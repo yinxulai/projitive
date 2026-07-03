@@ -287,15 +287,10 @@ describe('projitive module', () => {
         path.join(root, '.projitive', 'designs', 'core', 'architecture.md'),
         path.join(root, '.projitive', 'designs', 'core', 'code-style.md'),
         path.join(root, '.projitive', 'designs', 'core', 'ui-style.md'),
-        path.join(root, '.projitive', 'templates', 'README.md'),
-        path.join(root, '.projitive', 'templates', 'tools', 'taskNext.md'),
-        path.join(root, '.projitive', 'templates', 'tools', 'taskUpdate.md'),
         path.join(root, '.projitive', 'designs'),
         path.join(root, '.projitive', 'designs', 'core'),
         path.join(root, '.projitive', 'designs', 'research'),
         path.join(root, '.projitive', 'reports'),
-        path.join(root, '.projitive', 'templates'),
-        path.join(root, '.projitive', 'templates', 'tools'),
       ]
 
       await Promise.all(expectedPaths.map(async (targetPath) => {
@@ -303,7 +298,7 @@ describe('projitive module', () => {
       }))
     })
 
-    it('overwrites template files when force is enabled', async () => {
+    it('overwrites governance files when force is enabled', async () => {
       const root = await createTempDir()
       const governanceDir = path.join(root, '.projitive')
       const readmePath = path.join(governanceDir, 'README.md')
@@ -394,7 +389,7 @@ describe('projitive module', () => {
       
       expect(initialized.directories.some(d => d.path.includes('designs'))).toBe(true)
       expect(initialized.directories.some(d => d.path.includes('reports'))).toBe(true)
-      expect(initialized.directories.some(d => d.path.includes('templates'))).toBe(true)
+      expect(initialized.directories.some(d => d.path.includes('templates'))).toBe(false)
     })
 
     it('throws when governanceDir is an absolute path', async () => {
@@ -517,13 +512,11 @@ describe('projitive module', () => {
       const root = await createTempDir()
       const projectRoot = path.join(root, 'app')
       const governanceDir = path.join(projectRoot, '.projitive')
-      const templateDir = await createTempDir()
       await fs.mkdir(governanceDir, { recursive: true })
       await fs.writeFile(path.join(governanceDir, '.projitive'), '', 'utf-8')
 
       vi.stubEnv('PROJITIVE_SCAN_ROOT_PATHS', root)
       vi.stubEnv('PROJITIVE_SCAN_MAX_DEPTH', '3')
-      vi.stubEnv('PROJITIVE_MESSAGE_TEMPLATE_PATH', templateDir)
 
       const mockServer = {
         registerTool: vi.fn(),
@@ -598,7 +591,7 @@ describe('projitive module', () => {
       expect(result.content[0].text).toContain('designs/core/ui-style.md')
       expect(result.content[0].text).toContain('Repair Summary (Missing Before Init)')
       expect(result.content[0].text).toContain('- core docs:')
-      expect(result.content[0].text).toContain('- templates:')
+      expect(result.content[0].text).toContain('- other required files:')
       expect(result.content[0].text).toContain('- bootstrap tasks:')
     })
 

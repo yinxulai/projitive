@@ -281,7 +281,6 @@ const DEFAULT_TASK_CONTEXT_READING_GUIDANCE = [
   '- Read task view and related task cards (tasks.md / projitive://governance/tasks).',
   '- Read design specs and technical decisions under designs/ (architecture, API contracts, constraints).',
   '- Read reports/ for latest execution evidence, regressions, and unresolved risks.',
-  '- Read process guides under templates/docs/project guidelines to align with local governance rules.',
   '- If available, read docs/ architecture or migration guides before major structural changes.',
 ]
 

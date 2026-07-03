@@ -19,7 +19,6 @@ import {
   upsertRoadmapInStore,
   upsertTaskInStore,
   createGovernedTool,
-  getDefaultToolTemplateMarkdown,
 } from '../common/index.js'
 import {
   collectProjectContextDocsLintSuggestions,
@@ -360,28 +359,9 @@ type ProjectInitRemediation = {
 
 type ProjectInitMissingClassification = {
   coreDocs: string[];
-  templates: string[];
   bootstrapTasks: string[];
   otherFiles: string[];
 };
-
-const DEFAULT_TOOL_TEMPLATE_NAMES = [
-  'projectInit',
-  'projectScan',
-  'projectNext',
-  'projectLocate',
-  'projectContext',
-  'syncViews',
-  'taskList',
-  'taskNext',
-  'taskContext',
-  'taskCreate',
-  'taskUpdate',
-  'roadmapList',
-  'roadmapContext',
-  'roadmapCreate',
-  'roadmapUpdate',
-]
 
 async function pathExists(targetPath: string): Promise<boolean> {
   const accessResult = await catchIt(fs.access(targetPath))
@@ -496,8 +476,6 @@ async function inspectProjectInitMissingState(governancePath: string): Promise<P
     path.join(governancePath, 'designs', 'core'),
     path.join(governancePath, 'designs', 'research'),
     path.join(governancePath, 'reports'),
-    path.join(governancePath, 'templates'),
-    path.join(governancePath, 'templates', 'tools'),
   ]
   const requiredFiles = [
     path.join(governancePath, 'README.md'),
@@ -506,8 +484,6 @@ async function inspectProjectInitMissingState(governancePath: string): Promise<P
     path.join(governancePath, CORE_ARCHITECTURE_DOC_FILE),
     path.join(governancePath, CORE_CODE_STYLE_DOC_FILE),
     path.join(governancePath, CORE_UI_STYLE_DOC_FILE),
-    path.join(governancePath, 'templates', 'README.md'),
-    ...DEFAULT_TOOL_TEMPLATE_NAMES.map((toolName) => path.join(governancePath, 'templates', 'tools', `${toolName}.md`)),
   ]
   const missingDirectories = (await Promise.all(requiredDirectories.map(async (dirPath) => (await pathExists(dirPath)) ? undefined : dirPath)))
     .filter((item): item is string => item != null)
@@ -657,12 +633,10 @@ function classifyProjectInitMissing(initialized: ProjectInitResult): ProjectInit
     .map((item) => toRelativeGovernancePath(initialized.governanceDir, item))
 
   const coreDocs = relativeMissingFiles.filter((item) => coreDocFiles.has(item))
-  const templates = relativeMissingFiles.filter((item) => item === 'templates/README.md' || item.startsWith('templates/tools/'))
-  const otherFiles = relativeMissingFiles.filter((item) => !coreDocFiles.has(item) && !(item === 'templates/README.md' || item.startsWith('templates/tools/')))
+  const otherFiles = relativeMissingFiles.filter((item) => !coreDocFiles.has(item))
 
   return {
     coreDocs,
-    templates,
     bootstrapTasks: initialized.missingBeforeInit.missingBootstrapTaskTitles,
     otherFiles,
   }
@@ -675,9 +649,6 @@ function renderProjectInitRepairSummary(initialized: ProjectInitResult): string[
     '- core docs:',
     `  - count: ${classified.coreDocs.length}`,
     ...(classified.coreDocs.length > 0 ? classified.coreDocs.map((item) => `  - ${item}`) : ['  - (none)']),
-    '- templates:',
-    `  - count: ${classified.templates.length}`,
-    ...(classified.templates.length > 0 ? classified.templates.map((item) => `  - ${item}`) : ['  - (none)']),
     '- bootstrap tasks:',
     `  - count: ${classified.bootstrapTasks.length}`,
     ...(classified.bootstrapTasks.length > 0 ? classified.bootstrapTasks.map((item) => `  - ${item}`) : ['  - (none)']),
@@ -688,31 +659,6 @@ function renderProjectInitRepairSummary(initialized: ProjectInitResult): string[
     `  - created bootstrap tasks: ${initialized.remediation.createdBootstrapTaskIds.length}`,
     `  - created bootstrap roadmap: ${initialized.remediation.createdBootstrapRoadmapId ?? '(none)'}`,
   ]
-}
-
-function defaultTemplateReadmeMarkdown(): string {
-  return [
-    '# Template Guide',
-    '',
-    'This directory stores response templates (one file per tool).',
-    '',
-    'How to enable:',
-    '- Set env `PROJITIVE_MESSAGE_TEMPLATE_PATH` to a template directory.',
-    '- Example: .projitive/templates/tools',
-    '',
-    'Rule:',
-    '- Prefer one template per tool: <toolName>.md (e.g. taskNext.md).',
-    '- Template directory mode only loads <toolName>.md files.',
-    '- If a tool template file is missing, Projitive will auto-generate that file before rendering.',
-    '',
-    'Basic Variables:',
-    '- {{tool_name}}',
-    '- {{summary}}',
-    '- {{evidence}}',
-    '- {{guidance}}',
-    '- {{lint_suggestions}}',
-    '- {{next_call}}',
-  ].join('\n')
 }
 
 export async function initializeProjectStructure(inputPath: string, governanceDir?: string, force = false): Promise<ProjectInitResult> {
@@ -737,8 +683,6 @@ export async function initializeProjectStructure(inputPath: string, governanceDi
     path.join(governancePath, 'designs', 'core'),
     path.join(governancePath, 'designs', 'research'),
     path.join(governancePath, 'reports'),
-    path.join(governancePath, 'templates'),
-    path.join(governancePath, 'templates', 'tools'),
   ]
   for (const dirPath of requiredDirectories) {
     const exists = await pathExists(dirPath)
@@ -767,16 +711,9 @@ export async function initializeProjectStructure(inputPath: string, governanceDi
     writeTextFile(path.join(governancePath, CORE_ARCHITECTURE_DOC_FILE), defaultProjectArchitectureMarkdown(), force),
     writeTextFile(path.join(governancePath, CORE_CODE_STYLE_DOC_FILE), defaultCodeStyleMarkdown(), force),
     writeTextFile(path.join(governancePath, CORE_UI_STYLE_DOC_FILE), defaultUiStyleMarkdown(), force),
-    writeTextFile(path.join(governancePath, 'templates', 'README.md'), defaultTemplateReadmeMarkdown(), force),
   ])
 
-  const toolTemplateFiles = await Promise.all(
-    DEFAULT_TOOL_TEMPLATE_NAMES.map((toolName) =>
-      writeTextFile(path.join(governancePath, 'templates', 'tools', `${toolName}.md`), getDefaultToolTemplateMarkdown(toolName), force)
-    )
-  )
-
-  const files = [...baseFiles, ...toolTemplateFiles]
+  const files = [...baseFiles]
 
   return {
     projectPath,
@@ -848,8 +785,8 @@ export function registerProjectTools(server: McpServer): void {
           : ['- Governance root already existed. This call inspected the current initialization state and backfilled missing artifacts where possible.']),
         ...(initialized.missingBeforeInit.missingFiles.length > 0 || initialized.missingBeforeInit.missingDirectories.length > 0 || initialized.missingBeforeInit.missingBootstrapTaskTitles.length > 0 || initialized.missingBeforeInit.missingBootstrapRoadmap
           ? ['- This project was partially initialized. Review the created files and bootstrap tasks, then complete any placeholder content.']
-          : ['- No initialization gaps were detected. Use force=true only when you intentionally want to overwrite templates/files.']),
-        '- If files were skipped and you want to overwrite templates, rerun with force=true.',
+          : ['- No initialization gaps were detected. Use force=true only when you intentionally want to overwrite governance files.']),
+        '- If files were skipped and you want to overwrite governance files, rerun with force=true.',
         '- Continue with projectContext and taskList for execution.',
         '- Start with the three bootstrap TODO tasks for architecture, code style, and UI style docs.',
       ],
