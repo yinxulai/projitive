@@ -1,5 +1,3 @@
-import fs from 'node:fs'
-
 function buildToolResponseMarkdown(payload: ToolResponsePayload): string {
   const sections = payload.sections.map((section) => {
     const lines = section.lines.length > 0 ? section.lines : ['- (none)']
@@ -85,17 +83,6 @@ export function lintSection(lines: string[]): ToolResponseSection {
 
 export function nextCallSection(nextCall?: string): ToolResponseSection {
   return section('Next Call', nextCall ? [nextCall] : [])
-}
-
-function toSectionText(section: ToolResponseSection | undefined): string {
-  if (!section) {
-    return '- (none)'
-  }
-  return withFallback(section.lines).join('\n')
-}
-
-function resolveSection(payload: ToolResponsePayload, title: ToolSectionTitle): ToolResponseSection | undefined {
-  return payload.sections.find((item) => item.title === title)
 }
 
 export function renderToolResponseMarkdown(payload: ToolResponsePayload): string {

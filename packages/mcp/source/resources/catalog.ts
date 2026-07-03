@@ -17,12 +17,20 @@ export function registerMethodCatalogResource(server: McpServer): void {
 
 ## Recommended workflow
 
-1. projectScan()
-2. projectContext(projectPath)
-3. taskNext(projectPath)
-4. taskContext(projectPath, taskId)
-5. taskUpdate(projectPath, taskId, updates)
-6. taskContext(projectPath, taskId) for verification
+1. projectScan() to locate governance roots when the project is unknown
+2. projectContext(projectPath) to load overview and current state
+3. taskNext(projectPath) to pick the next actionable task
+4. taskContext(projectPath, taskId) to gather evidence and read order
+5. taskUpdate(projectPath, taskId, updates) or roadmapUpdate(projectPath, roadmapId, updates) for state changes
+6. taskContext(projectPath, taskId) again to verify consistency
+
+## Working rules for agents
+
+- Prefer '.projitive/' as the source of truth over generated markdown views
+- Read context before making task or roadmap changes
+- Use governance tools for writes instead of editing tasks.md or roadmap.md directly
+- Re-verify after state changes and before declaring work complete
+- If the project has no governance structure yet, begin with projectInit(projectPath)
 
 ## Core tools
 
@@ -60,10 +68,10 @@ export function registerMethodCatalogResource(server: McpServer): void {
 
 ## Guidance for AI agents
 
-- Prefer the governance store in .projitive as the source of truth.
-- Use taskContext before making changes so updates are evidence-backed.
-- Re-run taskContext after taskUpdate or roadmapUpdate to verify results.
-- When a project has no governance files, start with projectInit(projectPath).
+- Start with discovery and context, then execute, then verify.
+- Keep task/roadmap updates evidence-backed and tied to reports, designs, or README changes.
+- When work is blocked, capture blocker metadata fully before continuing.
+- When core docs are missing or stale, treat that as actionable work and update them as part of the task.
 `,
         },
       ],

@@ -1,5 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { describe, expect, it, vi } from 'vitest'
+
 import { registerMethodCatalogResource } from './catalog.js'
 
 describe('method catalog resource', () => {
@@ -18,8 +19,8 @@ describe('method catalog resource', () => {
 
     expect(result.contents[0]).toMatchObject({
       uri: 'projitive://mcp/method-catalog',
-      text: expect.stringContaining('projectScan()'),
     })
+    expect(result.contents[0].text).toContain('projectScan()')
     expect(result.contents[0].text).toContain('.projitive/tasks.md')
   })
 })
