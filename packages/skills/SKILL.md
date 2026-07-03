@@ -35,7 +35,6 @@ When `.projitive/` does not exist or is incomplete, call `projectInit(projectPat
 - `tasks.md` — task pool with status + evidence
 - `designs/` — design decisions and rationale
 - `reports/` — execution reports and evidence
-- `templates/` — per-tool response templates
 
 # Execution Loop
 
