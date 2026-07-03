@@ -59,6 +59,13 @@ export function registerMethodCatalogResource(server: McpServer): void {
 - projitive://designs
 - projitive://mcp/method-catalog
 
+## Fast context checklist
+
+- Read the governance overview first to understand project intent.
+- Check the current task pool before creating new work.
+- Read roadmap milestones to anchor new tasks in visible delivery goals.
+- Review design docs and recent reports before changing architecture or implementation details.
+
 ## Governance directory conventions
 
 - .projitive/README.md is the governance entry point and should be treated as the canonical project overview.

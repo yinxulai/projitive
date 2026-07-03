@@ -1078,7 +1078,7 @@ export function registerTaskTools(server: McpServer): void {
     ...createGovernedTool({
       name: 'taskCreate',
       title: 'Task Create',
-      description: 'Create a new task in governance store with stable TASK-<number> ID',
+      description: 'Create a new task only after context and evidence are clear; use this when a concrete TODO slice is ready',
       inputSchema: {
         projectPath: z.string(),
         taskId: z.string().optional(),
@@ -1521,7 +1521,7 @@ export function registerTaskTools(server: McpServer): void {
     ...createGovernedTool({
       name: 'taskUpdate',
       title: 'Task Update',
-      description: 'Update task fields including status, owner, summary, subState, and blocker metadata',
+      description: 'Update task state or blocker metadata after reading context; use it to move work forward, record evidence, or unblock a task',
       inputSchema: {
         projectPath: z.string(),
         taskId: z.string(),

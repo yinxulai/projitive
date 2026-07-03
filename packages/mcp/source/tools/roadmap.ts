@@ -331,7 +331,7 @@ export function registerRoadmapTools(server: McpServer): void {
     ...createGovernedTool({
       name: 'roadmapCreate',
       title: 'Roadmap Create',
-      description: 'Create one roadmap milestone in governance store',
+      description: 'Create a roadmap milestone when the project needs a visible delivery goal or a new execution anchor',
       inputSchema: {
         projectPath: z.string(),
         roadmapId: z.string().optional(),
@@ -402,7 +402,7 @@ export function registerRoadmapTools(server: McpServer): void {
     ...createGovernedTool({
       name: 'roadmapUpdate',
       title: 'Roadmap Update',
-      description: 'Update one roadmap milestone fields incrementally in governance store',
+      description: 'Update a roadmap milestone after context review; use it to reflect delivery progress or changed scope',
       inputSchema: {
         projectPath: z.string(),
         roadmapId: z.string(),
