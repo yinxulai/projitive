@@ -304,6 +304,11 @@ export function renderTaskSeedTemplate(roadmapRef: string): string[] {
     '- summary: Convert one roadmap milestone or report gap into an actionable task.',
     '- updatedAt: 2026-01-01T00:00:00.000Z',
     `- roadmapRefs: ${roadmapRef}`,
+    '- acceptanceCriteria:',
+    '  - Deliver one concrete outcome',
+    '  - Add evidence or validation notes',
+    '- dependencies:',
+    '  - TASK-0000',
     '- links:',
     '  - README.md',
     '  - .projitive/roadmap.md',
@@ -609,6 +614,12 @@ export function normalizeTask(task: Partial<Task> & { id: string; title: string 
         )
       : [],
     roadmapRefs: Array.from(new Set(normalizedRoadmapRefs)),
+    acceptanceCriteria: Array.isArray(task.acceptanceCriteria)
+      ? Array.from(new Set(task.acceptanceCriteria.map(String).filter((value) => value.trim().length > 0)))
+      : [],
+    dependencies: Array.isArray(task.dependencies)
+      ? Array.from(new Set(task.dependencies.map(String).filter((value) => value.trim().length > 0)))
+      : [],
   }
 
   // Include optional v1.1.0 fields if present
@@ -910,12 +921,21 @@ export function renderTasksMarkdown(tasks: Task[]): string {
       ? ['- links:', ...task.links.map((link) => `  - ${link}`)]
       : ['- links:', '  - (none)']
 
+    const acceptanceCriteria = task.acceptanceCriteria && task.acceptanceCriteria.length > 0
+      ? ['- acceptanceCriteria:', ...task.acceptanceCriteria.map((item) => `  - ${item}`)]
+      : ['- acceptanceCriteria:', '  - (none)']
+    const dependencies = task.dependencies && task.dependencies.length > 0
+      ? ['- dependencies:', ...task.dependencies.map((item) => `  - ${item}`)]
+      : ['- dependencies:', '  - (none)']
+
     const lines = [
       `## ${task.id} | ${task.status} | ${task.title}`,
       `- owner: ${task.owner || '(none)'}`,
       `- summary: ${task.summary || '(none)'}`,
       `- updatedAt: ${task.updatedAt}`,
       `- roadmapRefs: ${roadmapRefs}`,
+      ...acceptanceCriteria,
+      ...dependencies,
       ...links,
     ]
 
@@ -1087,6 +1107,8 @@ export function registerTaskTools(server: McpServer): void {
         owner: z.string().optional(),
         summary: z.string().optional(),
         roadmapRefs: z.array(z.string()).optional(),
+        acceptanceCriteria: z.array(z.string()).optional(),
+        dependencies: z.array(z.string()).optional(),
         links: z.array(z.string()).optional(),
         subState: z.object({
           phase: z.enum(['discovery', 'design', 'implementation', 'testing']).optional(),
@@ -1101,7 +1123,7 @@ export function registerTaskTools(server: McpServer): void {
           escalationPath: z.string().optional(),
         }).optional(),
       },
-      async execute({ projectPath, taskId, title, status, owner, summary, roadmapRefs, links, subState, blocker }) {
+      async execute({ projectPath, taskId, title, status, owner, summary, roadmapRefs, acceptanceCriteria, dependencies, links, subState, blocker }) {
         if (taskId && !isValidTaskId(taskId)) {
           throw new ToolExecutionError(
             `Invalid task ID format: ${taskId}`,
@@ -1129,6 +1151,8 @@ export function registerTaskTools(server: McpServer): void {
           owner,
           summary,
           roadmapRefs,
+          acceptanceCriteria,
+          dependencies,
           links,
           subState,
           blocker,
@@ -1153,6 +1177,8 @@ export function registerTaskTools(server: McpServer): void {
         `- ${createdTask.id} | ${createdTask.status} | ${createdTask.title}`,
         `- summary: ${createdTask.summary || '(none)'}`,
         `- roadmapRefs: ${createdTask.roadmapRefs.join(', ') || '(none)'}`,
+        `- acceptanceCriteria: ${createdTask.acceptanceCriteria?.join(', ') || '(none)'}`,
+        `- dependencies: ${createdTask.dependencies?.join(', ') || '(none)'}`,
         `- links: ${createdTask.links.join(', ') || '(none)'}`,
       ],
       guidance: () => [
@@ -1530,6 +1556,8 @@ export function registerTaskTools(server: McpServer): void {
           owner: z.string().optional(),
           summary: z.string().optional(),
           roadmapRefs: z.array(z.string()).optional(),
+          acceptanceCriteria: z.array(z.string()).optional(),
+          dependencies: z.array(z.string()).optional(),
           links: z.array(z.string()).optional(),
           subState: z.object({
             phase: z.enum(['discovery', 'design', 'implementation', 'testing']).optional(),
@@ -1588,6 +1616,8 @@ export function registerTaskTools(server: McpServer): void {
           ...(updates.owner !== undefined ? { owner: updates.owner } : {}),
           ...(updates.summary !== undefined ? { summary: updates.summary } : {}),
           ...(updates.roadmapRefs ? { roadmapRefs: updates.roadmapRefs } : {}),
+          ...(updates.acceptanceCriteria ? { acceptanceCriteria: updates.acceptanceCriteria } : {}),
+          ...(updates.dependencies ? { dependencies: updates.dependencies } : {}),
           ...(updates.links ? { links: updates.links } : {}),
           subState: updatedSubState,
           blocker: updatedBlocker,
@@ -1638,6 +1668,8 @@ export function registerTaskTools(server: McpServer): void {
         ...(updates.links ? [`- links: ${updates.links.join(', ')}`] : []),
         ...(updates.subState ? [`- subState: ${JSON.stringify(updates.subState)}`] : []),
         ...(updates.blocker ? [`- blocker: ${JSON.stringify(updates.blocker)}`] : []),
+        ...(updates.acceptanceCriteria ? [`- acceptanceCriteria: ${updates.acceptanceCriteria.join(', ')}`] : []),
+        ...(updates.dependencies ? [`- dependencies: ${updates.dependencies.join(', ')}`] : []),
       ],
       guidance: ({ updates, originalStatus }) => [
         'Task updated successfully and tasks.md has been synced. Run `taskContext` to verify the changes.',

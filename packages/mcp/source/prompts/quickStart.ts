@@ -90,7 +90,7 @@ export function registerQuickStartPrompt(server: McpServer): void {
         '',
         'After getting task context:',
         '1. Read evidence links in Suggested Read Order',
-        '2. Understand task requirements and acceptance criteria',
+        '2. Understand task requirements, acceptance criteria, and dependencies',
         '3. Write governance source via tools (`taskCreate` / `taskUpdate` / `roadmapCreate` / `roadmapUpdate`) instead of editing tasks.md/roadmap.md directly',
         '4. Update docs (`designs/` / `reports/`) as required by evidence',
         '4.5. Before closing the task, check whether `designs/core/architecture.md`, `designs/core/code-style.md`, or `designs/core/ui-style.md` need updates',

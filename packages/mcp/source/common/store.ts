@@ -118,6 +118,8 @@ function normalizeStore(input: Partial<JsonStore>): JsonStore {
         updatedAt: String(task.updatedAt ?? nowIso()),
         links: Array.isArray(task.links) ? task.links.map((item) => String(item)) : [],
         roadmapRefs: Array.isArray(task.roadmapRefs) ? task.roadmapRefs.map((item) => String(item)) : [],
+        acceptanceCriteria: Array.isArray(task.acceptanceCriteria) ? task.acceptanceCriteria.map((item) => String(item)) : [],
+        dependencies: Array.isArray(task.dependencies) ? task.dependencies.map((item) => String(item)) : [],
         subState: task.subState as SubStateMetadata | undefined,
         blocker: task.blocker as BlockerMetadata | undefined,
         recordVersion: Number.isFinite(Number(task.recordVersion)) ? Number(task.recordVersion) : 1,
@@ -263,6 +265,8 @@ function toPublicTask(stored: StoredTask): Task {
     updatedAt: stored.updatedAt,
     links: [...stored.links],
     roadmapRefs: [...stored.roadmapRefs],
+    acceptanceCriteria: [...(stored.acceptanceCriteria ?? [])],
+    dependencies: [...(stored.dependencies ?? [])],
     subState: stored.subState,
     blocker: stored.blocker,
   }

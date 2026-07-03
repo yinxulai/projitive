@@ -77,6 +77,8 @@ export interface Task {
   updatedAt: string;
   links: string[];
   roadmapRefs: string[];
+  acceptanceCriteria?: string[];
+  dependencies?: string[];
   /** Sub-state metadata (Spec v1.1.0, optional) */
   subState?: SubStateMetadata;
   /** Blocker metadata (Spec v1.1.0, optional, for BLOCKED state) */
